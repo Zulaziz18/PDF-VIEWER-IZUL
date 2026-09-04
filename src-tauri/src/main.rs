@@ -212,9 +212,15 @@ fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), Stri
 async fn serve_tile(service: &Arc<RenderService>, uri: &str) -> tauri::http::Response<Vec<u8>> {
     use tauri::http::{Response, StatusCode};
 
+    // Every answer, including the refusals: a response the browser discards
+    // for want of a CORS header cannot even report its own status code, so
+    // the viewport's careful handling of 409 and 410 would never run.
     let deny = |code: StatusCode| -> Response<Vec<u8>> {
-        Response::builder()
-            .status(code)
+        let mut builder = Response::builder().status(code);
+        for (k, val) in protocol::cors_headers() {
+            builder = builder.header(k, val);
+        }
+        builder
             .body(Vec::new())
             .unwrap_or_else(|_| Response::new(Vec::new()))
     };
@@ -252,6 +258,9 @@ async fn serve_tile(service: &Arc<RenderService>, uri: &str) -> tauri::http::Res
         // once can be served from the webview's own memory afterwards. The
         // backend cache still holds it; this saves the second copy.
         .header("Cache-Control", "private, max-age=60");
+    for (k, val) in protocol::cors_headers() {
+        builder = builder.header(k, val);
+    }
     for (k, val) in protocol::tile_headers(tile.width, tile.height, tile.stride) {
         builder = builder.header(k, val);
     }

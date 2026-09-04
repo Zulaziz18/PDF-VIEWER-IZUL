@@ -108,7 +108,25 @@ belum familiar dengan command line, git, atau proses build. Instruksi harus:
        menolak yang tidak cocok dengan pesan yang menyuruh
        `cargo build --workspace`; (c) `izul_ipc::PROTOCOL_VERSION` wajib
        dinaikkan tiap kali bentuk `Request`/`Response` berubah.
-    5. **Heartbeat membunuh pekerja yang belum pernah disapa.** `sweep()`
+    5. **Balasan ubin diblokir CORS** — ini penyebab terakhir halaman putih,
+       ditemukan setelah keempat perbaikan di atas benar tapi halaman masih
+       kosong. Halaman berjalan di `http://localhost:5173` (mode dev),
+       sedangkan ubin diambil dari `http://izul.localhost` — lintas asal.
+       Balasan tanpa `Access-Control-Allow-Origin` dibuang browser sebelum
+       kode frontend melihatnya: `fetch` menolak dengan `TypeError: Failed to
+       fetch` dan DevTools melaporkan "Response headers (0)", yang tidak bisa
+       dibedakan dari permintaan yang tidak pernah dijawab. Protokol IPC dan
+       aset bawaan Tauri memasang header ini sendiri; protokol yang
+       didaftarkan tangan harus melakukannya sendiri. Setengah keduanya wajib:
+       tanpa `Access-Control-Expose-Headers`, header `X-Izul-Width` terbaca
+       `null` dan ubin yang sampai utuh tetap ditolak karena "tanpa dimensi".
+       **Dibuktikan** dengan menjalankan Chromium sungguhan (Playwright) dan
+       dua endpoint — tanpa header CORS menghasilkan `TypeError: Failed to
+       fetch`, dengan header menghasilkan 200 dan header terbaca. Kalau ada
+       protokol kustom baru ditambahkan nanti, pasang `cors_headers()` di
+       **semua** balasannya termasuk yang galat, kalau tidak status 409/410
+       pun tidak akan pernah sampai ke frontend.
+    6. **Heartbeat membunuh pekerja yang belum pernah disapa.** `sweep()`
        memeriksa "diam berapa lama" **sebelum** mencoba ping, padahal diam
        hanya berarti "belum diajak bicara" — dan penyebab utamanya adalah
        supervisor sendiri, karena menghidupkan 8 pekerja butuh ~2 detik

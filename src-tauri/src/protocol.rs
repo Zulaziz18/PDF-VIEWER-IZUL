@@ -163,15 +163,53 @@ fn query_value(query: &str, key: &str) -> Option<u64> {
         .and_then(|(_, v)| v.parse::<u64>().ok())
 }
 
+/// The tile headers the frontend reads, named once so the list below and the
+/// `Access-Control-Expose-Headers` value cannot drift apart.
+pub const TILE_HEADER_NAMES: [&str; 4] = [
+    "X-Izul-Width",
+    "X-Izul-Height",
+    "X-Izul-Stride",
+    "X-Izul-Format",
+];
+
 /// Headers that let the frontend build an `ImageBitmap` without guessing.
 pub fn tile_headers(width: u32, height: u32, stride: u32) -> [(&'static str, String); 4] {
     [
-        ("X-Izul-Width", width.to_string()),
-        ("X-Izul-Height", height.to_string()),
-        ("X-Izul-Stride", stride.to_string()),
+        (TILE_HEADER_NAMES[0], width.to_string()),
+        (TILE_HEADER_NAMES[1], height.to_string()),
+        (TILE_HEADER_NAMES[2], stride.to_string()),
         // BGRA is PDFium's native order; saying so explicitly means the
         // frontend never has to infer it from the byte count.
-        ("X-Izul-Format", "BGRA8".to_string()),
+        (TILE_HEADER_NAMES[3], "BGRA8".to_string()),
+    ]
+}
+
+/// Cross-origin headers, required on **every** response this protocol makes.
+///
+/// The page and the tiles do not share an origin: the document runs at
+/// `http://localhost:5173` under `tauri dev` and at the app's own origin in a
+/// packaged build, while tiles come from `http://izul.localhost`. A response
+/// without `Access-Control-Allow-Origin` is therefore discarded by the browser
+/// before any code of ours sees it — `fetch` rejects with a bare
+/// `TypeError: Failed to fetch` and DevTools reports zero response headers,
+/// which is indistinguishable from the request never having been answered.
+/// Tauri's own IPC and asset protocols set these for exactly this reason; a
+/// hand-registered protocol has to do it itself.
+///
+/// `Access-Control-Expose-Headers` is the second half and just as necessary:
+/// on a cross-origin response the browser hides every header that is not named
+/// there, so `X-Izul-Width` would read back as `null` and a tile that arrived
+/// perfectly would be rejected for having no dimensions.
+pub fn cors_headers() -> [(&'static str, String); 2] {
+    [
+        // `*` rather than the window's origin: it is what Tauri's own IPC
+        // protocol uses, the response carries no credentials, and the origin
+        // differs between a dev run and a packaged build.
+        ("Access-Control-Allow-Origin", "*".to_string()),
+        (
+            "Access-Control-Expose-Headers",
+            TILE_HEADER_NAMES.join(", "),
+        ),
     ]
 }
 
@@ -344,5 +382,27 @@ mod tests {
         assert_eq!(h[0], ("X-Izul-Width", "2".to_string()));
         assert_eq!(h[2], ("X-Izul-Stride", "8".to_string()));
         assert_eq!(h[3], ("X-Izul-Format", "BGRA8".to_string()));
+    }
+
+    #[test]
+    fn every_response_may_cross_the_origin_boundary() {
+        // Without this the browser discards the answer before the viewport
+        // sees it, and the failure looks exactly like a request that was
+        // never answered at all.
+        let cors = cors_headers();
+        assert_eq!(cors[0], ("Access-Control-Allow-Origin", "*".to_string()));
+    }
+
+    #[test]
+    fn every_header_the_viewport_reads_is_exposed_to_it() {
+        // A cross-origin response hides any header not named here, so a tile
+        // would arrive intact and then be rejected for having no dimensions.
+        let exposed = cors_headers()[1].1.clone();
+        for (name, _) in tile_headers(1, 1, 4) {
+            assert!(
+                exposed.contains(name),
+                "{name} is read by src/viewport/tileSource.ts but not exposed"
+            );
+        }
     }
 }
