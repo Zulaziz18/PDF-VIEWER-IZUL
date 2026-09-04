@@ -39,9 +39,31 @@ belum familiar dengan command line, git, atau proses build. Instruksi harus:
   - `npm ci` berhasil: 179 paket terpasang, 0 kerentanan. Ada peringatan
     `esbuild@0.28.2` soal install-scripts belum di-allowlist — ini normal,
     bukan error, tidak menghalangi apa pun.
-  - **Langkah berikutnya (belum dijalankan):** `npm run tauri dev` — proses
-    pertama kali makan 5-15 menit karena Rust mengompilasi dari nol. Belum
-    dikonfirmasi apakah jendela aplikasi berhasil terbuka.
+  - **Aplikasi berhasil dijalankan** dengan `npm run tauri dev`, jendela
+    terbuka, status bar menunjukkan "Pekerja 8/8". Sempat ada beberapa
+    pekerja "dimatikan karena diam terlalu lama" lalu pulih sendiri saat
+    startup pertama — kemungkinan besar cuma build `dev` (belum optimal)
+    lambat memuat PDFium di 8 proses sekaligus; belum jadi masalah kalau
+    tidak berulang terus-menerus.
+  - **Dua bug ditemukan dan sudah diperbaiki** lewat pengujian langsung di
+    Windows-nya (keduanya baru ketahuan sekarang karena sebelumnya belum ada
+    yang menjalankan build sungguhan di Windows):
+    1. Tombol "Buka Berkas" tidak merespons sama sekali — Tauri v2 butuh
+       berkas `src-tauri/capabilities/default.json` eksplisit untuk plugin
+       dialog, kalau tidak ada permintaan dialog ditolak diam-diam. Sudah
+       ditambahkan.
+    2. Setelah tombol diperbaiki dan PDF berhasil dibuka (diuji dengan PDF
+       811 halaman), **semua halaman tampil putih kosong** — tidak ada
+       konten yang tergambar sama sekali, walau frame rate DevTools normal
+       (~50 fps) dan tidak ada pesan galat yang terlihat pengguna. Sebabnya:
+       WebView2 (mesin tampilan Tauri di Windows) menolak `fetch()` ke skema
+       kustom `izul://` secara langsung — itu cuma jalan di macOS/Linux.
+       Harus ditulis sebagai `https://izul.localhost/...`. Kode sudah
+       diperbaiki di kedua sisi (pembuat URI di frontend, pengurai URI di
+       backend) dan diuji dengan test baru untuk bentuk Windows tersebut.
+  - **Langkah berikutnya:** pengguna perlu `git pull` lagi lalu jalankan
+    ulang `npm run tauri dev`, buka PDF yang sama, dan pastikan halamannya
+    kini benar-benar tergambar (bukan putih kosong).
 
 ## Alur kerja proyek ini
 

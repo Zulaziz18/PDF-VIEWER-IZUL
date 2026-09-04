@@ -1,4 +1,4 @@
-//! The `izul://` custom URI protocol for pixels (SPEC 6).
+//! The `izul` custom URI protocol for pixels (SPEC 6).
 //!
 //! Tile bytes must never travel through `invoke`. Tauri's command bridge
 //! serialises payloads as JSON, so a 1 MiB BGRA tile would become several MiB of
@@ -62,7 +62,19 @@ pub enum UriError {
 const MAX_PPP_MILLI: u64 = 64_000;
 
 pub fn parse_tile_uri(uri: &str) -> Result<TileUri, UriError> {
-    let rest = uri.strip_prefix("izul://").ok_or(UriError::WrongScheme)?;
+    // Three spellings reach this handler for the same request. `izul://...`
+    // is what macOS and Linux's webviews will fetch directly. WebView2 on
+    // Windows refuses to `fetch()` a bare custom scheme at all — only
+    // `http`/`https` are fetchable there — so the frontend addresses tiles as
+    // `https://izul.localhost/...`, and Tauri delivers that here exactly as
+    // it arrived. `http://izul.localhost/...` is accepted alongside it because
+    // that is the form Tauri falls back to on Android, which this application
+    // does not ship on but which costs nothing to also accept.
+    let rest = uri
+        .strip_prefix("izul://")
+        .or_else(|| uri.strip_prefix("https://izul.localhost/"))
+        .or_else(|| uri.strip_prefix("http://izul.localhost/"))
+        .ok_or(UriError::WrongScheme)?;
     // Some webview builds normalise a custom scheme through a host component,
     // leaving a leading slash; accept both spellings and nothing else.
     let rest = rest.strip_prefix('/').unwrap_or(rest);
@@ -184,6 +196,25 @@ mod tests {
     #[test]
     fn a_leading_slash_from_the_webview_is_tolerated() {
         assert_eq!(key("izul:///tile/1/0/0/1000/0/0/sharp").doc, 1);
+    }
+
+    #[test]
+    fn the_windows_form_is_what_actually_gets_fetched_there() {
+        // WebView2 will not `fetch()` a bare custom scheme, so the frontend
+        // addresses tiles this way on every platform. If this parse breaks, a
+        // Windows build renders nothing and looks fine everywhere else.
+        assert_eq!(
+            key("https://izul.localhost/tile/1/0/0/1000/0/0/sharp"),
+            key("izul://tile/1/0/0/1000/0/0/sharp")
+        );
+    }
+
+    #[test]
+    fn the_android_form_is_tolerated_too() {
+        assert_eq!(
+            key("http://izul.localhost/tile/1/0/0/1000/0/0/sharp"),
+            key("izul://tile/1/0/0/1000/0/0/sharp")
+        );
     }
 
     #[test]

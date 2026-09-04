@@ -1,5 +1,5 @@
 /**
- * Fetches rendered tiles over the `izul://` protocol and turns them into
+ * Fetches rendered tiles over the `izul` custom protocol and turns them into
  * `ImageBitmap`s.
  *
  * This is the only module permitted to call `fetch` (see eslint.config.js). It
@@ -9,6 +9,13 @@
  * Why not `invoke`: Tauri's command bridge serialises payloads as JSON, so a
  * 1 MiB BGRA tile would arrive as several MiB of base64 and cost a parse on the
  * UI thread. The whole 16 ms frame budget would be gone before anything drew.
+ *
+ * Why `https://izul.localhost/...` and not `izul://...`: WebView2 (the engine
+ * Tauri uses on Windows) refuses to `fetch()` a bare custom scheme — only
+ * `http`/`https` are fetchable there, a restriction macOS and Linux's webviews
+ * do not share. Tauri's registered-protocol handler answers both spellings, so
+ * writing the `https://<scheme>.localhost/...` form is what makes the same
+ * code work on every platform SPEC 4 targets, Windows included.
  *
  * A tile is addressed by what it *is* rather than by where it happens to live,
  * so the same URI is the cache key in the webview, in the backend's LRU, and in
@@ -43,7 +50,7 @@ export interface TileRef {
 /** The URI that identifies a tile, and doubles as its cache key. */
 export function tileUri(ref: TileRef, generation: number, priority: Priority): string {
   return (
-    `izul://tile/${ref.doc}/${ref.page}/${ref.rotation}/${ref.scale}/${ref.col}/${ref.row}/${ref.tier}` +
+    `https://izul.localhost/tile/${ref.doc}/${ref.page}/${ref.rotation}/${ref.scale}/${ref.col}/${ref.row}/${ref.tier}` +
     `?g=${generation}&p=${priority}`
   );
 }

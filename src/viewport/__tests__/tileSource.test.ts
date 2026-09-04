@@ -18,7 +18,9 @@ const ref: TileRef = {
 
 describe("tileUri", () => {
   it("writes the path the backend parses", () => {
-    expect(tileUri(ref, 9, PRIORITY.visible)).toBe("izul://tile/7/3/1/1500/2/1/sharp?g=9&p=2");
+    expect(tileUri(ref, 9, PRIORITY.visible)).toBe(
+      "https://izul.localhost/tile/7/3/1/1500/2/1/sharp?g=9&p=2",
+    );
   });
 
   it("carries the priority the scheduler reads", () => {
@@ -28,7 +30,9 @@ describe("tileUri", () => {
 
   it("names a preview by its edge length rather than a scale", () => {
     const preview: TileRef = { ...ref, tier: "preview", scale: 256, col: 0, row: 0 };
-    expect(tileUri(preview, 4, PRIORITY.preview)).toBe("izul://tile/7/3/1/256/0/0/preview?g=4&p=1");
+    expect(tileUri(preview, 4, PRIORITY.preview)).toBe(
+      "https://izul.localhost/tile/7/3/1/256/0/0/preview?g=4&p=1",
+    );
   });
 });
 
