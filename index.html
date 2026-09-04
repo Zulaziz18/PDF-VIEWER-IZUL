@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PDF Studio Izul</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+
+  <div id="toolbar">
+    <span class="brand">PDF Studio Izul<span class="ver-badge">v6.2</span></span>
+
+    <div class="tb-group">
+      <button class="tb-btn icon-only active" id="btn-panel" title="Tampilkan/sembunyikan daftar judul">📑</button>
+    </div>
+
+    <div class="tb-group">
+      <button class="tb-btn primary" id="btn-open"><span class="ic">📂</span>Buka</button>
+      <button class="tb-btn" id="btn-save" disabled><span class="ic">💾</span>Save</button>
+      <button class="tb-btn" id="btn-saveas" disabled><span class="ic">📄</span>Save As</button>
+      <button class="tb-btn danger" id="btn-close" disabled><span class="ic">✕</span>Tutup</button>
+    </div>
+
+    <div class="tb-group">
+      <button class="tb-btn icon-only" id="btn-undo" title="Undo (Ctrl+Z)" disabled>↩</button>
+      <button class="tb-btn icon-only" id="btn-redo" title="Redo (Ctrl+Y)" disabled>↪</button>
+    </div>
+
+    <div class="tb-group">
+      <button class="tb-btn" id="btn-text" disabled><span class="ic">📝</span>Teks</button>
+      <button class="tb-btn" id="btn-image" disabled><span class="ic">🖼</span>Gambar</button>
+      <button class="tb-btn" id="btn-highlight" disabled><span class="ic">🖍</span>Highlight</button>
+      <button class="tb-btn" id="btn-erase" disabled><span class="ic">🧽</span>Hapus</button>
+    </div>
+
+    <div class="tb-group">
+      <button class="tb-btn icon-only" id="btn-zoom-out" disabled>−</button>
+      <span id="zoom-label">115%</span>
+      <button class="tb-btn icon-only" id="btn-zoom-in" disabled>+</button>
+    </div>
+
+    <div class="spacer"></div>
+    <button class="tb-btn icon-only" id="btn-dl-history" title="Riwayat unduhan / simpan">🕘</button>
+    <button class="tb-btn icon-only" id="btn-info" title="Informasi dokumen" disabled>ℹ</button>
+    <div id="file-chip"><span id="file-chip-text">Belum ada PDF dibuka</span><span id="dirty-dot"></span></div>
+  </div>
+
+  <div id="hl-panel">
+    <span class="hl-label">Warna sorotan</span>
+    <div id="hl-colors" class="swatch-row"></div>
+    <span class="hl-sep"></span>
+    <label class="hl-check"><input type="checkbox" id="hl-free"><span>Mode area bebas</span></label>
+    <span class="hl-hint">Sapu teks atau klik dua kali pada kata &nbsp;·&nbsp; klik sorotan untuk ubah warna / hapus</span>
+  </div>
+
+  <div id="body">
+    <div id="outline-panel">
+      <div id="outline-head">
+        <div class="oh-row">
+          <h2>Daftar Judul / Bab</h2>
+          <button id="outline-close" title="Sembunyikan panel">‹</button>
+        </div>
+        <p id="outline-hint">Buka PDF untuk melihat daftar judul.</p>
+      </div>
+      <div id="outline-list"><div class="outline-empty">Belum ada dokumen</div></div>
+    </div>
+
+    <button id="panel-reopen" title="Tampilkan daftar judul">📑</button>
+
+    <div id="viewer-wrap">
+      <div id="empty-state">
+        <div class="big-icon">📄</div>
+        <div>Belum ada PDF dibuka</div>
+        <button id="btn-open-empty">Buka File PDF</button>
+      </div>
+      <div id="pages-column" style="display:none"></div>
+    </div>
+  </div>
+
+  <div id="statusbar">
+    <span id="status-text">Siap.</span>
+    <span id="page-indicator">- / -</span>
+  </div>
+</div>
+
+<div id="an-toolbar">
+  <div id="an-text-tools" class="an-tools">
+    <button class="mini-btn" id="an-edit">✏ Edit</button>
+    <span class="mini-sep"></span>
+    <span class="mini-label">Ukuran</span>
+    <input type="number" id="an-size" min="5" max="200" value="16">
+    <button class="mini-btn toggle" id="an-bold"><b>B</b></button>
+    <button class="mini-btn toggle" id="an-italic"><i>I</i></button>
+    <span class="mini-sep"></span>
+    <div class="cdd" id="an-color-dd"></div>
+    <span class="mini-sep"></span>
+  </div>
+
+  <div id="an-hl-tools" class="an-tools">
+    <span class="mini-label">Warna sorotan</span>
+    <div class="cdd" id="an-hl-color-dd"></div>
+    <span class="mini-sep"></span>
+  </div>
+
+  <div id="an-img-tools" class="an-tools">
+    <button class="mini-btn" id="an-crop">✂ Crop</button>
+    <button class="mini-btn" id="an-crop-reset">↺ Reset Crop</button>
+    <button class="mini-btn" id="an-rmbg">🪄 Hapus Latar</button>
+    <span class="mini-sep"></span>
+  </div>
+
+  <button class="mini-btn del" id="an-delete">🗑 Hapus</button>
+</div>
+
+<div id="dl-panel">
+  <div class="dl-head">
+    <h3>Riwayat Simpan / Unduhan</h3>
+    <button id="dl-clear-all" title="Hapus semua riwayat">🗑 Bersihkan</button>
+    <button id="dl-close">✕</button>
+  </div>
+  <div id="dl-list"><div class="dl-empty">Belum ada riwayat.</div></div>
+</div>
+
+<div class="modal-overlay" id="modal-overlay">
+  <div class="modal-box">
+    <h3 id="modal-title"></h3>
+    <p id="modal-body"></p>
+    <div class="modal-actions" id="modal-actions"></div>
+  </div>
+</div>
+
+<div id="toast"></div>
+<input type="file" id="file-input" accept="application/pdf" style="display:none">
+<input type="file" id="img-input" accept="image/png,image/jpeg" style="display:none">
+
+<script src="vendor/pdf-lib.min.js"></script>
+<script>
+  // Cek dini: kalau pdf-lib.min.js gagal dimuat (folder vendor hilang/tidak
+  // lengkap), tampilkan pesan JELAS di layar - bukan diam mati total.
+  window.addEventListener("load", function () {
+    if (!window.PDFLib) {
+      document.getElementById("app").innerHTML =
+        '<div style="max-width:560px;margin:80px auto;padding:24px 28px;' +
+        'background:#fff8ec;border:1px solid #e8ddc4;border-radius:14px;' +
+        'font-family:Segoe UI,sans-serif;color:#3d3628;line-height:1.7">' +
+        '<h2 style="margin-top:0;color:#b3261e">Folder vendor tidak lengkap</h2>' +
+        '<p>Aplikasi ini butuh folder <b>vendor</b> (berisi pdf-lib.min.js, ' +
+        'pdf.min.mjs, dst) di lokasi yang sama dengan index.html, tapi ' +
+        'file itu tidak ditemukan atau gagal dimuat.</p>' +
+        '<p><b>Cara memperbaiki:</b><br>' +
+        '1. Pastikan folder <code>vendor</code> ada persis di sebelah file ' +
+        'index.html ini (bukan di folder lain)<br>' +
+        '2. Kalau baru download, download ulang - kadang folder besar ' +
+        'terpotong saat proses download<br>' +
+        '3. Refresh halaman ini (F5) setelah folder vendor lengkap</p>' +
+        '</div>';
+    }
+  });
+</script>
+<script type="module" src="app.js"></script>
+</body>
+</html>
