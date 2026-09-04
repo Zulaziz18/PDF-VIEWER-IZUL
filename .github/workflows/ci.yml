@@ -65,7 +65,11 @@ jobs:
         shell: bash
         run: |
           python3 -m pip install --quiet reportlab pikepdf pypdf pillow
-          python3 bench/make_fixtures.py test-fixtures text
+          # `text` is the 500-page document the pipeline tests measure against;
+          # `viewer` is the small one with an outline, mixed page sizes and a
+          # page carrying its own /Rotate, which is what the Phase 1 render
+          # tests need in order to guard anything.
+          python3 bench/make_fixtures.py test-fixtures text viewer
 
       # A silently skipped integration test guards nothing, so a missing
       # prerequisite fails the build here instead of printing a note nobody reads.
@@ -87,6 +91,9 @@ jobs:
       # SPEC 0: strict, noUncheckedIndexedAccess, and no `any`.
       - run: npm run typecheck
       - run: npm run lint
+      # Pure modules — layout, geometry, prediction, text grouping — carry the
+      # rules the viewport is built on, and SPEC 16 asks for them to be tested.
+      - run: npm test
       - run: npm run build
 
   version-consistency:

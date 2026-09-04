@@ -47,7 +47,7 @@ pub struct Pool {
     session: u64,
     paths: WorkerPaths,
     sandbox: Sandbox,
-    workers: Vec<Option<Worker>>,
+    workers: Vec<Option<Arc<Worker>>>,
     failures: Vec<u32>,
     docs: HashMap<DocId, DocSlot>,
     poison: PoisonList,
@@ -85,7 +85,7 @@ impl Pool {
         for id in 0..size as u32 {
             let w = Worker::spawn(id, session, &paths, &sandbox).await?;
             tracing::info!(worker = id, pid = w.pid(), "pekerja siap");
-            workers.push(Some(w));
+            workers.push(Some(Arc::new(w)));
         }
         Ok(Pool {
             session,
@@ -153,24 +153,35 @@ impl Pool {
         self.request_on(index, req).await
     }
 
-    pub async fn request(&self, doc: DocId, req: Request) -> Result<Response, WorkerError> {
-        let slot = self.docs.get(&doc).ok_or(WorkerError::Gone)?;
-        self.request_on(slot.worker, req).await
+    /// The worker holding a document, as a handle that outlives the pool lock.
+    ///
+    /// This is how the render pipeline avoids serialising every tile behind the
+    /// supervisor's lock: it takes the handle, releases the lock, and only then
+    /// waits for pixels.
+    pub fn worker_for(&self, doc: DocId) -> Option<Arc<Worker>> {
+        let slot = self.docs.get(&doc)?;
+        self.workers.get(slot.worker)?.clone()
+    }
+
+    /// Sends one request to a worker under the standard timeout.
+    ///
+    /// A bounded wait, so a worker that wedges on one pathological page cannot
+    /// leave a UI call pending forever. The heartbeat sweep is what then
+    /// notices the worker is gone and replaces it.
+    pub async fn ask(worker: &Worker, req: Request) -> Result<Response, WorkerError> {
+        match tokio::time::timeout(REQUEST_TIMEOUT, worker.request(req)).await {
+            Ok(result) => result,
+            Err(_) => Err(WorkerError::Unresponsive(REQUEST_TIMEOUT)),
+        }
     }
 
     async fn request_on(&self, index: usize, req: Request) -> Result<Response, WorkerError> {
         let worker = self
             .workers
             .get(index)
-            .and_then(|w| w.as_ref())
+            .and_then(|w| w.clone())
             .ok_or(WorkerError::Gone)?;
-        // A bounded wait, so a worker that wedges on one pathological page
-        // cannot leave a UI call pending forever. The heartbeat sweep is what
-        // then notices the worker is gone and replaces it.
-        match tokio::time::timeout(REQUEST_TIMEOUT, worker.request(req)).await {
-            Ok(result) => result,
-            Err(_) => Err(WorkerError::Unresponsive(REQUEST_TIMEOUT)),
-        }
+        Self::ask(&worker, req).await
     }
 
     pub fn worker_ring(&self, doc: DocId) -> Option<Arc<izul_ipc::TileRing>> {
@@ -190,7 +201,7 @@ impl Pool {
         let mut healthy: Vec<usize> = Vec::new();
 
         for index in 0..self.workers.len() {
-            let Some(worker) = self.workers.get_mut(index).and_then(|w| w.as_mut()) else {
+            let Some(worker) = self.workers.get(index).and_then(|w| w.clone()) else {
                 casualties.push(index);
                 continue;
             };
@@ -246,7 +257,7 @@ impl Pool {
         self.poison.worker_died_holding(&keys);
 
         if let Some(slot) = self.workers.get_mut(index) {
-            if let Some(mut old) = slot.take() {
+            if let Some(old) = slot.take() {
                 old.kill();
             }
         }
@@ -261,7 +272,7 @@ impl Pool {
             Ok(w) => {
                 tracing::info!(worker = index, pid = w.pid(), "pekerja hidup kembali");
                 if let Some(slot) = self.workers.get_mut(index) {
-                    *slot = Some(w);
+                    *slot = Some(Arc::new(w));
                 }
             }
             Err(e) => {
@@ -297,7 +308,7 @@ impl Pool {
 
     pub async fn shutdown(&mut self) {
         for slot in self.workers.iter_mut() {
-            if let Some(w) = slot.as_mut() {
+            if let Some(w) = slot.take() {
                 w.shutdown().await;
             }
         }

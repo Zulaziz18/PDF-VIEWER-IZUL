@@ -14,6 +14,37 @@ export const id = {
   "empty.open": "Buka Berkas",
   "empty.recent": "Berkas Terakhir",
   "empty.noRecent": "Belum ada riwayat.",
+  "empty.missing": "Berkas tidak ditemukan di lokasi terakhir",
+
+  "toolbar.sidebar": "Panel samping",
+
+  "nav.page": "Halaman",
+  "nav.previous": "Halaman sebelumnya",
+  "nav.next": "Halaman berikutnya",
+
+  "zoom.in": "Perbesar",
+  "zoom.out": "Perkecil",
+  "zoom.fitWidth": "Lebar",
+  "zoom.fitPage": "Muat",
+  "zoom.actual": "100%",
+
+  "rotate.left": "Putar kiri",
+  "rotate.right": "Putar kanan",
+  "rotate.page": "Putar halaman ini",
+
+  "view.single": "Satu",
+  "view.dual": "Dua",
+  "view.dualCover": "Dua + sampul",
+  "view.horizontal": "Mendatar",
+
+  "sidebar.label": "Panel samping",
+  "sidebar.thumbnails": "Halaman",
+  "sidebar.outline": "Daftar Isi",
+  "sidebar.noOutline": "Dokumen ini tidak punya daftar isi.",
+  "sidebar.untitled": "(tanpa judul)",
+
+  "viewport.label": "Tampilan dokumen",
+  "viewport.textLayer": "Lapisan teks",
 
   "status.page": "Halaman",
   "status.of": "dari",
@@ -21,6 +52,9 @@ export const id = {
   "status.workers": "Pekerja",
   "status.rendering": "Merender…",
   "status.ready": "Siap",
+  "status.cache": "Cache",
+  "status.cacheHit": "Kena cache",
+  "status.encrypted": "Terenkripsi",
 
   "about.title": "Tentang",
   "about.version": "Versi",

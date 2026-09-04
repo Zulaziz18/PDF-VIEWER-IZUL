@@ -1,0 +1,22 @@
+[package]
+name = "izul-render"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "Cache ubin, penjadwal, dan pembatalan untuk pipeline render (SPEC 9)"
+
+[dependencies]
+izul-ipc.workspace = true
+izul-model.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tokio.workspace = true
+parking_lot.workspace = true
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt", "time", "test-util"] }
+
+[lints]
+workspace = true

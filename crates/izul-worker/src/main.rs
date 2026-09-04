@@ -35,7 +35,9 @@ mod session;
 use std::path::PathBuf;
 
 use izul_ipc::codec::{read_frame, write_frame};
-use izul_ipc::message::{DocId, Envelope, ErrorKind, Request, RequestId, Response, SlotRef};
+use izul_ipc::message::{
+    DocId, Envelope, ErrorKind, OutlineEntry, Request, RequestId, Response, SlotRef,
+};
 use izul_ipc::ring::{TileRing, TILE_EDGE};
 use izul_ipc::{region_bytes, ChannelName, SharedRegion};
 use izul_pdf::render::Quality;
@@ -232,11 +234,15 @@ where
             source,
             dest_w,
             dest_h,
+            rotation,
             quality,
             generation,
-            ..
         } => {
             sess.bump_generation(doc, generation);
+            // The cheap half of cancellation, and the half that matters: a tile
+            // the user has already zoomed past never reaches PDFium at all. The
+            // unit of work is one tile, so this check *is* SPEC 6's "at tile
+            // boundaries" (SPEC 6).
             if !sess.is_current(doc, generation) {
                 return reply(channel, id, Response::Superseded { doc, generation }).await;
             }
@@ -244,17 +250,17 @@ where
                 return fail_kind(channel, id, Some(doc), ErrorKind::BadRequest, "doc.unknown")
                     .await;
             };
-            match render_tile(
-                ring,
-                &open.doc,
-                doc,
+            let req = TileRequest {
                 page,
                 source,
                 dest_w,
                 dest_h,
-                quality_of(quality),
-                generation.0,
-            ) {
+                rotation,
+                draw_annotations: true,
+                quality: quality_of(quality),
+                limit_image_cache: false,
+            };
+            match render_into_ring(ring, &open.doc, doc, &req, generation.0) {
                 Ok(slot) => {
                     reply(
                         channel,
@@ -272,101 +278,115 @@ where
             }
         }
 
-        Request::RenderThumb {
+        Request::RenderPreview {
             doc,
-            pages,
+            page,
             max_edge_px,
+            rotation,
             generation,
         } => {
             let Some(open) = sess.get(doc) else {
                 return fail_kind(channel, id, Some(doc), ErrorKind::BadRequest, "doc.unknown")
                     .await;
             };
-            for page in pages.first..pages.last.min(open.doc.page_count()) {
-                if !sess.is_current(doc, generation) {
-                    return reply(channel, id, Response::Superseded { doc, generation }).await;
+            // A preview is deliberately *not* generation-gated. It depends on
+            // neither zoom nor scroll, it is what stops the viewport showing a
+            // white page, and it costs a couple of milliseconds — dropping it
+            // because the user kept scrolling would defeat its whole purpose.
+            let size = match open.doc.page_display_size(page, rotation) {
+                Ok(s) => s,
+                Err(e) => return fail(channel, id, Some(doc), &e).await,
+            };
+            let cap = max_edge_px.clamp(16, TILE_EDGE) as f32;
+            let scale = size.scale_to_fit(cap, cap);
+            let req = TileRequest {
+                page,
+                source: PdfRectF::new(0.0, 0.0, size.width, size.height),
+                dest_w: ((size.width * scale).round() as u32).clamp(1, TILE_EDGE),
+                dest_h: ((size.height * scale).round() as u32).clamp(1, TILE_EDGE),
+                rotation,
+                draw_annotations: true,
+                // The first tier is about arriving, not about being beautiful.
+                quality: Quality::Fast,
+                limit_image_cache: false,
+            };
+            let rendered = render_into_ring(ring, &open.doc, doc, &req, generation.0);
+            // A preview sweep over 500 pages must not leave 500 parsed pages
+            // resident, and a preview is by definition a page we are not
+            // otherwise working on.
+            open.doc.release_page(page);
+            match rendered {
+                Ok(slot) => {
+                    reply(
+                        channel,
+                        id,
+                        Response::TileReady {
+                            doc,
+                            page,
+                            slot,
+                            generation,
+                        },
+                    )
+                    .await
                 }
-                let Ok(size) = open.doc.page_size_fast(page) else {
-                    continue;
-                };
-                let scale = size.scale_to_fit(max_edge_px as f32, max_edge_px as f32);
-                let source = PdfRectF::new(0.0, 0.0, size.width, size.height);
-                let w = ((size.width * scale).round() as u32).clamp(1, TILE_EDGE);
-                let h = ((size.height * scale).round() as u32).clamp(1, TILE_EDGE);
-                match render_tile(
-                    ring,
-                    &open.doc,
-                    doc,
-                    page,
-                    source,
-                    w,
-                    h,
-                    Quality::Fast,
-                    generation.0,
-                ) {
-                    Ok(slot) => {
-                        reply(channel, id, Response::ThumbReady { doc, page, slot }).await?
-                    }
-                    Err(e) => return fail(channel, id, Some(doc), &e).await,
-                }
-                // Release immediately: a thumbnail sweep over 500 pages must not
-                // leave 500 parsed pages resident.
-                open.doc.release_page(page);
+                Err(e) => fail(channel, id, Some(doc), &e).await,
             }
-            reply(
-                channel,
-                id,
-                Response::Progress {
-                    doc,
-                    done: pages.last,
-                    total: pages.last,
-                },
-            )
-            .await
         }
 
         Request::ExtractText {
             doc,
-            pages,
+            page,
             with_boxes,
+            rotation,
         } => {
             let Some(open) = sess.get(doc) else {
                 return fail_kind(channel, id, Some(doc), ErrorKind::BadRequest, "doc.unknown")
                     .await;
             };
-            for page in pages.first..pages.last.min(open.doc.page_count()) {
-                let resp = if with_boxes {
-                    match open.doc.page_text_boxed(page) {
-                        Ok(pt) => Response::TextReady {
-                            doc,
-                            page,
-                            text: pt.text,
-                            chars: pt
-                                .chars
-                                .into_iter()
-                                .map(|c| izul_ipc::CharBoxWire {
-                                    unicode: c.unicode,
-                                    rect: c.rect,
-                                })
-                                .collect(),
-                        },
-                        Err(e) => return fail(channel, id, Some(doc), &e).await,
-                    }
-                } else {
-                    match open.doc.page_text(page) {
-                        Ok(text) => Response::TextReady {
-                            doc,
-                            page,
-                            text,
-                            chars: Vec::new(),
-                        },
-                        Err(e) => return fail(channel, id, Some(doc), &e).await,
-                    }
-                };
-                reply(channel, id, resp).await?;
-                open.doc.release_page(page);
+            let resp = if with_boxes {
+                match open.doc.page_text_boxed(page, rotation) {
+                    Ok(pt) => Response::TextReady {
+                        doc,
+                        page,
+                        text: pt.text,
+                        chars: pt
+                            .chars
+                            .into_iter()
+                            .map(|c| izul_ipc::CharBoxWire {
+                                unicode: c.unicode,
+                                rect: c.rect,
+                            })
+                            .collect(),
+                    },
+                    Err(e) => return fail(channel, id, Some(doc), &e).await,
+                }
+            } else {
+                match open.doc.page_text(page) {
+                    Ok(text) => Response::TextReady {
+                        doc,
+                        page,
+                        text,
+                        chars: Vec::new(),
+                    },
+                    Err(e) => return fail(channel, id, Some(doc), &e).await,
+                }
+            };
+            reply(channel, id, resp).await
+        }
+
+        Request::Outline { doc } => {
+            let Some(open) = sess.get(doc) else {
+                return fail_kind(channel, id, Some(doc), ErrorKind::BadRequest, "doc.unknown")
+                    .await;
+            };
+            match open.doc.outline() {
+                Ok(tree) => {
+                    let mut nodes = Vec::new();
+                    flatten_outline(&tree, 0, &mut nodes);
+                    reply(channel, id, Response::OutlineReady { doc, nodes }).await
+                }
+                Err(e) => fail(channel, id, Some(doc), &e).await,
             }
-            Ok(())
         }
 
         // Search lands in Phase 2, where the FTS5 index it cooperates with is
@@ -386,33 +406,40 @@ where
     }
 }
 
+/// Flattens the outline tree onto the wire's depth-tagged list.
+fn flatten_outline(nodes: &[izul_pdf::OutlineNode], depth: u16, out: &mut Vec<OutlineEntry>) {
+    for node in nodes {
+        out.push(OutlineEntry {
+            title: node.title.clone(),
+            depth,
+            page: node.page,
+            y: node.y,
+        });
+        flatten_outline(&node.children, depth.saturating_add(1), out);
+    }
+}
+
 /// Renders one tile into a ring slot and publishes it.
-#[allow(clippy::too_many_arguments)]
-fn render_tile(
+fn render_into_ring(
     ring: &TileRing,
     doc: &izul_pdf::Document,
     doc_id: DocId,
-    page: u32,
-    source: PdfRectF,
-    dest_w: u32,
-    dest_h: u32,
-    quality: Quality,
+    req: &TileRequest,
     generation: u64,
 ) -> Result<SlotRef, PdfError> {
+    // `claim_or_reclaim` rather than `claim`: when the ring is full of tiles the
+    // UI has not collected, the tile the user is waiting for now is worth more
+    // than the oldest one they already scrolled past.
     let mut slot = ring.claim_or_reclaim().map_err(|_| PdfError::Cancelled)?;
-    let req = TileRequest {
-        page,
-        source,
-        dest_w: dest_w.min(TILE_EDGE),
-        dest_h: dest_h.min(TILE_EDGE),
-        draw_annotations: true,
-        quality,
-        limit_image_cache: false,
+    let clamped = TileRequest {
+        dest_w: req.dest_w.min(TILE_EDGE),
+        dest_h: req.dest_h.min(TILE_EDGE),
+        ..*req
     };
-    let geom = doc.render_tile_into(&req, slot.bytes())?;
+    let geom = doc.render_tile_into(&clamped, slot.bytes())?;
     slot.publish(
         doc_id.0,
-        page,
+        req.page,
         generation,
         geom.width,
         geom.height,

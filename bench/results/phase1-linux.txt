@@ -1,0 +1,134 @@
+# Fase 1 — hasil pengukuran pipeline viewer
+
+Dihasilkan oleh `./target/release/viewport --json bench/results/phase1-linux.json`.
+Angka mentah ada di `phase1-linux.json`.
+
+## Yang diukur, dan yang tidak
+
+Yang diukur adalah pipeline yang dikirim: proses pekerja tersandbox sungguhan,
+ring memori bersama sungguhan, cache ubin sungguhan, antrean prioritas dan
+pembatalan sungguhan — didorong persis seperti viewport mendorongnya.
+
+Yang **tidak** ada di sini: webview. Ia tidak bisa berjalan tanpa layar, jadi
+klaim SPEC 13 tentang "mengunci di refresh rate, nol frame drop" tidak bisa
+dibuktikan di sini dan **belum terbukti**. Yang bisa diukur tentangnya diukur:
+pada tiap frame 60 fps, apakah pipeline punya sesuatu untuk digambar
+(`frame dengan halaman putih`) dan apakah versi tajamnya sudah siap
+(`frame tanpa ubin tajam`). Menggambar sendiri terjadi di kompositor.
+
+Catatan per angka:
+
+- **startup** hanya bagian yang bisa diukur dari anggaran cold start 1 detik:
+  spawn pekerja, kanal, pemetaan ring, muat PDFium, dan ping pertama. Jendela,
+  webview, dan frame pertama adalah sisanya dan milik pengukuran di Windows.
+  Angka Linux ini juga diuntungkan page cache yang panas.
+- **buka -> pratinjau halaman 1** dihitung sejak permintaan `Open`, karena di
+  situlah penantian pengguna dimulai: kolam pekerja sudah berjalan saat sebuah
+  berkas dibuka. Termasuk mengurai dokumen dan membaca ukuran seluruh halaman.
+- **zoom -> ada yang bisa digambar = 0,00 ms** bukan pembulatan: pratinjau
+  halaman tidak bergantung pada skala, jadi setelah zoom ia sudah ada di cache
+  dan frame berikutnya menggambarnya diperbesar. Itulah gunanya render dua
+  tingkat. Yang dikejar 150 ms adalah baris di bawahnya.
+- **keputusan per frame** hanya mencakup pembukuan (halaman terlihat, ubin mana
+  yang kurang, apa yang diminta), bukan menggambar. Ia adalah batas bawah biaya
+  frame, dan dilaporkan sebagai batas bawah.
+- **frame dengan halaman putih = 1** adalah frame pertama, sebelum pratinjau
+  pertama tiba. Sesudah itu tidak ada lagi.
+- **scroll** dijalankan 2500 px/detik selama 4 detik pada zoom fit-width.
+- **cancel** adalah roda zoom diputar cepat: delapan langkah berjarak 8 ms,
+  sampai zoom 7,3x. Yang dihitung adalah ubin yang dibuang tanpa pernah
+  menyentuh PDFium.
+- **memory** menghitung dua sisi: proses ini (memegang cache ubin, berdiri
+  mewakili proses UI) dan proses pekerja. Target SPEC 13 adalah 1,5 GB.
+
+
+======================================================================================
+HOST
+--------------------------------------------------------------------------------------
+linux x86_64 · Intel(R) Xeon(R) Processor @ 2.10GHz · 4 core · 16075 MB RAM · profil release
+
+======================================================================================
+STARTUP
+--------------------------------------------------------------------------------------
+pekerja                    spawn + kanal + PDFium + ping pertama n=5    p50=    2.05ms  p95=    2.56ms  p99=    2.56ms  max=    2.56ms  LULUS vs 1000ms
+
+======================================================================================
+FIRST-PAGE
+--------------------------------------------------------------------------------------
+text-500p.pdf              buka dokumen (termasuk ukuran semua halaman) n=5    p50=    3.76ms  p95=    4.02ms  p99=    4.02ms  max=    4.02ms  
+text-500p.pdf              buka -> pratinjau halaman 1      n=5    p50=    7.66ms  p95=    9.14ms  p99=    9.14ms  max=    9.14ms  LULUS vs 400ms
+text-500p.pdf              buka -> layar pertama tajam      n=5    p50=   20.70ms  p95=   22.13ms  p99=   22.13ms  max=   22.13ms  LULUS vs 400ms
+
+======================================================================================
+FILL
+--------------------------------------------------------------------------------------
+text-500p.pdf              layar penuh, cache dingin        n=8    p50=   17.49ms  p95=   23.20ms  p99=   23.20ms  max=   23.20ms  
+text-500p.pdf              layar penuh, cache panas         n=8    p50=    1.19ms  p95=    2.21ms  p99=    2.21ms  max=    2.21ms  LULUS vs 16ms
+
+======================================================================================
+ZOOM
+--------------------------------------------------------------------------------------
+text-500p.pdf              zoom -> ada yang bisa digambar   n=8    p50=    0.00ms  p95=    0.00ms  p99=    0.00ms  max=    0.00ms  LULUS vs 16ms
+text-500p.pdf              zoom -> versi tajam              n=8    p50=   10.50ms  p95=   25.59ms  p99=   25.59ms  max=   25.59ms  LULUS vs 150ms
+
+======================================================================================
+SCROLL
+--------------------------------------------------------------------------------------
+text-500p.pdf              keputusan per frame (tanpa menggambar) n=240  p50=    0.00ms  p95=    0.03ms  p99=    0.05ms  max=    0.08ms  LULUS vs 16ms
+text-500p.pdf              frame dengan halaman putih              1.0 frame  
+text-500p.pdf              frame tanpa ubin tajam                 21.0 frame  
+text-500p.pdf              ubin dirender selama scroll           100.0 ubin  
+text-500p.pdf              cache terpakai                         67.9 MB  
+
+======================================================================================
+CANCEL
+--------------------------------------------------------------------------------------
+text-500p.pdf              delapan langkah zoom -> tajam    n=1    p50=   73.62ms  p95=   73.62ms  p99=   73.62ms  max=   73.62ms  
+text-500p.pdf              ubin diminta seluruhnya                64.0 ubin  
+text-500p.pdf              ubin dibuang tanpa dirender            18.0 ubin  
+text-500p.pdf              ubin benar-benar dirender              46.0 ubin  
+
+======================================================================================
+FIRST-PAGE
+--------------------------------------------------------------------------------------
+mixed-500p.pdf             buka dokumen (termasuk ukuran semua halaman) n=5    p50=    6.40ms  p95=    6.88ms  p99=    6.88ms  max=    6.88ms  
+mixed-500p.pdf             buka -> pratinjau halaman 1      n=5    p50=   15.84ms  p95=   18.04ms  p99=   18.04ms  max=   18.04ms  LULUS vs 400ms
+mixed-500p.pdf             buka -> layar pertama tajam      n=5    p50=   32.13ms  p95=   35.41ms  p99=   35.41ms  max=   35.41ms  LULUS vs 400ms
+
+======================================================================================
+FILL
+--------------------------------------------------------------------------------------
+mixed-500p.pdf             layar penuh, cache dingin        n=8    p50=   38.31ms  p95=   44.26ms  p99=   44.26ms  max=   44.26ms  
+mixed-500p.pdf             layar penuh, cache panas         n=8    p50=    1.30ms  p95=    1.41ms  p99=    1.41ms  max=    1.41ms  LULUS vs 16ms
+
+======================================================================================
+ZOOM
+--------------------------------------------------------------------------------------
+mixed-500p.pdf             zoom -> ada yang bisa digambar   n=8    p50=    0.00ms  p95=    0.00ms  p99=    0.00ms  max=    0.00ms  LULUS vs 16ms
+mixed-500p.pdf             zoom -> versi tajam              n=8    p50=   10.77ms  p95=   16.88ms  p99=   16.88ms  max=   16.88ms  LULUS vs 150ms
+
+======================================================================================
+SCROLL
+--------------------------------------------------------------------------------------
+mixed-500p.pdf             keputusan per frame (tanpa menggambar) n=240  p50=    0.01ms  p95=    0.03ms  p99=    0.03ms  max=    0.04ms  LULUS vs 16ms
+mixed-500p.pdf             frame dengan halaman putih              1.0 frame  
+mixed-500p.pdf             frame tanpa ubin tajam                 21.0 frame  
+mixed-500p.pdf             ubin dirender selama scroll           100.0 ubin  
+mixed-500p.pdf             cache terpakai                         67.9 MB  
+
+======================================================================================
+CANCEL
+--------------------------------------------------------------------------------------
+mixed-500p.pdf             delapan langkah zoom -> tajam    n=1    p50=   71.63ms  p95=   71.63ms  p99=   71.63ms  max=   71.63ms  
+mixed-500p.pdf             ubin diminta seluruhnya                64.0 ubin  
+mixed-500p.pdf             ubin dibuang tanpa dirender             5.0 ubin  
+mixed-500p.pdf             ubin benar-benar dirender              59.0 ubin  
+
+======================================================================================
+MEMORY
+--------------------------------------------------------------------------------------
+10 dokumen                 proses UI (termasuk cache ubin)       347.0 MB  
+10 dokumen                 proses pekerja                         81.0 MB  
+10 dokumen                 total                                 428.0 MB  
+10 dokumen                 cache ubin di dalamnya                 62.6 MB  
+10 dokumen                 kenaikan sejak kosong                 187.0 MB  

@@ -24,6 +24,10 @@ tokio = { workspace = true, features = ["rt", "macros", "time", "net", "io-util"
 name = "crash_isolation"
 path = "../tests/crash_isolation.rs"
 
+[[test]]
+name = "render_pipeline"
+path = "../tests/render_pipeline.rs"
+
 [lints.clippy]
 unwrap_used = "allow"
 expect_used = "allow"

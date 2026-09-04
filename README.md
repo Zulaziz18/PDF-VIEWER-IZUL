@@ -6,9 +6,11 @@ tulis, anotasi sebagai objek hidup, dan nol koneksi jaringan.
 Dokumen rujukan proyek adalah [`SPEC.md`](SPEC.md). Berkas ini hanya menjelaskan
 cara membangun.
 
-**Status: Fase 0 selesai.** Fondasi, batas proses, dan spike pengukuran. Belum
-ada viewer yang bisa dipakai membaca — lihat [`CHANGELOG.md`](CHANGELOG.md)
-untuk apa yang ada dan apa yang belum.
+**Status: Fase 1 selesai.** Mesin viewer: pipeline render dua tingkat dengan
+ubin, cache, prefetch dan pembatalan; scroll tervirtualisasi; seluruh mode
+tampilan, zoom dan rotasi; lapisan teks; sidebar thumbnail dan daftar isi.
+Belum ada tab, pencarian, maupun anotasi — lihat [`CHANGELOG.md`](CHANGELOG.md)
+untuk apa yang ada, apa yang belum, dan angka pengukurannya.
 
 ## Membangun
 
@@ -29,12 +31,13 @@ hilang saat pustaka dimuat.
 | Direktori | Isi |
 |---|---|
 | `crates/izul-model` | Objek anotasi dan display list. Murni: tanpa PDFium, tanpa I/O. |
-| `crates/izul-pdf` | Pembungkus PDFium: buka, render, ekstrak teks. |
+| `crates/izul-pdf` | Pembungkus PDFium: buka, render, ekstrak teks, daftar isi. |
+| `crates/izul-render` | Cache ubin, prioritas, penggabungan, pembatalan. Tanpa Tauri. |
 | `crates/izul-ipc` | Pesan, framing, memori bersama. Dipakai kedua sisi. |
 | `crates/izul-worker` | Binari proses pekerja tersandbox. |
 | `crates/izul-store` | SQLite: sesi, recent, indeks, cache. |
 | `src-tauri` | Proses UI: jendela, supervisor, protokol `izul://`. |
-| `src/viewport` | Kanvas imperatif. **Tanpa React** (ditegakkan ESLint). |
+| `src/viewport` | Kanvas imperatif, tata letak, lapisan teks. **Tanpa React** (ditegakkan ESLint). |
 | `bench` | Harness pengukuran dan pembangkit berkas uji. |
 
 `izul-model` tidak boleh menyentuh PDFium atau berkas. Aturan itu bukan gaya:
@@ -45,12 +48,17 @@ jaminan itu hanya berarti bila bisa diuji tanpa merender apa pun.
 
 ```bash
 python3 bench/make_fixtures.py test-fixtures   # ~10 menit
-cargo build --release -p izul-bench
-sudo ./target/release/spike --json bench/results/hasil.json
+cargo build --release
+sudo ./target/release/spike --json bench/results/hasil.json      # Fase 0: PDFium
+./target/release/viewport --json bench/results/hasil-viewer.json # Fase 1: pipeline
 ```
 
-`sudo` diperlukan agar page cache bisa dibuang sebelum pengukuran "cold";
-tanpa itu angka cold akan menyerupai angka warm.
+`sudo` diperlukan pada `spike` agar page cache bisa dibuang sebelum pengukuran
+"cold"; tanpa itu angka cold akan menyerupai angka warm.
+
+`viewport` mendorong pipeline render yang sebenarnya lewat proses pekerja
+sungguhan. Yang tidak bisa diukurnya — frame pacing, yang butuh kompositor —
+dicatat sebagai belum terbukti, bukan dilewatkan diam-diam.
 
 ## Lisensi pihak ketiga
 

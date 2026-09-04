@@ -9,17 +9,48 @@
  * Why not `invoke`: Tauri's command bridge serialises payloads as JSON, so a
  * 1 MiB BGRA tile would arrive as several MiB of base64 and cost a parse on the
  * UI thread. The whole 16 ms frame budget would be gone before anything drew.
+ *
+ * A tile is addressed by what it *is* rather than by where it happens to live,
+ * so the same URI is the cache key in the webview, in the backend's LRU, and in
+ * the log. One fetch either hits a cached bitmap or schedules the render and
+ * waits for it; there is no separate "please render this" call to get out of
+ * step with.
  */
 
-export interface TileHandle {
+/** Which tier of SPEC 9's two-tier render a request belongs to. */
+export type TileTier = "sharp" | "fast" | "preview";
+
+/** How urgent a request is; mirrors `Priority` in the scheduler. */
+export const PRIORITY = { prefetch: 0, preview: 1, visible: 2 } as const;
+export type Priority = (typeof PRIORITY)[keyof typeof PRIORITY];
+
+/** Identity of one tile. Every field is part of the cache key on both sides. */
+export interface TileRef {
   readonly doc: number;
   readonly page: number;
-  readonly slot: number;
-  readonly epoch: number;
-  readonly width: number;
-  readonly height: number;
-  readonly stride: number;
-  readonly uri: string;
+  /** Total rotation in quarter turns, 0..3. */
+  readonly rotation: number;
+  /**
+   * Pixels per PDF point in thousandths — or, for the preview tier, the
+   * bitmap's maximum edge in pixels.
+   */
+  readonly scale: number;
+  readonly col: number;
+  readonly row: number;
+  readonly tier: TileTier;
+}
+
+/** The URI that identifies a tile, and doubles as its cache key. */
+export function tileUri(ref: TileRef, generation: number, priority: Priority): string {
+  return (
+    `izul://tile/${ref.doc}/${ref.page}/${ref.rotation}/${ref.scale}/${ref.col}/${ref.row}/${ref.tier}` +
+    `?g=${generation}&p=${priority}`
+  );
+}
+
+/** A stable key for a tile, without the scheduling parameters. */
+export function tileKey(ref: TileRef): string {
+  return `${ref.doc}/${ref.page}/${ref.rotation}/${ref.scale}/${ref.col}/${ref.row}/${ref.tier}`;
 }
 
 /** A tile whose pixels are ready to draw. */
@@ -27,18 +58,37 @@ export interface DecodedTile {
   readonly bitmap: ImageBitmap;
   readonly width: number;
   readonly height: number;
+  /** Bytes the bitmap occupies, for the viewport's own memory budget. */
+  readonly bytes: number;
 }
 
 /**
- * Raised when the worker recycled the slot before the page asked for it.
+ * Raised when the request belonged to a layout epoch the user has already left,
+ * or when the scheduler shed it under load.
  *
- * Normal during fast scrolling, and not an error the user should ever hear
- * about: the viewport simply requests the tile again at the current generation.
+ * Normal during a fast zoom, and not an error the user should ever hear about:
+ * the viewport simply asks again at the current generation.
  */
+export class SupersededTileError extends Error {
+  constructor(readonly ref: TileRef) {
+    super(`ubin dari generasi lama: ${tileKey(ref)}`);
+    this.name = "SupersededTileError";
+  }
+}
+
+/** Raised when the worker recycled the shared-memory slot before we read it. */
 export class StaleTileError extends Error {
-  constructor(readonly handle: TileHandle) {
-    super(`ubin sudah kedaluwarsa: slot ${handle.slot} epoch ${handle.epoch}`);
+  constructor(readonly ref: TileRef) {
+    super(`ubin sudah kedaluwarsa: ${tileKey(ref)}`);
     this.name = "StaleTileError";
+  }
+}
+
+/** Raised when the document or page is gone — a closed tab, usually. */
+export class MissingTileError extends Error {
+  constructor(readonly ref: TileRef) {
+    super(`ubin tidak tersedia: ${tileKey(ref)}`);
+    this.name = "MissingTileError";
   }
 }
 
@@ -63,18 +113,29 @@ function bgraToRgbaInPlace(buf: Uint8ClampedArray<ArrayBuffer>): void {
  * `signal` lets the viewport abandon tiles for a generation the user has already
  * zoomed past, which is the frontend half of SPEC 6's cancellation rule.
  */
-export async function loadTile(handle: TileHandle, signal?: AbortSignal): Promise<DecodedTile> {
-  const response = await fetch(handle.uri, signal ? { signal } : {});
+export async function loadTile(
+  ref: TileRef,
+  generation: number,
+  priority: Priority,
+  signal?: AbortSignal,
+): Promise<DecodedTile> {
+  const response = await fetch(tileUri(ref, generation, priority), signal ? { signal } : {});
+  if (response.status === 409) {
+    throw new SupersededTileError(ref);
+  }
   if (response.status === 410) {
-    throw new StaleTileError(handle);
+    throw new StaleTileError(ref);
+  }
+  if (response.status === 404) {
+    throw new MissingTileError(ref);
   }
   if (!response.ok) {
     throw new Error(`ubin gagal dimuat: HTTP ${response.status}`);
   }
 
-  const width = Number(response.headers.get("X-Izul-Width") ?? handle.width);
-  const height = Number(response.headers.get("X-Izul-Height") ?? handle.height);
-  const stride = Number(response.headers.get("X-Izul-Stride") ?? handle.stride);
+  const width = Number(response.headers.get("X-Izul-Width") ?? 0);
+  const height = Number(response.headers.get("X-Izul-Height") ?? 0);
+  const stride = Number(response.headers.get("X-Izul-Stride") ?? width * 4);
   if (!Number.isFinite(width) || !Number.isFinite(height) || width <= 0 || height <= 0) {
     throw new Error("ubin tanpa dimensi yang sah");
   }
@@ -90,7 +151,7 @@ export async function loadTile(handle: TileHandle, signal?: AbortSignal): Promis
   // `createImageBitmap` hands the pixels to the compositor; from here on the
   // draw is a GPU blit rather than a CPU copy.
   const bitmap = await createImageBitmap(image);
-  return { bitmap, width, height };
+  return { bitmap, width, height, bytes: width * height * 4 };
 }
 
 /** Copies a padded bitmap into a tightly packed one. */

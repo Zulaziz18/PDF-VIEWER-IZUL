@@ -36,7 +36,7 @@ pub mod transport;
 
 pub use codec::{read_frame, write_frame, CodecError, MAX_FRAME_BYTES};
 pub use message::{
-    CharBoxWire, DocId, Envelope, ErrorKind, Generation, PageRange, RenderQuality, Request,
+    CharBoxWire, DocId, Envelope, ErrorKind, Generation, OutlineEntry, RenderQuality, Request,
     RequestEnvelope, RequestId, Response, ResponseEnvelope, SearchOptions, SlotRef,
 };
 pub use ring::{region_bytes, ReadSlot, RingError, TileRing, WriteSlot, SLOT_BYTES, TILE_EDGE};

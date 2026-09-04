@@ -4,11 +4,13 @@ use std::os::raw::c_int;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use pdfium_render::prelude::{Pdfium, PdfiumLibraryBindings, FPDF_DOCUMENT, FPDF_PAGE, FS_SIZEF};
+use pdfium_render::prelude::{
+    Pdfium, PdfiumLibraryBindings, FPDF_DOCUMENT, FPDF_PAGE, FS_RECTF, FS_SIZEF,
+};
 
 use crate::error::{PdfError, Result};
 use crate::ffi_guard::guard;
-use crate::geom::PageSize;
+use crate::geom::{PageSize, PdfRectF, RotationQuarter};
 
 /// Process-wide PDFium instance.
 ///
@@ -256,6 +258,97 @@ impl Backing {
     }
 }
 
+#[cfg(test)]
+mod geometry_tests {
+    use super::*;
+
+    const A: PdfRectF = PdfRectF {
+        left: 0.0,
+        bottom: 0.0,
+        right: 612.0,
+        top: 792.0,
+    };
+
+    fn geom(intrinsic: RotationQuarter, bbox: PdfRectF) -> PageGeometry {
+        PageGeometry { bbox, intrinsic }
+    }
+
+    #[test]
+    fn without_rotation_display_space_is_user_space_shifted_to_the_origin() {
+        let g = geom(RotationQuarter::None, A);
+        let r = PdfRectF::new(10.0, 20.0, 30.0, 40.0);
+        assert_eq!(g.to_display(r, RotationQuarter::None), r);
+    }
+
+    #[test]
+    fn a_quarter_turn_moves_a_box_to_where_the_glyph_is_drawn() {
+        // Page turned 90 degrees clockwise: what was near the page's bottom-left
+        // is now near the display's top-left, so its display y is close to the
+        // display height (which is the page's width, 612).
+        let g = geom(RotationQuarter::None, A);
+        let r = PdfRectF::new(0.0, 0.0, 10.0, 20.0);
+        let d = g.to_display(r, RotationQuarter::Cw90);
+        assert!((d.left - 0.0).abs() < 1e-3, "left = {}", d.left);
+        assert!((d.right - 20.0).abs() < 1e-3, "right = {}", d.right);
+        assert!((d.top - 612.0).abs() < 1e-3, "top = {}", d.top);
+        assert!((d.bottom - 602.0).abs() < 1e-3, "bottom = {}", d.bottom);
+    }
+
+    #[test]
+    fn the_pages_own_rotation_counts_the_same_as_the_users() {
+        let a = geom(RotationQuarter::Cw90, A)
+            .to_display(PdfRectF::new(0.0, 0.0, 10.0, 20.0), RotationQuarter::None);
+        let b = geom(RotationQuarter::None, A)
+            .to_display(PdfRectF::new(0.0, 0.0, 10.0, 20.0), RotationQuarter::Cw90);
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn a_mapped_box_always_lands_inside_the_displayed_page() {
+        let shifted = PdfRectF::new(-50.0, 20.0, 562.0, 812.0);
+        for intrinsic in [
+            RotationQuarter::None,
+            RotationQuarter::Cw90,
+            RotationQuarter::Cw180,
+            RotationQuarter::Cw270,
+        ] {
+            for extra in [
+                RotationQuarter::None,
+                RotationQuarter::Cw90,
+                RotationQuarter::Cw180,
+                RotationQuarter::Cw270,
+            ] {
+                let g = geom(intrinsic, shifted);
+                let size = g.display_size(extra);
+                let d = g.to_display(PdfRectF::new(-40.0, 30.0, 100.0, 200.0), extra);
+                assert!(d.is_valid(), "{intrinsic:?}+{extra:?}: {d:?}");
+                assert!(
+                    d.left >= -1e-3
+                        && d.bottom >= -1e-3
+                        && d.right <= size.width + 1e-3
+                        && d.top <= size.height + 1e-3,
+                    "{intrinsic:?}+{extra:?}: {d:?} outside {size:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn four_quarter_turns_are_the_identity() {
+        let g = geom(RotationQuarter::None, A);
+        let r = PdfRectF::new(11.0, 23.0, 47.0, 91.0);
+        let mut cur = r;
+        for _ in 0..4 {
+            cur = geom(RotationQuarter::None, A).to_display(cur, RotationQuarter::Cw90);
+            // Each turn maps a 612x792 page onto a 792x612 one and back, so the
+            // box travels around the page and must return exactly.
+        }
+        let _ = g;
+        assert!((cur.left - r.left).abs() < 1e-2, "{cur:?} vs {r:?}");
+        assert!((cur.bottom - r.bottom).abs() < 1e-2, "{cur:?} vs {r:?}");
+    }
+}
+
 /// An open PDF document and its cache of loaded page handles.
 ///
 /// Field order matters and is load-bearing: Rust drops fields in declaration
@@ -309,6 +402,105 @@ impl Drop for Document {
         // page taken from it has just been closed above, and the document is
         // closed exactly once because `Document` is neither `Clone` nor `Copy`.
         unsafe { self.engine.bindings().FPDF_CloseDocument(self.handle) }
+    }
+}
+
+/// A page's shape as the renderer needs it.
+///
+/// Two facts that a page's *size* alone cannot express, and that both change
+/// where a tile has to draw:
+///
+/// * the bounding box (`/MediaBox` intersected with `/CropBox`) need not start
+///   at the origin, so content is offset by its corner;
+/// * the page carries its own `/Rotate`, which PDFium applies for you in
+///   `FPDF_RenderPageBitmap` but *not* when you supply your own matrix — and
+///   supplying our own matrix is the whole reason tiles are possible.
+///
+/// So the tile matrix takes this, not a width and a height.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PageGeometry {
+    /// Bounding box in unrotated user space.
+    pub bbox: PdfRectF,
+    /// The page's own `/Rotate`, in quarter turns clockwise.
+    pub intrinsic: RotationQuarter,
+}
+
+impl PageGeometry {
+    /// Reads the geometry of a loaded page.
+    ///
+    /// Never fails: a page whose bounding box PDFium will not report falls back
+    /// to its reported size, which is what every other reader would draw.
+    pub(crate) fn of_page(engine: &'static Engine, page: FPDF_PAGE) -> Self {
+        let bindings = engine.bindings();
+        // SAFETY: `page` is a live page handle held by the caller's page cache.
+        let intrinsic =
+            RotationQuarter::from_degrees(unsafe { bindings.FPDFPage_GetRotation(page) } * 90);
+        let mut rect = FS_RECTF {
+            left: 0.0,
+            top: 0.0,
+            right: 0.0,
+            bottom: 0.0,
+        };
+        // SAFETY: as above; `rect` is a live, correctly typed out-parameter.
+        let ok = unsafe { bindings.FPDF_GetPageBoundingBox(page, &mut rect) };
+        let bbox = if ok != 0 {
+            PdfRectF::new(rect.left, rect.bottom, rect.right, rect.top)
+        } else {
+            // SAFETY: as above.
+            let (w, h) = unsafe {
+                (
+                    bindings.FPDF_GetPageWidthF(page),
+                    bindings.FPDF_GetPageHeightF(page),
+                )
+            };
+            // Those two are rotation-aware, and a bounding box is not, so undo
+            // the swap before using them as one.
+            if intrinsic.swaps_axes() {
+                PdfRectF::new(0.0, 0.0, h, w)
+            } else {
+                PdfRectF::new(0.0, 0.0, w, h)
+            }
+        };
+        if !bbox.is_valid() {
+            return PageGeometry {
+                bbox: PdfRectF::new(0.0, 0.0, 612.0, 792.0),
+                intrinsic,
+            };
+        }
+        PageGeometry { bbox, intrinsic }
+    }
+
+    /// Maps a rectangle from the page's own user space into display space.
+    ///
+    /// Display space is what the viewport lays out in: origin bottom-left of
+    /// the *displayed* page, extents [`PageGeometry::display_size`]. Text boxes
+    /// come out of PDFium in user space, so without this a selection would sit
+    /// where the glyph would have been if the page were not rotated.
+    pub fn to_display(&self, r: PdfRectF, extra: RotationQuarter) -> PdfRectF {
+        let a = self.point_to_display(r.left, r.bottom, extra);
+        let b = self.point_to_display(r.right, r.top, extra);
+        PdfRectF::new(a.0.min(b.0), a.1.min(b.1), a.0.max(b.0), a.1.max(b.1))
+    }
+
+    fn point_to_display(&self, x: f32, y: f32, extra: RotationQuarter) -> (f32, f32) {
+        let (u, v) = (x - self.bbox.left, y - self.bbox.bottom);
+        let (bw, bh) = (self.bbox.width(), self.bbox.height());
+        match self.intrinsic.plus(extra) {
+            RotationQuarter::None => (u, v),
+            RotationQuarter::Cw90 => (v, bw - u),
+            RotationQuarter::Cw180 => (bw - u, bh - v),
+            RotationQuarter::Cw270 => (bh - v, u),
+        }
+    }
+
+    /// Size of the page as it appears on screen after `extra` rotation is added
+    /// to the page's own.
+    pub fn display_size(&self, extra: RotationQuarter) -> PageSize {
+        let size = PageSize {
+            width: self.bbox.width(),
+            height: self.bbox.height(),
+        };
+        size.rotated(self.intrinsic.plus(extra))
     }
 }
 
@@ -447,6 +639,25 @@ impl Document {
             width: size.width,
             height: size.height,
         })
+    }
+
+    /// Geometry of one page, for the tile matrix.
+    ///
+    /// Loads the page, because neither the bounding box nor `/Rotate` is
+    /// reachable from the page tree alone. Callers that only need a size use
+    /// [`Document::page_size_fast`] instead.
+    pub fn page_geometry(&self, page: u32) -> Result<PageGeometry> {
+        self.check_page(page)?;
+        let engine = self.engine;
+        guard("page_geometry", || {
+            self.with_page(page, |p| Ok(PageGeometry::of_page(engine, p)))
+        })
+    }
+
+    /// Display size of a page at an extra rotation, from the page's real
+    /// bounding box.
+    pub fn page_display_size(&self, page: u32, extra: RotationQuarter) -> Result<PageSize> {
+        Ok(self.page_geometry(page)?.display_size(extra))
     }
 
     /// Sizes of every page, for the viewport's scroll metrics.

@@ -159,6 +159,41 @@ def make_mixed(path):
     c.save()
 
 
+def make_viewer(path):
+    """A small document for the viewer tests: a bookmark tree, pages that are
+    not all the same size, and one page carrying its own /Rotate.
+
+    Phase 1 needs a fixture whose *structure* is interesting rather than whose
+    size is: an outline to walk, a rotated page to prove the tile matrix, and
+    differing page sizes to prove the layout does not assume a uniform grid."""
+    rng = random.Random(SEED + 3)
+    pdfmetrics.registerFont(TTFont("LibSerifV", SERIF))
+    c = rl_canvas.Canvas(str(path), pagesize=letter)
+    sizes = [(PW, PH), (PW, PH), (PH, PW), (PW, PH * 0.75), (PW, PH)] * 2
+    for i, (w, h) in enumerate(sizes):
+        c.setPageSize((w, h))
+        c.setFont("LibSerifV", 24)
+        c.drawString(56, h - 80, f"Bagian {i // 2 + 1} — halaman {i + 1}")
+        c.setFont("LibSerifV", 11)
+        y = h - 120
+        for _ in range(18):
+            c.drawString(56, y, paragraph(rng, 11))
+            y -= 16
+        if i % 2 == 0:
+            c.bookmarkPage(f"p{i}")
+            c.addOutlineEntry(f"Bagian {i // 2 + 1}", f"p{i}", level=0)
+            c.addOutlineEntry(f"Sub {i // 2 + 1}.1", f"p{i}", level=1)
+        c.showPage()
+    c.save()
+
+    # One page rotated by /Rotate, which PDFium applies for a plain render but
+    # not for the matrix-based tile path — so this page is what catches a tile
+    # matrix that ignores the page's own rotation.
+    with pikepdf.open(path, allow_overwriting_input=True) as pdf:
+        pdf.pages[2].Rotate = 90
+        pdf.save(path)
+
+
 def pad_to(path, target_mb):
     """Grow a PDF to ~target_mb by attaching incompressible ballast as an
     unreferenced stream. Parsing cost of the ballast is nil, which is exactly
@@ -186,11 +221,13 @@ def report(p):
 
 
 if __name__ == "__main__":
-    jobs = sys.argv[2:] or ["scan", "text", "mixed"]
+    jobs = sys.argv[2:] or ["scan", "text", "mixed", "viewer"]
     if "scan" in jobs:
         print("scan-500p ..."); make_scan(OUT / "scan-500p.pdf"); report(OUT / "scan-500p.pdf")
     if "text" in jobs:
         print("text-500p ..."); make_text(OUT / "text-500p.pdf"); report(OUT / "text-500p.pdf")
+    if "viewer" in jobs:
+        print("viewer-10p ..."); make_viewer(OUT / "viewer-10p.pdf"); report(OUT / "viewer-10p.pdf")
     if "mixed" in jobs:
         print("mixed-500p ..."); make_mixed(OUT / "mixed-500p.pdf")
         pad_to(OUT / "mixed-500p.pdf", 50); report(OUT / "mixed-500p.pdf")

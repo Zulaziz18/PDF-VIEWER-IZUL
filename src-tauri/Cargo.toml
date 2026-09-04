@@ -16,7 +16,9 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 izul-ipc.workspace = true
 izul-model.workspace = true
+izul-render.workspace = true
 izul-store.workspace = true
+rusqlite.workspace = true
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 serde.workspace = true

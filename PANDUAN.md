@@ -4,16 +4,61 @@
 > fitur yang belum ada hanya akan menyesatkan, jadi bagian yang belum bisa
 > dipakai sengaja dikosongkan sampai fasenya selesai.
 
-## Status: Fase 0
+## Status: Fase 1
 
-Yang sudah dapat dilakukan:
+Aplikasi ini sekarang bisa dipakai membaca.
 
-- Menjalankan aplikasi dan melihat jendela utama.
-- Membuka satu berkas PDF dan melihat halaman pertamanya.
-- Melihat versi aplikasi di title bar dan jumlah pekerja di status bar.
+### Membuka dan menggulir
 
-Yang **belum** dapat dilakukan: scroll antar halaman, zoom, pencarian, anotasi,
-menyimpan, dan tab. Semua itu datang di Fase 1 sampai Fase 4.
+Buka berkas lewat tombol **Buka Berkas** atau `Ctrl+O`. Dokumen tampil sebagai
+gulungan berkelanjutan: gulirkan dengan roda tetikus, panah, `Page Up`/
+`Page Down`, `Home` dan `End`. Nomor halaman di toolbar bisa diisi langsung
+untuk melompat.
+
+Halaman yang belum sempat dirender tajam tampil sebagai versi buram lebih dulu,
+lalu berganti tajam. Itu disengaja: yang penting halaman tidak pernah kosong.
+
+### Perbesaran
+
+| Perintah | Cara |
+|---|---|
+| Perbesar / perkecil | `Ctrl` + `+` / `Ctrl` + `−`, atau tombol di toolbar |
+| Ukuran asli (100 %) | `Ctrl` + `0` |
+| Muat lebar / muat halaman | Tombol **Lebar** dan **Muat** di toolbar |
+| Perbesar di titik tertentu | `Ctrl` + roda tetikus, atau cubit di touchpad |
+
+`Ctrl` + roda mempertahankan titik di bawah kursor: yang Anda tunjuk tidak
+bergeser saat diperbesar.
+
+### Tata letak halaman
+
+Empat mode di toolbar: **Satu** halaman, **Dua** halaman berdampingan, **Dua +
+sampul** (halaman pertama sendirian, seperti buku yang dibuka), dan **Mendatar**
+(menggulir ke samping).
+
+### Memutar
+
+**Putar kiri** dan **Putar kanan** memutar seluruh dokumen; **Putar halaman ini**
+hanya halaman yang sedang dibaca — berguna untuk satu halaman lanskap di tengah
+dokumen potret.
+
+### Memilih dan menyalin teks
+
+Teks dokumen dapat diseleksi dan disalin seperti di halaman web, termasuk pada
+halaman yang diputar. Pembaca layar juga membaca teks ini, bukan gambarnya.
+
+### Panel samping
+
+Tombol ☰ membuka panel samping. **Halaman** menampilkan thumbnail — klik untuk
+melompat. **Daftar Isi** menampilkan bookmark bawaan dokumen, bila ada.
+
+### Posisi baca diingat
+
+Menutup lalu membuka kembali berkas yang sama akan mengembalikan halaman,
+posisi gulir, perbesaran, rotasi, dan mode tampilan seperti saat ditinggalkan.
+
+Yang **belum** dapat dilakukan: membuka beberapa dokumen sekaligus dalam tab,
+mencari, menganotasi, dan menyimpan. Semua itu datang di Fase 2 sampai Fase 4.
 
 ## Persyaratan sistem
 

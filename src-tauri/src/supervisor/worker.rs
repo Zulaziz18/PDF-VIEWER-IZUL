@@ -69,9 +69,16 @@ impl WorkerPaths {
 }
 
 /// A live worker: its process, its channel, and its slice of shared memory.
+///
+/// Every method takes `&self`, including the ones that kill the process, so the
+/// supervisor can hand out an `Arc<Worker>` and let a render request await its
+/// reply *without* holding the pool lock. That matters: the heartbeat sweep
+/// needs the write lock every two seconds, and a lock held across a render
+/// would delay the sweep by exactly as long as the render takes.
 pub struct Worker {
     pub id: u32,
-    child: Child,
+    child: parking_lot::Mutex<Child>,
+    pid: u32,
     /// Kept alive because the ring points into it.
     _region: SharedRegion,
     pub ring: Arc<TileRing>,
@@ -84,7 +91,7 @@ impl std::fmt::Debug for Worker {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Worker")
             .field("id", &self.id)
-            .field("pid", &self.child.id())
+            .field("pid", &self.pid)
             .finish_non_exhaustive()
     }
 }
@@ -137,9 +144,11 @@ impl Worker {
         let last_beat = Arc::new(Mutex::new(Instant::now()));
         tokio::spawn(pump(stream, rx, Arc::clone(&last_beat)));
 
+        let pid = child.id();
         Ok(Worker {
             id,
-            child,
+            child: parking_lot::Mutex::new(child),
+            pid,
             _region: region,
             ring: Arc::new(ring),
             tx,
@@ -149,7 +158,7 @@ impl Worker {
     }
 
     pub fn pid(&self) -> u32 {
-        self.child.id()
+        self.pid
     }
 
     /// Sends a request and waits for its reply.
@@ -184,12 +193,12 @@ impl Worker {
     }
 
     /// True when the OS says the process has exited.
-    pub fn has_exited(&mut self) -> bool {
-        matches!(self.child.try_wait(), Ok(Some(_)) | Err(_))
+    pub fn has_exited(&self) -> bool {
+        matches!(self.child.lock().try_wait(), Ok(Some(_)) | Err(_))
     }
 
     /// Asks politely, then insists.
-    pub async fn shutdown(&mut self) {
+    pub async fn shutdown(&self) {
         let _ = tokio::time::timeout(Duration::from_secs(2), self.request(Request::Shutdown)).await;
         for _ in 0..20 {
             if self.has_exited() {
@@ -200,9 +209,10 @@ impl Worker {
         self.kill();
     }
 
-    pub fn kill(&mut self) {
-        let _ = self.child.kill();
-        let _ = self.child.wait();
+    pub fn kill(&self) {
+        let mut child = self.child.lock();
+        let _ = child.kill();
+        let _ = child.wait();
     }
 }
 

@@ -43,13 +43,6 @@ pub enum RenderQuality {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub struct PageRange {
-    pub first: u32,
-    /// Exclusive.
-    pub last: u32,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SearchOptions {
     pub case_sensitive: bool,
     pub whole_word: bool,
@@ -57,6 +50,12 @@ pub struct SearchOptions {
 }
 
 /// UI process -> worker process.
+///
+/// Every request has exactly one response. A request that streamed several
+/// replies under one id — the shape Phase 0 used for thumbnail sweeps — cannot
+/// be routed by the supervisor's reply table, and the extra replies were
+/// silently dropped. Phase 1 pulls instead: the viewport asks for the one page
+/// it is about to draw, which is also what makes cancellation meaningful.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Request {
     Open {
@@ -67,10 +66,14 @@ pub enum Request {
     Close {
         doc: DocId,
     },
+    /// One tile of one page.
+    ///
+    /// `source` is in display space: points, origin bottom-left, with the
+    /// page's own `/Rotate` and `rotation` already applied, so its extents are
+    /// the page size the viewport laid out with.
     RenderTile {
         doc: DocId,
         page: u32,
-        /// Region of the page to draw, in PDF points.
         source: PdfRectF,
         dest_w: u32,
         dest_h: u32,
@@ -78,16 +81,27 @@ pub enum Request {
         quality: RenderQuality,
         generation: Generation,
     },
-    RenderThumb {
+    /// A whole page at thumbnail resolution: the low-resolution first tier of
+    /// SPEC 9's two-tier render, and the sidebar's thumbnail, which are the
+    /// same bitmap and therefore rendered once.
+    RenderPreview {
         doc: DocId,
-        pages: PageRange,
+        page: u32,
         max_edge_px: u32,
+        rotation: RotationQuarter,
         generation: Generation,
     },
+    /// Page text, and — when `with_boxes` is set — the per-character boxes the
+    /// selection layer needs, in display space at `rotation`.
     ExtractText {
         doc: DocId,
-        pages: PageRange,
+        page: u32,
         with_boxes: bool,
+        rotation: RotationQuarter,
+    },
+    /// The document's own bookmark tree, for the outline sidebar.
+    Outline {
+        doc: DocId,
     },
     Search {
         doc: DocId,
@@ -116,6 +130,10 @@ pub enum Response {
     Opened {
         doc: DocId,
         page_count: u32,
+        /// Display size of each page in points, with the page's own `/Rotate`
+        /// applied. Read from the page tree, which the Phase 0 spike measured
+        /// at ~6 ms for 500 pages against ~495 ms for loading every page — and
+        /// the scroll bar cannot have the right size until this is known.
         page_sizes: Vec<(f32, f32)>,
         permissions: u32,
         encrypted: bool,
@@ -127,26 +145,15 @@ pub enum Response {
         slot: SlotRef,
         generation: Generation,
     },
-    ThumbReady {
-        doc: DocId,
-        page: u32,
-        slot: SlotRef,
-    },
     TextReady {
         doc: DocId,
         page: u32,
         text: String,
         chars: Vec<CharBoxWire>,
     },
-    SearchHit {
+    OutlineReady {
         doc: DocId,
-        page: u32,
-        rects: Vec<PdfRectF>,
-    },
-    Progress {
-        doc: DocId,
-        done: u32,
-        total: u32,
+        nodes: Vec<OutlineEntry>,
     },
     /// A job was dropped because a newer generation superseded it. Not an error;
     /// the UI uses it to clear its pending set.
@@ -166,6 +173,23 @@ pub enum Response {
     Pong {
         nonce: u64,
     },
+}
+
+/// One outline entry, flattened for the wire.
+///
+/// A tree would need a recursive `postcard` schema and a recursive decoder on
+/// an untrusted-ish path; a flat list with a depth column carries exactly the
+/// same information and cannot recurse at all. The sidebar rebuilds the nesting
+/// from `depth`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct OutlineEntry {
+    pub title: String,
+    /// Nesting level, 0 for a top-level entry.
+    pub depth: u16,
+    /// Target page, when the destination resolves to one in this document.
+    pub page: Option<u32>,
+    /// Target y in PDF points, when the destination names one.
+    pub y: Option<f32>,
 }
 
 /// Where a rendered bitmap lives in the pixel channel.

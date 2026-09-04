@@ -27,6 +27,7 @@
 mod commands;
 mod logging;
 mod protocol;
+mod render;
 mod supervisor;
 mod version;
 
@@ -34,6 +35,8 @@ use std::sync::atomic::AtomicU64;
 use std::sync::Arc;
 
 use commands::AppState;
+use izul_render::RenderError;
+use render::{PoolBackend, RenderService};
 use supervisor::worker::WorkerPaths;
 use supervisor::Pool;
 use tauri::{Emitter, Manager};
@@ -77,8 +80,14 @@ fn main() {
 fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), String> {
     // Databases are created before the window so a first run never shows an
     // empty recent-files list because the schema was not ready yet.
+    let mut budget_pref = None;
     for which in [izul_store::Which::App, izul_store::Which::Cache] {
-        izul_store::open(&data_dir, which).map_err(|e| format!("{}: {e}", which.file_name()))?;
+        let conn = izul_store::open(&data_dir, which)
+            .map_err(|e| format!("{}: {e}", which.file_name()))?;
+        if which == izul_store::Which::App {
+            budget_pref = izul_store::prefs::get_u64(&conn, izul_store::prefs::CACHE_BUDGET_MB)
+                .unwrap_or(None);
+        }
     }
 
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -90,7 +99,19 @@ fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), Stri
     let pool = rt
         .block_on(Pool::start(paths))
         .map_err(|e| format!("kolam pekerja tidak dapat dimulai: {e}"))?;
+    let pool_size = pool.size();
     let pool = Arc::new(RwLock::new(pool));
+
+    // One outstanding render per worker: a worker renders on one thread, so a
+    // second request would only queue inside it, where the scheduler can no
+    // longer reprioritise it (SPEC 9's cancellation).
+    let budget = render::cache_budget_bytes(budget_pref);
+    let renderer = RenderService::new(PoolBackend::new(Arc::clone(&pool)), budget, pool_size);
+    tracing::info!(
+        budget_mb = budget / (1024 * 1024),
+        concurrency = pool_size,
+        "pipeline render siap"
+    );
 
     // The supervision loop outlives every window; it is what keeps a killed
     // worker from becoming a permanently dead tab.
@@ -104,19 +125,34 @@ fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), Stri
         Some(sink),
         stop_rx,
     ));
+    {
+        let _guard = rt.enter();
+        renderer.spawn_dispatcher();
+    }
 
     let state = AppState {
         pool: Arc::clone(&pool),
+        render: Arc::clone(&renderer),
         data_dir,
         next_doc_id: AtomicU64::new(1),
     };
 
     let title = version::title_bar_text(&v);
+    let handle = rt.handle().clone();
+    let tile_renderer = Arc::clone(&renderer);
     let result = tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(state)
-        .register_uri_scheme_protocol("izul", move |ctx, request| {
-            serve_tile(ctx.app_handle(), request)
+        .register_asynchronous_uri_scheme_protocol("izul", move |_ctx, request, responder| {
+            // Asynchronous on purpose: a tile that is not cached has to wait for
+            // a worker, and the synchronous form would block a webview thread
+            // for the whole render. The handler returns immediately; the
+            // responder is answered from the runtime.
+            let service = Arc::clone(&tile_renderer);
+            let uri = request.uri().to_string();
+            handle.spawn(async move {
+                responder.respond(serve_tile(&service, &uri).await);
+            });
         })
         .setup(move |app| {
             if let Some(w) = app.get_webview_window("main") {
@@ -147,7 +183,13 @@ fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), Stri
             commands::pool_health,
             commands::open_document,
             commands::close_document,
-            commands::render_tile,
+            commands::trim_document,
+            commands::set_generation,
+            commands::document_outline,
+            commands::page_text,
+            commands::page_size,
+            commands::save_view_state,
+            commands::render_stats,
             commands::recent_files,
         ])
         .run(tauri::generate_context!());
@@ -156,11 +198,18 @@ fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), Stri
     result.map_err(|e| format!("tauri: {e}"))
 }
 
-/// Serves `izul://tile/{doc}/{slot}/{epoch}` straight out of shared memory.
-fn serve_tile(
-    app: &tauri::AppHandle,
-    request: tauri::http::Request<Vec<u8>>,
-) -> tauri::http::Response<Vec<u8>> {
+/// Serves `izul://tile/...`: cache hit, or render and then cache.
+///
+/// The status codes are part of the contract with the viewport:
+///
+/// * **409** the request belongs to a layout epoch the user has already left.
+///   Normal during a fast zoom, and not an error the user should hear about.
+/// * **410** the tile was rendered but its shared-memory slot was recycled
+///   before we could copy it. The viewport re-requests.
+/// * **404** the document is closed or the page does not exist.
+/// * **503** the worker holding the document is gone; the supervisor is
+///   already restarting it.
+async fn serve_tile(service: &Arc<RenderService>, uri: &str) -> tauri::http::Response<Vec<u8>> {
     use tauri::http::{Response, StatusCode};
 
     let deny = |code: StatusCode| -> Response<Vec<u8>> {
@@ -170,42 +219,57 @@ fn serve_tile(
             .unwrap_or_else(|_| Response::new(Vec::new()))
     };
 
-    let uri = match protocol::parse_tile_uri(&request.uri().to_string()) {
+    let parsed = match protocol::parse_tile_uri(uri) {
         Ok(u) => u,
         Err(e) => {
-            tracing::debug!(error = %e, uri = %request.uri(), "permintaan ubin ditolak");
+            tracing::debug!(error = %e, uri, "permintaan ubin ditolak");
             return deny(StatusCode::BAD_REQUEST);
         }
     };
 
-    let Some(state) = app.try_state::<AppState>() else {
-        return deny(StatusCode::SERVICE_UNAVAILABLE);
-    };
-    // `blocking_read` is correct here: the protocol handler already runs off the
-    // UI thread, and the lock is only ever held for the length of one request.
-    let ring = { state.pool.blocking_read().worker_ring(uri.doc) };
-    let Some(ring) = ring else {
-        return deny(StatusCode::NOT_FOUND);
-    };
-
-    // The stride is read back from the slot itself; the hint only has to be
-    // non-zero for the reference to be well formed.
-    let Some(tile) = protocol::read_tile(&ring, uri, 1) else {
-        // A stale epoch is normal during fast scrolling: the tile was recycled
-        // before the webview asked for it. The frontend re-requests.
-        return deny(StatusCode::GONE);
+    let tile = match service
+        .fetch(parsed.key, parsed.generation, parsed.priority)
+        .await
+    {
+        Ok(tile) => tile,
+        Err(RenderError::Superseded) | Err(RenderError::Busy) | Err(RenderError::Cancelled) => {
+            return deny(StatusCode::CONFLICT)
+        }
+        Err(RenderError::SlotGone) => return deny(StatusCode::GONE),
+        Err(RenderError::UnknownDocument(_)) | Err(RenderError::PageOutOfRange { .. }) => {
+            return deny(StatusCode::NOT_FOUND)
+        }
+        Err(RenderError::Worker(e)) => {
+            tracing::warn!(error = %e, uri, "render gagal");
+            return deny(StatusCode::SERVICE_UNAVAILABLE);
+        }
     };
 
     let mut builder = Response::builder()
         .status(StatusCode::OK)
         .header("Content-Type", "application/octet-stream")
-        // Every URI is unique by epoch, so a cached response could only ever be
-        // wrong.
-        .header("Cache-Control", "no-store");
-    for (k, val) in tile.headers() {
+        // The URI names the tile's content exactly, so a tile that is served
+        // once can be served from the webview's own memory afterwards. The
+        // backend cache still holds it; this saves the second copy.
+        .header("Cache-Control", "private, max-age=60");
+    for (k, val) in protocol::tile_headers(tile.width, tile.height, tile.stride) {
         builder = builder.header(k, val);
     }
     builder
-        .body(tile.bytes)
+        .body(tile.bytes.to_vec())
         .unwrap_or_else(|_| deny(StatusCode::INTERNAL_SERVER_ERROR))
+}
+
+/// Priority is part of the URI, so it is worth one assertion that the mapping
+/// the viewport writes is the one the scheduler reads.
+#[cfg(test)]
+mod tests {
+    use crate::render::Priority;
+
+    #[test]
+    fn the_viewports_priority_numbers_mean_what_the_scheduler_thinks() {
+        assert_eq!(Priority::from_u8(2), Priority::Visible);
+        assert_eq!(Priority::from_u8(1), Priority::Preview);
+        assert_eq!(Priority::from_u8(0), Priority::Prefetch);
+    }
 }

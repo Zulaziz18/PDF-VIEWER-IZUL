@@ -31,13 +31,15 @@ pub mod engine;
 pub mod error;
 mod ffi_guard;
 pub mod geom;
+pub mod outline;
 pub mod render;
 pub mod sys;
 pub mod text;
 
-pub use engine::{Document, Engine};
+pub use engine::{Document, Engine, PageGeometry};
 pub use error::{PdfError, Result};
 pub use geom::{Matrix, PageSize, PdfPointF, PdfRectF, RotationQuarter};
+pub use outline::OutlineNode;
 pub use render::{PixelFormat, Quality, TileGeometry, TileRequest, BYTES_PER_PIXEL, MAX_TILE_DIM};
 pub use text::{CharBox, PageText};
 
