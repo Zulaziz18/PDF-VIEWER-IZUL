@@ -52,10 +52,13 @@ di `bench/results/phase0-linux-full.txt`.
 - **Ukuran halaman dibaca dari pohon halaman.** `FPDF_GetPageSizeByIndexF`
   menyelesaikan 500 halaman dalam ~6 ms p95; memuat tiap halaman butuh ~495 ms.
   Scrollbar tidak bisa punya ukuran benar sebelum ini selesai.
-- **Semua render berbasis ubin.** Merender satu halaman penuh sebagai ubin
+- **Semua render berbasis ubin** — deviasi dari SPEC Bagian 9, yang menulis
+  tile hanya di atas 200% zoom. Merender satu halaman penuh sebagai ubin
   512×512 berbiaya 0,79–1,00× dibanding sekali render, karena clipping membuat
-  PDFium melewatkan pekerjaan di luar ubin. Jalur piksel karenanya memakai slot
-  berukuran tetap, bukan alokator ukuran bebas.
+  PDFium melewatkan pekerjaan di luar ubin: di bawah 200% pun ubin tidak lebih
+  mahal, dan jalur piksel jadi satu bentuk (slot shm berukuran tetap) untuk
+  seluruh rentang zoom, bukan dua jalur (halaman utuh vs ubin) yang berbeda
+  kode dan berbeda perilaku pembatalannya. **Disetujui 2026-09-04.**
 - **Handle PDFium dikelola sendiri.** Pembungkus aman `pdfium-render` tidak
   mengekspos `FPDF_RenderPageBitmapWithMatrix` maupun `FPDFBitmap_CreateEx`,
   sehingga ubin dan jalur nol-salinan mustahil lewat sana. Crate itu tetap
