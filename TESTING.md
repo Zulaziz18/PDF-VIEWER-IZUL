@@ -140,6 +140,115 @@ teks seluruh dokumen, yang justru dibangun di Fase 2 bersama indeks FTS5.
 Menambahkannya di Fase 2 nyaris tanpa biaya tambahan; menambahkannya di Fase 1
 berarti membangun sapuan teks dua kali.
 
+## Menjalankan sendiri di Windows (langkah demi langkah)
+
+Bagian ini ditulis untuk yang belum pernah membangun aplikasi dari kode.
+Dikerjakan sekali; sesudahnya cukup langkah 6.
+
+### 1. Pasang alat (sekali saja)
+
+Buka **PowerShell sebagai Administrator**, lalu jalankan satu per satu:
+
+```powershell
+winget install --id Git.Git -e
+winget install --id OpenJS.NodeJS.LTS -e
+winget install --id Rustlang.Rustup -e
+winget install --id Microsoft.EdgeWebView2Runtime -e
+winget install --id Microsoft.VisualStudio.2022.BuildTools -e ^
+  --override "--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+```
+
+Yang terakhir adalah kompilator C++ milik Microsoft. Rust memerlukannya untuk
+menautkan program di Windows, dan ukurannya beberapa gigabita — biarkan selesai.
+
+**Tutup PowerShell, lalu buka lagi** supaya perintah `git`, `node`, dan `cargo`
+dikenali. Periksa:
+
+```powershell
+git --version
+node --version
+cargo --version
+```
+
+Ketiganya harus menjawab dengan nomor versi. Kalau ada yang bilang "not
+recognized", restart komputer dan periksa lagi.
+
+### 2. Ambil kodenya
+
+```powershell
+cd $HOME\Documents
+git clone https://github.com/Zulaziz18/PDF-VIEWER-IZUL.git
+cd PDF-VIEWER-IZUL
+git checkout claude/pdf-studio-izul-v7-fase-1-tki5pi
+```
+
+### 3. Ambil PDFium
+
+PDFium tidak ikut di repositori. Klik kanan di dalam folder proyek →
+**Open Git Bash here** (dipasang bersama Git), lalu:
+
+```bash
+./vendor/pdfium/fetch.sh win-x64
+```
+
+Kalau berhasil, baris terakhirnya menyebut `MAJOR=151 ... BUILD=7881`.
+
+### 4. Pasang paket frontend
+
+Kembali ke PowerShell, di folder proyek:
+
+```powershell
+npm ci
+```
+
+### 5. Jalankan
+
+```powershell
+npm run tauri dev
+```
+
+Pertama kali perlu **5–15 menit**: Rust mengompilasi ratusan pustaka. Layar akan
+penuh baris `Compiling ...` — itu normal, bukan galat. Jendela aplikasi terbuka
+sendiri setelah selesai. Berikutnya jauh lebih cepat.
+
+Kalau berhenti dengan pesan merah, salin lima baris terakhirnya — itu yang
+dibutuhkan untuk menolong.
+
+### 6. Siapkan berkas uji
+
+Checklist di bawah butuh PDF **besar** (ratusan halaman) supaya scroll benar-benar
+diuji. Pakai apa saja yang Anda punya: skripsi, buku pindaian, manual tebal.
+Bila tidak ada, buat sendiri (butuh Python):
+
+```powershell
+python -m pip install reportlab pikepdf pypdf pillow
+python bench/make_fixtures.py test-fixtures text
+```
+
+Hasilnya `test-fixtures/text-500p.pdf`, 500 halaman.
+
+### 7. Cara melihat frame rate (untuk tiga item pertama checklist)
+
+Ini satu-satunya bagian yang butuh trik, dan hanya bekerja pada
+`npm run tauri dev` (bukan hasil `build`):
+
+1. Klik kanan di area dokumen → **Inspect** (DevTools terbuka).
+2. Tekan `Ctrl` + `Shift` + `P`.
+3. Ketik `frame`, pilih **Show frame rendering stats**, tekan Enter.
+4. Kotak kecil muncul di pojok kanan atas dengan angka FPS.
+5. Gulir dokumen cepat-cepat sambil melihat angka itu.
+
+Yang dicari: angka bertahan mendekati refresh rate monitor (60, 120, atau 144),
+dan grafiknya tidak menunjukkan batang merah panjang. Kalau angkanya jatuh ke
+20–30 saat menggulir, itu temuan — catat berkas apa dan di zoom berapa.
+
+Tutup DevTools sesudahnya; ia sendiri memakan sebagian tenaga mesin.
+
+### 8. Jalankan checklist
+
+Kerjakan daftar **Fase 1** di bawah satu per satu, dan catat yang gagal beserta
+apa yang Anda lihat. Yang gagal jauh lebih berguna daripada yang lulus.
+
 ## Checklist manual
 
 Hal-hal yang tidak bisa dinilai selain dengan melihat. Dijalankan tiap akhir
