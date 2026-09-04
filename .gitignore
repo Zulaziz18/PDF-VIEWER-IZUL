@@ -4,6 +4,10 @@
 node_modules
 dist
 
+# tauri-build regenerates this schema cache on every build; it is derived
+# entirely from tauri.conf.json and the tauri crate version.
+/src-tauri/gen
+
 # The vendored PDFium tree is reproducible from a pinned tag, so only the
 # script that fetches it is tracked. See vendor/pdfium/fetch.sh.
 /vendor/pdfium/*

@@ -485,9 +485,21 @@ impl Document {
 
     /// Document permission bits (`FPDF_GetDocPermissions`). All ones when the
     /// document is unencrypted.
+    ///
+    /// PDFium's return type is `c_ulong`, which is 32 bits on Windows (LLP64)
+    /// but 64 bits on Linux (LP64). Converting it to the fixed-width `u32` this
+    /// API commits to is therefore a real narrowing conversion on one platform
+    /// and a no-op on the other — clippy cannot know that at lint time, so it
+    /// flags whichever form is written as wrong on the platform where it
+    /// happens to be an identity conversion. The lint is silenced rather than
+    /// worked around, because every alternative form has the same problem on
+    /// the other platform. The permission bits PDFium defines fit in the low
+    /// 32 bits, so the truncation never discards a bit in practice.
+    #[allow(clippy::useless_conversion, clippy::unnecessary_cast)]
     pub fn permissions(&self) -> u32 {
         // SAFETY: `handle` is a live document handle owned by `self`.
-        unsafe { self.engine.bindings().FPDF_GetDocPermissions(self.handle) as u32 }
+        let raw = unsafe { self.engine.bindings().FPDF_GetDocPermissions(self.handle) };
+        u32::try_from(raw).unwrap_or(u32::MAX)
     }
 
     /// True when the document carries a security handler, i.e. it was encrypted.

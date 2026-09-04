@@ -84,6 +84,19 @@ mod platform {
         job: HANDLE,
     }
 
+    // SAFETY: `HANDLE` wraps a raw pointer, so it is neither `Send` nor `Sync`
+    // by default. A Win32 kernel handle carries no thread affinity: any thread
+    // in the process may use it, and the Job Object calls this type makes
+    // (`AssignProcessToJobObject`, `SetInformationJobObject`, `CloseHandle`)
+    // are documented as safe to call concurrently on a shared handle.
+    // `Sandbox` is stored inside the `Pool` state Tauri manages across `async`
+    // tasks, which requires `Send`.
+    unsafe impl Send for Sandbox {}
+    // SAFETY: same reasoning as the `Send` impl above — the handle carries no
+    // thread affinity, so sharing a `&Sandbox` between threads is as sound as
+    // moving one, and `Pool` requires `Sync` too.
+    unsafe impl Sync for Sandbox {}
+
     impl Sandbox {
         pub fn create(memory_cap: u64) -> io::Result<Self> {
             // SAFETY: an unnamed job object; the returned handle is owned here
