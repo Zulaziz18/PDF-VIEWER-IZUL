@@ -1,0 +1,18 @@
+[package]
+name = "izul-model"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# This crate is deliberately dependency-light. It must stay buildable and
+# testable with no PDFium and no filesystem: see SPEC 3.2 and SPEC 5.
+[dependencies]
+serde.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+postcard.workspace = true
+
+[lints]
+workspace = true

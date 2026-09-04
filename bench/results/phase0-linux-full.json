@@ -1,0 +1,2293 @@
+{
+  "host": {
+    "os": "linux",
+    "arch": "x86_64",
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "logical_cores": 4,
+    "total_ram_mb": 16075,
+    "profile": "release"
+  },
+  "pdfium_version": "151.0.7881.0",
+  "results": [
+    {
+      "name": "open_cold",
+      "fixture": "mixed-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, 48.1 MB, page cache dropped",
+      "stats": {
+        "n": 1,
+        "min_ms": 16.779762,
+        "p50_ms": 16.779762,
+        "p95_ms": 16.779762,
+        "p99_ms": 16.779762,
+        "max_ms": 16.779762,
+        "mean_ms": 16.779762
+      }
+    },
+    {
+      "name": "open_warm",
+      "fixture": "mixed-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, 48.1 MB",
+      "stats": {
+        "n": 5,
+        "min_ms": 0.29597100000000004,
+        "p50_ms": 0.308984,
+        "p95_ms": 0.411499,
+        "p99_ms": 0.411499,
+        "max_ms": 0.411499,
+        "mean_ms": 0.3250122
+      }
+    },
+    {
+      "name": "open_cold",
+      "fixture": "mixed-500p.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, 50.0 MB, page cache dropped",
+      "stats": {
+        "n": 1,
+        "min_ms": 14.850324,
+        "p50_ms": 14.850324,
+        "p95_ms": 14.850324,
+        "p99_ms": 14.850324,
+        "max_ms": 14.850324,
+        "mean_ms": 14.850324
+      }
+    },
+    {
+      "name": "open_warm",
+      "fixture": "mixed-500p.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, 50.0 MB",
+      "stats": {
+        "n": 5,
+        "min_ms": 0.27337599999999995,
+        "p50_ms": 0.286976,
+        "p95_ms": 0.347746,
+        "p99_ms": 0.347746,
+        "max_ms": 0.347746,
+        "mean_ms": 0.29649020000000004
+      }
+    },
+    {
+      "name": "open_cold",
+      "fixture": "mixed-raw-500p.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, 10.4 MB, page cache dropped",
+      "stats": {
+        "n": 1,
+        "min_ms": 11.562115,
+        "p50_ms": 11.562115,
+        "p95_ms": 11.562115,
+        "p99_ms": 11.562115,
+        "max_ms": 11.562115,
+        "mean_ms": 11.562115
+      }
+    },
+    {
+      "name": "open_warm",
+      "fixture": "mixed-raw-500p.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, 10.4 MB",
+      "stats": {
+        "n": 5,
+        "min_ms": 0.27498,
+        "p50_ms": 0.29551700000000003,
+        "p95_ms": 0.359833,
+        "p99_ms": 0.359833,
+        "max_ms": 0.359833,
+        "mean_ms": 0.309528
+      }
+    },
+    {
+      "name": "open_cold",
+      "fixture": "scan-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, 137.8 MB, page cache dropped",
+      "stats": {
+        "n": 1,
+        "min_ms": 9.279246,
+        "p50_ms": 9.279246,
+        "p95_ms": 9.279246,
+        "p99_ms": 9.279246,
+        "max_ms": 9.279246,
+        "mean_ms": 9.279246
+      }
+    },
+    {
+      "name": "open_warm",
+      "fixture": "scan-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, 137.8 MB",
+      "stats": {
+        "n": 5,
+        "min_ms": 0.313939,
+        "p50_ms": 0.333391,
+        "p95_ms": 0.358344,
+        "p99_ms": 0.358344,
+        "max_ms": 0.358344,
+        "mean_ms": 0.33467860000000005
+      }
+    },
+    {
+      "name": "open_cold",
+      "fixture": "scan-500p.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, 137.8 MB, page cache dropped",
+      "stats": {
+        "n": 1,
+        "min_ms": 9.052495,
+        "p50_ms": 9.052495,
+        "p95_ms": 9.052495,
+        "p99_ms": 9.052495,
+        "max_ms": 9.052495,
+        "mean_ms": 9.052495
+      }
+    },
+    {
+      "name": "open_warm",
+      "fixture": "scan-500p.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, 137.8 MB",
+      "stats": {
+        "n": 5,
+        "min_ms": 0.307647,
+        "p50_ms": 0.326498,
+        "p95_ms": 0.337964,
+        "p99_ms": 0.337964,
+        "max_ms": 0.337964,
+        "mean_ms": 0.322064
+      }
+    },
+    {
+      "name": "open_cold",
+      "fixture": "scan-50mb-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, 79.8 MB, page cache dropped",
+      "stats": {
+        "n": 1,
+        "min_ms": 10.836953,
+        "p50_ms": 10.836953,
+        "p95_ms": 10.836953,
+        "p99_ms": 10.836953,
+        "max_ms": 10.836953,
+        "mean_ms": 10.836953
+      }
+    },
+    {
+      "name": "open_warm",
+      "fixture": "scan-50mb-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, 79.8 MB",
+      "stats": {
+        "n": 5,
+        "min_ms": 0.314205,
+        "p50_ms": 0.32969,
+        "p95_ms": 0.429365,
+        "p99_ms": 0.429365,
+        "max_ms": 0.429365,
+        "mean_ms": 0.35048740000000006
+      }
+    },
+    {
+      "name": "open_cold",
+      "fixture": "scan-50mb-500p.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, 79.8 MB, page cache dropped",
+      "stats": {
+        "n": 1,
+        "min_ms": 10.41944,
+        "p50_ms": 10.41944,
+        "p95_ms": 10.41944,
+        "p99_ms": 10.41944,
+        "max_ms": 10.41944,
+        "mean_ms": 10.41944
+      }
+    },
+    {
+      "name": "open_warm",
+      "fixture": "scan-50mb-500p.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, 79.8 MB",
+      "stats": {
+        "n": 5,
+        "min_ms": 0.31468,
+        "p50_ms": 0.321441,
+        "p95_ms": 0.35257,
+        "p99_ms": 0.35257,
+        "max_ms": 0.35257,
+        "mean_ms": 0.32769360000000003
+      }
+    },
+    {
+      "name": "open_cold",
+      "fixture": "scan-realistic-50mb-500p.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, 51.4 MB, page cache dropped",
+      "stats": {
+        "n": 1,
+        "min_ms": 10.556229,
+        "p50_ms": 10.556229,
+        "p95_ms": 10.556229,
+        "p99_ms": 10.556229,
+        "max_ms": 10.556229,
+        "mean_ms": 10.556229
+      }
+    },
+    {
+      "name": "open_warm",
+      "fixture": "scan-realistic-50mb-500p.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, 51.4 MB",
+      "stats": {
+        "n": 5,
+        "min_ms": 0.308014,
+        "p50_ms": 0.319375,
+        "p95_ms": 0.337136,
+        "p99_ms": 0.337136,
+        "max_ms": 0.337136,
+        "mean_ms": 0.32149140000000004
+      }
+    },
+    {
+      "name": "open_cold",
+      "fixture": "text-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, 0.8 MB, page cache dropped",
+      "stats": {
+        "n": 1,
+        "min_ms": 1.4995880000000001,
+        "p50_ms": 1.4995880000000001,
+        "p95_ms": 1.4995880000000001,
+        "p99_ms": 1.4995880000000001,
+        "max_ms": 1.4995880000000001,
+        "mean_ms": 1.4995880000000001
+      }
+    },
+    {
+      "name": "open_warm",
+      "fixture": "text-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, 0.8 MB",
+      "stats": {
+        "n": 5,
+        "min_ms": 0.257936,
+        "p50_ms": 0.264939,
+        "p95_ms": 0.28363900000000003,
+        "p99_ms": 0.28363900000000003,
+        "max_ms": 0.28363900000000003,
+        "mean_ms": 0.2697958
+      }
+    },
+    {
+      "name": "open_cold",
+      "fixture": "text-500p.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, 1.0 MB, page cache dropped",
+      "stats": {
+        "n": 1,
+        "min_ms": 1.452211,
+        "p50_ms": 1.452211,
+        "p95_ms": 1.452211,
+        "p99_ms": 1.452211,
+        "max_ms": 1.452211,
+        "mean_ms": 1.452211
+      }
+    },
+    {
+      "name": "open_warm",
+      "fixture": "text-500p.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, 1.0 MB",
+      "stats": {
+        "n": 5,
+        "min_ms": 0.25336800000000004,
+        "p50_ms": 0.26791899999999996,
+        "p95_ms": 0.293313,
+        "p99_ms": 0.293313,
+        "max_ms": 0.293313,
+        "mean_ms": 0.269837
+      }
+    },
+    {
+      "name": "first_page_cold",
+      "fixture": "mixed-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "open + page_size + render halaman 0 @1600px",
+      "stats": {
+        "n": 1,
+        "min_ms": 93.399216,
+        "p50_ms": 93.399216,
+        "p95_ms": 93.399216,
+        "p99_ms": 93.399216,
+        "max_ms": 93.399216,
+        "mean_ms": 93.399216
+      }
+    },
+    {
+      "name": "first_page_warm",
+      "fixture": "mixed-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "open + page_size + render halaman 0 @1600px",
+      "stats": {
+        "n": 5,
+        "min_ms": 33.286536999999996,
+        "p50_ms": 33.601233,
+        "p95_ms": 44.332673,
+        "p99_ms": 44.332673,
+        "max_ms": 44.332673,
+        "mean_ms": 35.8467644
+      }
+    },
+    {
+      "name": "first_page_cold",
+      "fixture": "mixed-500p.pdf",
+      "unit": "ms",
+      "detail": "open + page_size + render halaman 0 @1600px",
+      "stats": {
+        "n": 1,
+        "min_ms": 47.92703,
+        "p50_ms": 47.92703,
+        "p95_ms": 47.92703,
+        "p99_ms": 47.92703,
+        "max_ms": 47.92703,
+        "mean_ms": 47.92703
+      }
+    },
+    {
+      "name": "first_page_warm",
+      "fixture": "mixed-500p.pdf",
+      "unit": "ms",
+      "detail": "open + page_size + render halaman 0 @1600px",
+      "stats": {
+        "n": 5,
+        "min_ms": 30.738487,
+        "p50_ms": 31.709484000000003,
+        "p95_ms": 39.983428,
+        "p99_ms": 39.983428,
+        "max_ms": 39.983428,
+        "mean_ms": 33.143527399999996
+      }
+    },
+    {
+      "name": "first_page_cold",
+      "fixture": "mixed-raw-500p.pdf",
+      "unit": "ms",
+      "detail": "open + page_size + render halaman 0 @1600px",
+      "stats": {
+        "n": 1,
+        "min_ms": 42.225108999999996,
+        "p50_ms": 42.225108999999996,
+        "p95_ms": 42.225108999999996,
+        "p99_ms": 42.225108999999996,
+        "max_ms": 42.225108999999996,
+        "mean_ms": 42.225108999999996
+      }
+    },
+    {
+      "name": "first_page_warm",
+      "fixture": "mixed-raw-500p.pdf",
+      "unit": "ms",
+      "detail": "open + page_size + render halaman 0 @1600px",
+      "stats": {
+        "n": 5,
+        "min_ms": 30.296657,
+        "p50_ms": 31.202049,
+        "p95_ms": 32.123406,
+        "p99_ms": 32.123406,
+        "max_ms": 32.123406,
+        "mean_ms": 31.1805752
+      }
+    },
+    {
+      "name": "first_page_cold",
+      "fixture": "scan-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "open + page_size + render halaman 0 @1600px",
+      "stats": {
+        "n": 1,
+        "min_ms": 84.879779,
+        "p50_ms": 84.879779,
+        "p95_ms": 84.879779,
+        "p99_ms": 84.879779,
+        "max_ms": 84.879779,
+        "mean_ms": 84.879779
+      }
+    },
+    {
+      "name": "first_page_warm",
+      "fixture": "scan-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "open + page_size + render halaman 0 @1600px",
+      "stats": {
+        "n": 5,
+        "min_ms": 68.68561700000001,
+        "p50_ms": 69.90559999999999,
+        "p95_ms": 71.12241599999999,
+        "p99_ms": 71.12241599999999,
+        "max_ms": 71.12241599999999,
+        "mean_ms": 69.858681
+      }
+    },
+    {
+      "name": "first_page_cold",
+      "fixture": "scan-500p.pdf",
+      "unit": "ms",
+      "detail": "open + page_size + render halaman 0 @1600px",
+      "stats": {
+        "n": 1,
+        "min_ms": 79.79223400000001,
+        "p50_ms": 79.79223400000001,
+        "p95_ms": 79.79223400000001,
+        "p99_ms": 79.79223400000001,
+        "max_ms": 79.79223400000001,
+        "mean_ms": 79.79223400000001
+      }
+    },
+    {
+      "name": "first_page_warm",
+      "fixture": "scan-500p.pdf",
+      "unit": "ms",
+      "detail": "open + page_size + render halaman 0 @1600px",
+      "stats": {
+        "n": 5,
+        "min_ms": 69.441248,
+        "p50_ms": 70.679943,
+        "p95_ms": 112.12780599999999,
+        "p99_ms": 112.12780599999999,
+        "max_ms": 112.12780599999999,
+        "mean_ms": 78.70097759999999
+      }
+    },
+    {
+      "name": "first_page_cold",
+      "fixture": "scan-50mb-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "open + page_size + render halaman 0 @1600px",
+      "stats": {
+        "n": 1,
+        "min_ms": 75.43845999999999,
+        "p50_ms": 75.43845999999999,
+        "p95_ms": 75.43845999999999,
+        "p99_ms": 75.43845999999999,
+        "max_ms": 75.43845999999999,
+        "mean_ms": 75.43845999999999
+      }
+    },
+    {
+      "name": "first_page_warm",
+      "fixture": "scan-50mb-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "open + page_size + render halaman 0 @1600px",
+      "stats": {
+        "n": 5,
+        "min_ms": 60.15913,
+        "p50_ms": 60.817366,
+        "p95_ms": 62.457905000000004,
+        "p99_ms": 62.457905000000004,
+        "max_ms": 62.457905000000004,
+        "mean_ms": 61.0699354
+      }
+    },
+    {
+      "name": "first_page_cold",
+      "fixture": "scan-50mb-500p.pdf",
+      "unit": "ms",
+      "detail": "open + page_size + render halaman 0 @1600px",
+      "stats": {
+        "n": 1,
+        "min_ms": 74.19762100000001,
+        "p50_ms": 74.19762100000001,
+        "p95_ms": 74.19762100000001,
+        "p99_ms": 74.19762100000001,
+        "max_ms": 74.19762100000001,
+        "mean_ms": 74.19762100000001
+      }
+    },
+    {
+      "name": "first_page_warm",
+      "fixture": "scan-50mb-500p.pdf",
+      "unit": "ms",
+      "detail": "open + page_size + render halaman 0 @1600px",
+      "stats": {
+        "n": 5,
+        "min_ms": 60.669064,
+        "p50_ms": 61.063573000000005,
+        "p95_ms": 62.20888,
+        "p99_ms": 62.20888,
+        "max_ms": 62.20888,
+        "mean_ms": 61.243200200000004
+      }
+    },
+    {
+      "name": "first_page_cold",
+      "fixture": "scan-realistic-50mb-500p.pdf",
+      "unit": "ms",
+      "detail": "open + page_size + render halaman 0 @1600px",
+      "stats": {
+        "n": 1,
+        "min_ms": 67.640256,
+        "p50_ms": 67.640256,
+        "p95_ms": 67.640256,
+        "p99_ms": 67.640256,
+        "max_ms": 67.640256,
+        "mean_ms": 67.640256
+      }
+    },
+    {
+      "name": "first_page_warm",
+      "fixture": "scan-realistic-50mb-500p.pdf",
+      "unit": "ms",
+      "detail": "open + page_size + render halaman 0 @1600px",
+      "stats": {
+        "n": 5,
+        "min_ms": 56.468174000000005,
+        "p50_ms": 56.79082,
+        "p95_ms": 72.20470900000001,
+        "p99_ms": 72.20470900000001,
+        "max_ms": 72.20470900000001,
+        "mean_ms": 60.096066199999996
+      }
+    },
+    {
+      "name": "first_page_cold",
+      "fixture": "text-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "open + page_size + render halaman 0 @1600px",
+      "stats": {
+        "n": 1,
+        "min_ms": 20.833142,
+        "p50_ms": 20.833142,
+        "p95_ms": 20.833142,
+        "p99_ms": 20.833142,
+        "max_ms": 20.833142,
+        "mean_ms": 20.833142
+      }
+    },
+    {
+      "name": "first_page_warm",
+      "fixture": "text-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "open + page_size + render halaman 0 @1600px",
+      "stats": {
+        "n": 5,
+        "min_ms": 14.545646000000001,
+        "p50_ms": 15.363906,
+        "p95_ms": 16.502461999999998,
+        "p99_ms": 16.502461999999998,
+        "max_ms": 16.502461999999998,
+        "mean_ms": 15.3147032
+      }
+    },
+    {
+      "name": "first_page_cold",
+      "fixture": "text-500p.pdf",
+      "unit": "ms",
+      "detail": "open + page_size + render halaman 0 @1600px",
+      "stats": {
+        "n": 1,
+        "min_ms": 17.51118,
+        "p50_ms": 17.51118,
+        "p95_ms": 17.51118,
+        "p99_ms": 17.51118,
+        "max_ms": 17.51118,
+        "mean_ms": 17.51118
+      }
+    },
+    {
+      "name": "first_page_warm",
+      "fixture": "text-500p.pdf",
+      "unit": "ms",
+      "detail": "open + page_size + render halaman 0 @1600px",
+      "stats": {
+        "n": 5,
+        "min_ms": 14.837491,
+        "p50_ms": 15.681916000000001,
+        "p95_ms": 15.969110000000002,
+        "p99_ms": 15.969110000000002,
+        "max_ms": 15.969110000000002,
+        "mean_ms": 15.580589800000002
+      }
+    },
+    {
+      "name": "page_sizes_from_page_tree",
+      "fixture": "mixed-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, FPDF_GetPageSizeByIndexF",
+      "stats": {
+        "n": 3,
+        "min_ms": 0.402548,
+        "p50_ms": 0.661122,
+        "p95_ms": 9.774519,
+        "p99_ms": 9.774519,
+        "max_ms": 9.774519,
+        "mean_ms": 3.6127296666666666
+      }
+    },
+    {
+      "name": "page_sizes_by_loading",
+      "fixture": "mixed-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, FPDF_LoadPage per halaman",
+      "stats": {
+        "n": 3,
+        "min_ms": 419.036611,
+        "p50_ms": 419.071817,
+        "p95_ms": 426.16317,
+        "p99_ms": 426.16317,
+        "max_ms": 426.16317,
+        "mean_ms": 421.42386600000003
+      }
+    },
+    {
+      "name": "page_sizes_from_page_tree",
+      "fixture": "mixed-500p.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, FPDF_GetPageSizeByIndexF",
+      "stats": {
+        "n": 3,
+        "min_ms": 0.44143699999999997,
+        "p50_ms": 0.601186,
+        "p95_ms": 6.623746,
+        "p99_ms": 6.623746,
+        "max_ms": 6.623746,
+        "mean_ms": 2.5554563333333333
+      }
+    },
+    {
+      "name": "page_sizes_by_loading",
+      "fixture": "mixed-500p.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, FPDF_LoadPage per halaman",
+      "stats": {
+        "n": 3,
+        "min_ms": 450.025173,
+        "p50_ms": 465.156871,
+        "p95_ms": 471.89997900000003,
+        "p99_ms": 471.89997900000003,
+        "max_ms": 471.89997900000003,
+        "mean_ms": 462.3606743333333
+      }
+    },
+    {
+      "name": "page_sizes_from_page_tree",
+      "fixture": "mixed-raw-500p.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, FPDF_GetPageSizeByIndexF",
+      "stats": {
+        "n": 3,
+        "min_ms": 0.430025,
+        "p50_ms": 0.708171,
+        "p95_ms": 7.078009,
+        "p99_ms": 7.078009,
+        "max_ms": 7.078009,
+        "mean_ms": 2.738735
+      }
+    },
+    {
+      "name": "page_sizes_by_loading",
+      "fixture": "mixed-raw-500p.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, FPDF_LoadPage per halaman",
+      "stats": {
+        "n": 3,
+        "min_ms": 443.889376,
+        "p50_ms": 443.923136,
+        "p95_ms": 470.27537600000005,
+        "p99_ms": 470.27537600000005,
+        "max_ms": 470.27537600000005,
+        "mean_ms": 452.6959626666667
+      }
+    },
+    {
+      "name": "page_sizes_from_page_tree",
+      "fixture": "scan-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, FPDF_GetPageSizeByIndexF",
+      "stats": {
+        "n": 3,
+        "min_ms": 0.676581,
+        "p50_ms": 0.9320930000000001,
+        "p95_ms": 119.32723200000001,
+        "p99_ms": 119.32723200000001,
+        "max_ms": 119.32723200000001,
+        "mean_ms": 40.311968666666665
+      }
+    },
+    {
+      "name": "page_sizes_by_loading",
+      "fixture": "scan-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, FPDF_LoadPage per halaman",
+      "stats": {
+        "n": 3,
+        "min_ms": 4.745659,
+        "p50_ms": 4.796969,
+        "p95_ms": 274.32245500000005,
+        "p99_ms": 274.32245500000005,
+        "max_ms": 274.32245500000005,
+        "mean_ms": 94.62169433333334
+      }
+    },
+    {
+      "name": "page_sizes_from_page_tree",
+      "fixture": "scan-500p.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, FPDF_GetPageSizeByIndexF",
+      "stats": {
+        "n": 3,
+        "min_ms": 0.719418,
+        "p50_ms": 0.886567,
+        "p95_ms": 124.286769,
+        "p99_ms": 124.286769,
+        "max_ms": 124.286769,
+        "mean_ms": 41.96425133333334
+      }
+    },
+    {
+      "name": "page_sizes_by_loading",
+      "fixture": "scan-500p.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, FPDF_LoadPage per halaman",
+      "stats": {
+        "n": 3,
+        "min_ms": 5.031193,
+        "p50_ms": 5.252121,
+        "p95_ms": 237.746521,
+        "p99_ms": 237.746521,
+        "max_ms": 237.746521,
+        "mean_ms": 82.67661166666666
+      }
+    },
+    {
+      "name": "page_sizes_from_page_tree",
+      "fixture": "scan-50mb-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, FPDF_GetPageSizeByIndexF",
+      "stats": {
+        "n": 3,
+        "min_ms": 0.8816269999999999,
+        "p50_ms": 1.20233,
+        "p95_ms": 71.24043200000001,
+        "p99_ms": 71.24043200000001,
+        "max_ms": 71.24043200000001,
+        "mean_ms": 24.441463000000002
+      }
+    },
+    {
+      "name": "page_sizes_by_loading",
+      "fixture": "scan-50mb-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, FPDF_LoadPage per halaman",
+      "stats": {
+        "n": 3,
+        "min_ms": 4.492345,
+        "p50_ms": 5.479705,
+        "p95_ms": 88.582646,
+        "p99_ms": 88.582646,
+        "max_ms": 88.582646,
+        "mean_ms": 32.85156533333333
+      }
+    },
+    {
+      "name": "page_sizes_from_page_tree",
+      "fixture": "scan-50mb-500p.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, FPDF_GetPageSizeByIndexF",
+      "stats": {
+        "n": 3,
+        "min_ms": 0.528793,
+        "p50_ms": 0.8469909999999999,
+        "p95_ms": 61.154858,
+        "p99_ms": 61.154858,
+        "max_ms": 61.154858,
+        "mean_ms": 20.843547333333333
+      }
+    },
+    {
+      "name": "page_sizes_by_loading",
+      "fixture": "scan-50mb-500p.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, FPDF_LoadPage per halaman",
+      "stats": {
+        "n": 3,
+        "min_ms": 4.809253,
+        "p50_ms": 5.033639,
+        "p95_ms": 130.81681700000001,
+        "p99_ms": 130.81681700000001,
+        "max_ms": 130.81681700000001,
+        "mean_ms": 46.886569666666674
+      }
+    },
+    {
+      "name": "page_sizes_from_page_tree",
+      "fixture": "scan-realistic-50mb-500p.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, FPDF_GetPageSizeByIndexF",
+      "stats": {
+        "n": 3,
+        "min_ms": 0.508324,
+        "p50_ms": 0.770201,
+        "p95_ms": 41.910162,
+        "p99_ms": 41.910162,
+        "max_ms": 41.910162,
+        "mean_ms": 14.396229
+      }
+    },
+    {
+      "name": "page_sizes_by_loading",
+      "fixture": "scan-realistic-50mb-500p.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, FPDF_LoadPage per halaman",
+      "stats": {
+        "n": 3,
+        "min_ms": 4.9939540000000004,
+        "p50_ms": 5.020512,
+        "p95_ms": 71.130524,
+        "p99_ms": 71.130524,
+        "max_ms": 71.130524,
+        "mean_ms": 27.048329999999996
+      }
+    },
+    {
+      "name": "page_sizes_from_page_tree",
+      "fixture": "text-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, FPDF_GetPageSizeByIndexF",
+      "stats": {
+        "n": 3,
+        "min_ms": 0.44263,
+        "p50_ms": 0.5024339999999999,
+        "p95_ms": 5.040303000000001,
+        "p99_ms": 5.040303000000001,
+        "max_ms": 5.040303000000001,
+        "mean_ms": 1.9951223333333334
+      }
+    },
+    {
+      "name": "page_sizes_by_loading",
+      "fixture": "text-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, FPDF_LoadPage per halaman",
+      "stats": {
+        "n": 3,
+        "min_ms": 110.68070300000001,
+        "p50_ms": 111.610872,
+        "p95_ms": 111.967953,
+        "p99_ms": 111.967953,
+        "max_ms": 111.967953,
+        "mean_ms": 111.41984266666668
+      }
+    },
+    {
+      "name": "page_sizes_from_page_tree",
+      "fixture": "text-500p.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, FPDF_GetPageSizeByIndexF",
+      "stats": {
+        "n": 3,
+        "min_ms": 0.38969,
+        "p50_ms": 0.460789,
+        "p95_ms": 4.726398,
+        "p99_ms": 4.726398,
+        "max_ms": 4.726398,
+        "mean_ms": 1.8589589999999998
+      }
+    },
+    {
+      "name": "page_sizes_by_loading",
+      "fixture": "text-500p.pdf",
+      "unit": "ms",
+      "detail": "500 halaman, FPDF_LoadPage per halaman",
+      "stats": {
+        "n": 3,
+        "min_ms": 118.44062299999999,
+        "p50_ms": 121.180052,
+        "p95_ms": 122.33344100000001,
+        "p99_ms": 122.33344100000001,
+        "max_ms": 122.33344100000001,
+        "mean_ms": 120.651372
+      }
+    },
+    {
+      "name": "render_fit_1600px",
+      "fixture": "mixed-500p-lin.pdf",
+      "unit": "ms/halaman",
+      "detail": "60 halaman, lebar tujuan 1600px, handle dilepas tiap halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 26.023302,
+        "p50_ms": 27.271487,
+        "p95_ms": 29.954854,
+        "p99_ms": 36.075392,
+        "max_ms": 36.075392,
+        "mean_ms": 27.701103883333335
+      }
+    },
+    {
+      "name": "render_zoom_200_",
+      "fixture": "mixed-500p-lin.pdf",
+      "unit": "ms/halaman",
+      "detail": "60 halaman, lebar tujuan 2448px, handle dilepas tiap halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 52.638594,
+        "p50_ms": 53.694407,
+        "p95_ms": 54.875685,
+        "p99_ms": 68.65779599999999,
+        "max_ms": 68.65779599999999,
+        "mean_ms": 54.07144814999999
+      }
+    },
+    {
+      "name": "render_fit_1600px",
+      "fixture": "mixed-500p.pdf",
+      "unit": "ms/halaman",
+      "detail": "60 halaman, lebar tujuan 1600px, handle dilepas tiap halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 26.109693999999998,
+        "p50_ms": 28.247421000000003,
+        "p95_ms": 30.382435,
+        "p99_ms": 31.655040000000003,
+        "max_ms": 31.655040000000003,
+        "mean_ms": 28.41753156666667
+      }
+    },
+    {
+      "name": "render_zoom_200_",
+      "fixture": "mixed-500p.pdf",
+      "unit": "ms/halaman",
+      "detail": "60 halaman, lebar tujuan 2448px, handle dilepas tiap halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 52.962511,
+        "p50_ms": 54.88791,
+        "p95_ms": 57.529743,
+        "p99_ms": 62.197452,
+        "max_ms": 62.197452,
+        "mean_ms": 55.168250983333344
+      }
+    },
+    {
+      "name": "render_fit_1600px",
+      "fixture": "mixed-raw-500p.pdf",
+      "unit": "ms/halaman",
+      "detail": "60 halaman, lebar tujuan 1600px, handle dilepas tiap halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 25.866535,
+        "p50_ms": 27.596394999999998,
+        "p95_ms": 29.085772,
+        "p99_ms": 31.394692000000003,
+        "max_ms": 31.394692000000003,
+        "mean_ms": 27.64137305000001
+      }
+    },
+    {
+      "name": "render_zoom_200_",
+      "fixture": "mixed-raw-500p.pdf",
+      "unit": "ms/halaman",
+      "detail": "60 halaman, lebar tujuan 2448px, handle dilepas tiap halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 52.22589,
+        "p50_ms": 53.677765,
+        "p95_ms": 55.514109999999995,
+        "p99_ms": 60.810885,
+        "max_ms": 60.810885,
+        "mean_ms": 53.953078683333324
+      }
+    },
+    {
+      "name": "render_fit_1600px",
+      "fixture": "scan-500p-lin.pdf",
+      "unit": "ms/halaman",
+      "detail": "60 halaman, lebar tujuan 1600px, handle dilepas tiap halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 64.73628500000001,
+        "p50_ms": 66.03499000000001,
+        "p95_ms": 67.292493,
+        "p99_ms": 67.471091,
+        "max_ms": 67.471091,
+        "mean_ms": 66.1192592
+      }
+    },
+    {
+      "name": "render_zoom_200_",
+      "fixture": "scan-500p-lin.pdf",
+      "unit": "ms/halaman",
+      "detail": "60 halaman, lebar tujuan 2448px, handle dilepas tiap halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 123.65288000000001,
+        "p50_ms": 124.803016,
+        "p95_ms": 125.733912,
+        "p99_ms": 132.22545499999998,
+        "max_ms": 132.22545499999998,
+        "mean_ms": 124.96780071666667
+      }
+    },
+    {
+      "name": "render_fit_1600px",
+      "fixture": "scan-500p.pdf",
+      "unit": "ms/halaman",
+      "detail": "60 halaman, lebar tujuan 1600px, handle dilepas tiap halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 65.04094400000001,
+        "p50_ms": 66.646894,
+        "p95_ms": 68.247349,
+        "p99_ms": 68.75665000000001,
+        "max_ms": 68.75665000000001,
+        "mean_ms": 66.73896155
+      }
+    },
+    {
+      "name": "render_zoom_200_",
+      "fixture": "scan-500p.pdf",
+      "unit": "ms/halaman",
+      "detail": "60 halaman, lebar tujuan 2448px, handle dilepas tiap halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 123.95457499999999,
+        "p50_ms": 125.340379,
+        "p95_ms": 128.06589,
+        "p99_ms": 132.012585,
+        "max_ms": 132.012585,
+        "mean_ms": 125.66828016666669
+      }
+    },
+    {
+      "name": "render_fit_1600px",
+      "fixture": "scan-50mb-500p-lin.pdf",
+      "unit": "ms/halaman",
+      "detail": "60 halaman, lebar tujuan 1600px, handle dilepas tiap halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 56.232839,
+        "p50_ms": 58.718185999999996,
+        "p95_ms": 61.008106999999995,
+        "p99_ms": 69.40755999999999,
+        "max_ms": 69.40755999999999,
+        "mean_ms": 59.023070233333335
+      }
+    },
+    {
+      "name": "render_zoom_200_",
+      "fixture": "scan-50mb-500p-lin.pdf",
+      "unit": "ms/halaman",
+      "detail": "60 halaman, lebar tujuan 2448px, handle dilepas tiap halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 113.797775,
+        "p50_ms": 116.041235,
+        "p95_ms": 119.46230700000001,
+        "p99_ms": 119.976279,
+        "max_ms": 119.976279,
+        "mean_ms": 116.47945936666666
+      }
+    },
+    {
+      "name": "render_fit_1600px",
+      "fixture": "scan-50mb-500p.pdf",
+      "unit": "ms/halaman",
+      "detail": "60 halaman, lebar tujuan 1600px, handle dilepas tiap halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 58.130531,
+        "p50_ms": 59.476675,
+        "p95_ms": 61.858703,
+        "p99_ms": 90.039473,
+        "max_ms": 90.039473,
+        "mean_ms": 60.480538633333325
+      }
+    },
+    {
+      "name": "render_zoom_200_",
+      "fixture": "scan-50mb-500p.pdf",
+      "unit": "ms/halaman",
+      "detail": "60 halaman, lebar tujuan 2448px, handle dilepas tiap halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 113.373704,
+        "p50_ms": 117.234452,
+        "p95_ms": 122.177734,
+        "p99_ms": 138.203693,
+        "max_ms": 138.203693,
+        "mean_ms": 118.01560500000001
+      }
+    },
+    {
+      "name": "render_fit_1600px",
+      "fixture": "scan-realistic-50mb-500p.pdf",
+      "unit": "ms/halaman",
+      "detail": "60 halaman, lebar tujuan 1600px, handle dilepas tiap halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 53.642934000000004,
+        "p50_ms": 54.805514,
+        "p95_ms": 59.517545999999996,
+        "p99_ms": 75.696921,
+        "max_ms": 75.696921,
+        "mean_ms": 55.62461223333334
+      }
+    },
+    {
+      "name": "render_zoom_200_",
+      "fixture": "scan-realistic-50mb-500p.pdf",
+      "unit": "ms/halaman",
+      "detail": "60 halaman, lebar tujuan 2448px, handle dilepas tiap halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 84.172021,
+        "p50_ms": 85.40573599999999,
+        "p95_ms": 87.540787,
+        "p99_ms": 89.568101,
+        "max_ms": 89.568101,
+        "mean_ms": 85.66782163333332
+      }
+    },
+    {
+      "name": "render_fit_1600px",
+      "fixture": "text-500p-lin.pdf",
+      "unit": "ms/halaman",
+      "detail": "60 halaman, lebar tujuan 1600px, handle dilepas tiap halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 12.013592,
+        "p50_ms": 12.796868,
+        "p95_ms": 13.832284,
+        "p99_ms": 15.555183,
+        "max_ms": 15.555183,
+        "mean_ms": 12.875897099999994
+      }
+    },
+    {
+      "name": "render_zoom_200_",
+      "fixture": "text-500p-lin.pdf",
+      "unit": "ms/halaman",
+      "detail": "60 halaman, lebar tujuan 2448px, handle dilepas tiap halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 28.810489,
+        "p50_ms": 30.217258,
+        "p95_ms": 31.346961999999998,
+        "p99_ms": 31.887002,
+        "max_ms": 31.887002,
+        "mean_ms": 30.22796171666668
+      }
+    },
+    {
+      "name": "render_fit_1600px",
+      "fixture": "text-500p.pdf",
+      "unit": "ms/halaman",
+      "detail": "60 halaman, lebar tujuan 1600px, handle dilepas tiap halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 12.820682999999999,
+        "p50_ms": 13.567015999999999,
+        "p95_ms": 14.654514,
+        "p99_ms": 16.424945,
+        "max_ms": 16.424945,
+        "mean_ms": 13.687646616666662
+      }
+    },
+    {
+      "name": "render_zoom_200_",
+      "fixture": "text-500p.pdf",
+      "unit": "ms/halaman",
+      "detail": "60 halaman, lebar tujuan 2448px, handle dilepas tiap halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 29.266469,
+        "p50_ms": 30.233797,
+        "p95_ms": 31.257832999999998,
+        "p99_ms": 32.035379000000006,
+        "max_ms": 32.035379000000006,
+        "mean_ms": 30.26589378333333
+      }
+    },
+    {
+      "name": "tile_512_at_400pct",
+      "fixture": "mixed-500p-lin.pdf",
+      "unit": "ms/ubin",
+      "detail": "halaman 0, handle halaman tetap dimuat",
+      "stats": {
+        "n": 60,
+        "min_ms": 0.040527,
+        "p50_ms": 0.44740399999999997,
+        "p95_ms": 1.528142,
+        "p99_ms": 2.75154,
+        "max_ms": 2.75154,
+        "mean_ms": 0.5685518666666668
+      }
+    },
+    {
+      "name": "tile_512_at_400pct",
+      "fixture": "mixed-500p.pdf",
+      "unit": "ms/ubin",
+      "detail": "halaman 0, handle halaman tetap dimuat",
+      "stats": {
+        "n": 60,
+        "min_ms": 0.042570000000000004,
+        "p50_ms": 0.438476,
+        "p95_ms": 1.512188,
+        "p99_ms": 2.798543,
+        "max_ms": 2.798543,
+        "mean_ms": 0.5719697333333333
+      }
+    },
+    {
+      "name": "tile_512_at_400pct",
+      "fixture": "mixed-raw-500p.pdf",
+      "unit": "ms/ubin",
+      "detail": "halaman 0, handle halaman tetap dimuat",
+      "stats": {
+        "n": 60,
+        "min_ms": 0.04218499999999999,
+        "p50_ms": 0.414817,
+        "p95_ms": 1.534017,
+        "p99_ms": 2.652098,
+        "max_ms": 2.652098,
+        "mean_ms": 0.5500342333333332
+      }
+    },
+    {
+      "name": "tile_512_at_400pct",
+      "fixture": "scan-500p-lin.pdf",
+      "unit": "ms/ubin",
+      "detail": "halaman 0, handle halaman tetap dimuat",
+      "stats": {
+        "n": 60,
+        "min_ms": 2.220284,
+        "p50_ms": 2.3006390000000003,
+        "p95_ms": 2.681909,
+        "p99_ms": 15.166243,
+        "max_ms": 15.166243,
+        "mean_ms": 2.600917783333333
+      }
+    },
+    {
+      "name": "tile_512_at_400pct",
+      "fixture": "scan-500p.pdf",
+      "unit": "ms/ubin",
+      "detail": "halaman 0, handle halaman tetap dimuat",
+      "stats": {
+        "n": 60,
+        "min_ms": 2.214203,
+        "p50_ms": 2.282255,
+        "p95_ms": 2.9736749999999996,
+        "p99_ms": 13.766012,
+        "max_ms": 13.766012,
+        "mean_ms": 2.550433016666667
+      }
+    },
+    {
+      "name": "tile_512_at_400pct",
+      "fixture": "scan-50mb-500p-lin.pdf",
+      "unit": "ms/ubin",
+      "detail": "halaman 0, handle halaman tetap dimuat",
+      "stats": {
+        "n": 60,
+        "min_ms": 2.145391,
+        "p50_ms": 2.230398,
+        "p95_ms": 2.340345,
+        "p99_ms": 9.437094,
+        "max_ms": 9.437094,
+        "mean_ms": 2.3560167
+      }
+    },
+    {
+      "name": "tile_512_at_400pct",
+      "fixture": "scan-50mb-500p.pdf",
+      "unit": "ms/ubin",
+      "detail": "halaman 0, handle halaman tetap dimuat",
+      "stats": {
+        "n": 60,
+        "min_ms": 2.15225,
+        "p50_ms": 2.222149,
+        "p95_ms": 2.750553,
+        "p99_ms": 9.248395,
+        "max_ms": 9.248395,
+        "mean_ms": 2.3923712833333326
+      }
+    },
+    {
+      "name": "tile_512_at_400pct",
+      "fixture": "scan-realistic-50mb-500p.pdf",
+      "unit": "ms/ubin",
+      "detail": "halaman 0, handle halaman tetap dimuat",
+      "stats": {
+        "n": 60,
+        "min_ms": 2.115403,
+        "p50_ms": 2.193972,
+        "p95_ms": 3.064778,
+        "p99_ms": 7.028231,
+        "max_ms": 7.028231,
+        "mean_ms": 2.3420236333333335
+      }
+    },
+    {
+      "name": "tile_512_at_400pct",
+      "fixture": "text-500p-lin.pdf",
+      "unit": "ms/ubin",
+      "detail": "halaman 0, handle halaman tetap dimuat",
+      "stats": {
+        "n": 60,
+        "min_ms": 0.037339000000000004,
+        "p50_ms": 1.910164,
+        "p95_ms": 2.810933,
+        "p99_ms": 3.213184,
+        "max_ms": 3.213184,
+        "mean_ms": 1.3185029333333338
+      }
+    },
+    {
+      "name": "tile_512_at_400pct",
+      "fixture": "text-500p.pdf",
+      "unit": "ms/ubin",
+      "detail": "halaman 0, handle halaman tetap dimuat",
+      "stats": {
+        "n": 60,
+        "min_ms": 0.03748,
+        "p50_ms": 1.86595,
+        "p95_ms": 2.548859,
+        "p99_ms": 2.6912260000000003,
+        "max_ms": 2.6912260000000003,
+        "mean_ms": 1.2718950666666666
+      }
+    },
+    {
+      "name": "page_render_whole",
+      "fixture": "mixed-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "1600x2071px sekali render",
+      "stats": {
+        "n": 10,
+        "min_ms": 27.338744000000002,
+        "p50_ms": 28.994784,
+        "p95_ms": 32.598485000000004,
+        "p99_ms": 32.598485000000004,
+        "max_ms": 32.598485000000004,
+        "mean_ms": 29.267140599999998
+      }
+    },
+    {
+      "name": "page_render_tiled",
+      "fixture": "mixed-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "4x5 ubin 512px menutupi area yang sama, 0.85x biaya render utuh",
+      "stats": {
+        "n": 10,
+        "min_ms": 24.399644000000002,
+        "p50_ms": 24.709583,
+        "p95_ms": 25.854262,
+        "p99_ms": 25.854262,
+        "max_ms": 25.854262,
+        "mean_ms": 24.976619999999997
+      }
+    },
+    {
+      "name": "page_render_whole",
+      "fixture": "mixed-500p.pdf",
+      "unit": "ms",
+      "detail": "1600x2071px sekali render",
+      "stats": {
+        "n": 10,
+        "min_ms": 28.109704,
+        "p50_ms": 29.112181,
+        "p95_ms": 32.19619,
+        "p99_ms": 32.19619,
+        "max_ms": 32.19619,
+        "mean_ms": 29.370018499999997
+      }
+    },
+    {
+      "name": "page_render_tiled",
+      "fixture": "mixed-500p.pdf",
+      "unit": "ms",
+      "detail": "4x5 ubin 512px menutupi area yang sama, 0.83x biaya render utuh",
+      "stats": {
+        "n": 10,
+        "min_ms": 23.91526,
+        "p50_ms": 24.053989,
+        "p95_ms": 25.427546,
+        "p99_ms": 25.427546,
+        "max_ms": 25.427546,
+        "mean_ms": 24.248455999999997
+      }
+    },
+    {
+      "name": "page_render_whole",
+      "fixture": "mixed-raw-500p.pdf",
+      "unit": "ms",
+      "detail": "1600x2071px sekali render",
+      "stats": {
+        "n": 10,
+        "min_ms": 28.475152,
+        "p50_ms": 28.882568,
+        "p95_ms": 32.217102,
+        "p99_ms": 32.217102,
+        "max_ms": 32.217102,
+        "mean_ms": 29.216393400000005
+      }
+    },
+    {
+      "name": "page_render_tiled",
+      "fixture": "mixed-raw-500p.pdf",
+      "unit": "ms",
+      "detail": "4x5 ubin 512px menutupi area yang sama, 0.86x biaya render utuh",
+      "stats": {
+        "n": 10,
+        "min_ms": 24.377693999999998,
+        "p50_ms": 24.878383,
+        "p95_ms": 25.777488,
+        "p99_ms": 25.777488,
+        "max_ms": 25.777488,
+        "mean_ms": 24.965176200000002
+      }
+    },
+    {
+      "name": "page_render_whole",
+      "fixture": "scan-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "1600x2071px sekali render",
+      "stats": {
+        "n": 10,
+        "min_ms": 66.487307,
+        "p50_ms": 67.74671599999999,
+        "p95_ms": 68.39985899999999,
+        "p99_ms": 68.39985899999999,
+        "max_ms": 68.39985899999999,
+        "mean_ms": 67.66991490000001
+      }
+    },
+    {
+      "name": "page_render_tiled",
+      "fixture": "scan-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "4x5 ubin 512px menutupi area yang sama, 0.93x biaya render utuh",
+      "stats": {
+        "n": 10,
+        "min_ms": 62.890564999999995,
+        "p50_ms": 62.938733,
+        "p95_ms": 64.220221,
+        "p99_ms": 64.220221,
+        "max_ms": 64.220221,
+        "mean_ms": 63.242678
+      }
+    },
+    {
+      "name": "page_render_whole",
+      "fixture": "scan-500p.pdf",
+      "unit": "ms",
+      "detail": "1600x2071px sekali render",
+      "stats": {
+        "n": 10,
+        "min_ms": 66.08659999999999,
+        "p50_ms": 67.11292,
+        "p95_ms": 68.693245,
+        "p99_ms": 68.693245,
+        "max_ms": 68.693245,
+        "mean_ms": 67.36881100000001
+      }
+    },
+    {
+      "name": "page_render_tiled",
+      "fixture": "scan-500p.pdf",
+      "unit": "ms",
+      "detail": "4x5 ubin 512px menutupi area yang sama, 0.94x biaya render utuh",
+      "stats": {
+        "n": 10,
+        "min_ms": 62.334548,
+        "p50_ms": 62.872533999999995,
+        "p95_ms": 63.382684999999995,
+        "p99_ms": 63.382684999999995,
+        "max_ms": 63.382684999999995,
+        "mean_ms": 62.90045200000001
+      }
+    },
+    {
+      "name": "page_render_whole",
+      "fixture": "scan-50mb-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "1600x2071px sekali render",
+      "stats": {
+        "n": 10,
+        "min_ms": 58.738985,
+        "p50_ms": 59.444667,
+        "p95_ms": 60.440085999999994,
+        "p99_ms": 60.440085999999994,
+        "max_ms": 60.440085999999994,
+        "mean_ms": 59.58255749999999
+      }
+    },
+    {
+      "name": "page_render_tiled",
+      "fixture": "scan-50mb-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "4x5 ubin 512px menutupi area yang sama, 1.00x biaya render utuh",
+      "stats": {
+        "n": 10,
+        "min_ms": 58.101924,
+        "p50_ms": 59.23141,
+        "p95_ms": 59.960312,
+        "p99_ms": 59.960312,
+        "max_ms": 59.960312,
+        "mean_ms": 59.1074857
+      }
+    },
+    {
+      "name": "page_render_whole",
+      "fixture": "scan-50mb-500p.pdf",
+      "unit": "ms",
+      "detail": "1600x2071px sekali render",
+      "stats": {
+        "n": 10,
+        "min_ms": 57.272513999999994,
+        "p50_ms": 58.323196,
+        "p95_ms": 61.732839,
+        "p99_ms": 61.732839,
+        "max_ms": 61.732839,
+        "mean_ms": 59.1729127
+      }
+    },
+    {
+      "name": "page_render_tiled",
+      "fixture": "scan-50mb-500p.pdf",
+      "unit": "ms",
+      "detail": "4x5 ubin 512px menutupi area yang sama, 1.01x biaya render utuh",
+      "stats": {
+        "n": 10,
+        "min_ms": 58.047957999999994,
+        "p50_ms": 58.838565,
+        "p95_ms": 59.83372,
+        "p99_ms": 59.83372,
+        "max_ms": 59.83372,
+        "mean_ms": 58.8718932
+      }
+    },
+    {
+      "name": "page_render_whole",
+      "fixture": "scan-realistic-50mb-500p.pdf",
+      "unit": "ms",
+      "detail": "1600x2071px sekali render",
+      "stats": {
+        "n": 10,
+        "min_ms": 53.929495,
+        "p50_ms": 54.487994,
+        "p95_ms": 57.613229000000004,
+        "p99_ms": 57.613229000000004,
+        "max_ms": 57.613229000000004,
+        "mean_ms": 54.94884940000001
+      }
+    },
+    {
+      "name": "page_render_tiled",
+      "fixture": "scan-realistic-50mb-500p.pdf",
+      "unit": "ms",
+      "detail": "4x5 ubin 512px menutupi area yang sama, 1.03x biaya render utuh",
+      "stats": {
+        "n": 10,
+        "min_ms": 55.002312999999994,
+        "p50_ms": 55.855261000000006,
+        "p95_ms": 56.979317,
+        "p99_ms": 56.979317,
+        "max_ms": 56.979317,
+        "mean_ms": 55.980850399999994
+      }
+    },
+    {
+      "name": "page_render_whole",
+      "fixture": "text-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "1600x2071px sekali render",
+      "stats": {
+        "n": 10,
+        "min_ms": 14.836749999999999,
+        "p50_ms": 15.135218,
+        "p95_ms": 17.220159,
+        "p99_ms": 17.220159,
+        "max_ms": 17.220159,
+        "mean_ms": 15.3377938
+      }
+    },
+    {
+      "name": "page_render_tiled",
+      "fixture": "text-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "4x5 ubin 512px menutupi area yang sama, 0.96x biaya render utuh",
+      "stats": {
+        "n": 10,
+        "min_ms": 14.246569000000001,
+        "p50_ms": 14.463388,
+        "p95_ms": 15.696287,
+        "p99_ms": 15.696287,
+        "max_ms": 15.696287,
+        "mean_ms": 14.685500300000005
+      }
+    },
+    {
+      "name": "page_render_whole",
+      "fixture": "text-500p.pdf",
+      "unit": "ms",
+      "detail": "1600x2071px sekali render",
+      "stats": {
+        "n": 10,
+        "min_ms": 13.113748,
+        "p50_ms": 13.373358,
+        "p95_ms": 16.981709000000002,
+        "p99_ms": 16.981709000000002,
+        "max_ms": 16.981709000000002,
+        "mean_ms": 13.8592108
+      }
+    },
+    {
+      "name": "page_render_tiled",
+      "fixture": "text-500p.pdf",
+      "unit": "ms",
+      "detail": "4x5 ubin 512px menutupi area yang sama, 1.11x biaya render utuh",
+      "stats": {
+        "n": 10,
+        "min_ms": 14.365514,
+        "p50_ms": 14.799089,
+        "p95_ms": 15.669216,
+        "p99_ms": 15.669216,
+        "max_ms": 15.669216,
+        "mean_ms": 14.896265600000001
+      }
+    },
+    {
+      "name": "rezoom_page_cached",
+      "fixture": "mixed-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "FPDF_LoadPage sudah dilakukan",
+      "stats": {
+        "n": 20,
+        "min_ms": 21.974874,
+        "p50_ms": 30.612232,
+        "p95_ms": 41.004485,
+        "p99_ms": 41.134302999999996,
+        "max_ms": 41.134302999999996,
+        "mean_ms": 30.840703350000005
+      }
+    },
+    {
+      "name": "rezoom_page_reloaded",
+      "fixture": "mixed-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "FPDF_LoadPage diulang tiap render",
+      "stats": {
+        "n": 20,
+        "min_ms": 20.470722,
+        "p50_ms": 30.190079,
+        "p95_ms": 39.876973,
+        "p99_ms": 40.325134999999996,
+        "max_ms": 40.325134999999996,
+        "mean_ms": 30.29302450000001
+      }
+    },
+    {
+      "name": "rezoom_page_cached",
+      "fixture": "mixed-500p.pdf",
+      "unit": "ms",
+      "detail": "FPDF_LoadPage sudah dilakukan",
+      "stats": {
+        "n": 20,
+        "min_ms": 20.866097,
+        "p50_ms": 29.324369,
+        "p95_ms": 39.450246,
+        "p99_ms": 41.635489,
+        "max_ms": 41.635489,
+        "mean_ms": 30.695661649999998
+      }
+    },
+    {
+      "name": "rezoom_page_reloaded",
+      "fixture": "mixed-500p.pdf",
+      "unit": "ms",
+      "detail": "FPDF_LoadPage diulang tiap render",
+      "stats": {
+        "n": 20,
+        "min_ms": 20.309229000000002,
+        "p50_ms": 28.893865,
+        "p95_ms": 38.908374,
+        "p99_ms": 39.869971,
+        "max_ms": 39.869971,
+        "mean_ms": 30.030786649999992
+      }
+    },
+    {
+      "name": "rezoom_page_cached",
+      "fixture": "mixed-raw-500p.pdf",
+      "unit": "ms",
+      "detail": "FPDF_LoadPage sudah dilakukan",
+      "stats": {
+        "n": 20,
+        "min_ms": 20.921893999999998,
+        "p50_ms": 29.083413,
+        "p95_ms": 39.79365,
+        "p99_ms": 40.389355,
+        "max_ms": 40.389355,
+        "mean_ms": 30.540316099999995
+      }
+    },
+    {
+      "name": "rezoom_page_reloaded",
+      "fixture": "mixed-raw-500p.pdf",
+      "unit": "ms",
+      "detail": "FPDF_LoadPage diulang tiap render",
+      "stats": {
+        "n": 20,
+        "min_ms": 20.913247,
+        "p50_ms": 29.243972,
+        "p95_ms": 38.869678,
+        "p99_ms": 39.731122,
+        "max_ms": 39.731122,
+        "mean_ms": 30.143738600000006
+      }
+    },
+    {
+      "name": "rezoom_page_cached",
+      "fixture": "scan-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "FPDF_LoadPage sudah dilakukan",
+      "stats": {
+        "n": 20,
+        "min_ms": 47.921874,
+        "p50_ms": 65.62839199999999,
+        "p95_ms": 87.757236,
+        "p99_ms": 89.69346999999999,
+        "max_ms": 89.69346999999999,
+        "mean_ms": 67.86690684999999
+      }
+    },
+    {
+      "name": "rezoom_page_reloaded",
+      "fixture": "scan-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "FPDF_LoadPage diulang tiap render",
+      "stats": {
+        "n": 20,
+        "min_ms": 48.759242,
+        "p50_ms": 66.072906,
+        "p95_ms": 89.11082400000001,
+        "p99_ms": 89.39106600000001,
+        "max_ms": 89.39106600000001,
+        "mean_ms": 67.92498889999999
+      }
+    },
+    {
+      "name": "rezoom_page_cached",
+      "fixture": "scan-500p.pdf",
+      "unit": "ms",
+      "detail": "FPDF_LoadPage sudah dilakukan",
+      "stats": {
+        "n": 20,
+        "min_ms": 47.705019,
+        "p50_ms": 66.611558,
+        "p95_ms": 88.28623400000001,
+        "p99_ms": 91.59827800000001,
+        "max_ms": 91.59827800000001,
+        "mean_ms": 68.7315385
+      }
+    },
+    {
+      "name": "rezoom_page_reloaded",
+      "fixture": "scan-500p.pdf",
+      "unit": "ms",
+      "detail": "FPDF_LoadPage diulang tiap render",
+      "stats": {
+        "n": 20,
+        "min_ms": 47.579243,
+        "p50_ms": 66.731483,
+        "p95_ms": 90.60737,
+        "p99_ms": 94.63878700000001,
+        "max_ms": 94.63878700000001,
+        "mean_ms": 69.13243085000002
+      }
+    },
+    {
+      "name": "rezoom_page_cached",
+      "fixture": "scan-50mb-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "FPDF_LoadPage sudah dilakukan",
+      "stats": {
+        "n": 20,
+        "min_ms": 40.817012999999996,
+        "p50_ms": 56.798055,
+        "p95_ms": 79.722497,
+        "p99_ms": 86.625955,
+        "max_ms": 86.625955,
+        "mean_ms": 59.5502766
+      }
+    },
+    {
+      "name": "rezoom_page_reloaded",
+      "fixture": "scan-50mb-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "FPDF_LoadPage diulang tiap render",
+      "stats": {
+        "n": 20,
+        "min_ms": 39.319655000000004,
+        "p50_ms": 55.826875,
+        "p95_ms": 79.43728899999999,
+        "p99_ms": 79.94456899999999,
+        "max_ms": 79.94456899999999,
+        "mean_ms": 58.966944950000006
+      }
+    },
+    {
+      "name": "rezoom_page_cached",
+      "fixture": "scan-50mb-500p.pdf",
+      "unit": "ms",
+      "detail": "FPDF_LoadPage sudah dilakukan",
+      "stats": {
+        "n": 20,
+        "min_ms": 39.013166000000005,
+        "p50_ms": 56.905694,
+        "p95_ms": 78.77449,
+        "p99_ms": 81.13600799999999,
+        "max_ms": 81.13600799999999,
+        "mean_ms": 58.71047455
+      }
+    },
+    {
+      "name": "rezoom_page_reloaded",
+      "fixture": "scan-50mb-500p.pdf",
+      "unit": "ms",
+      "detail": "FPDF_LoadPage diulang tiap render",
+      "stats": {
+        "n": 20,
+        "min_ms": 37.540769000000004,
+        "p50_ms": 55.437106,
+        "p95_ms": 78.728273,
+        "p99_ms": 80.122422,
+        "max_ms": 80.122422,
+        "mean_ms": 58.75635695
+      }
+    },
+    {
+      "name": "rezoom_page_cached",
+      "fixture": "scan-realistic-50mb-500p.pdf",
+      "unit": "ms",
+      "detail": "FPDF_LoadPage sudah dilakukan",
+      "stats": {
+        "n": 20,
+        "min_ms": 35.354183,
+        "p50_ms": 54.692345,
+        "p95_ms": 74.78575599999999,
+        "p99_ms": 77.926583,
+        "max_ms": 77.926583,
+        "mean_ms": 54.72760695000001
+      }
+    },
+    {
+      "name": "rezoom_page_reloaded",
+      "fixture": "scan-realistic-50mb-500p.pdf",
+      "unit": "ms",
+      "detail": "FPDF_LoadPage diulang tiap render",
+      "stats": {
+        "n": 20,
+        "min_ms": 35.616687,
+        "p50_ms": 53.330385,
+        "p95_ms": 74.435397,
+        "p99_ms": 76.689527,
+        "max_ms": 76.689527,
+        "mean_ms": 54.661284849999994
+      }
+    },
+    {
+      "name": "rezoom_page_cached",
+      "fixture": "text-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "FPDF_LoadPage sudah dilakukan",
+      "stats": {
+        "n": 20,
+        "min_ms": 9.431007,
+        "p50_ms": 13.956527999999999,
+        "p95_ms": 22.648748,
+        "p99_ms": 22.810298,
+        "max_ms": 22.810298,
+        "mean_ms": 15.5797867
+      }
+    },
+    {
+      "name": "rezoom_page_reloaded",
+      "fixture": "text-500p-lin.pdf",
+      "unit": "ms",
+      "detail": "FPDF_LoadPage diulang tiap render",
+      "stats": {
+        "n": 20,
+        "min_ms": 8.684738,
+        "p50_ms": 13.000039999999998,
+        "p95_ms": 21.217194000000003,
+        "p99_ms": 21.813881,
+        "max_ms": 21.813881,
+        "mean_ms": 14.978430749999998
+      }
+    },
+    {
+      "name": "rezoom_page_cached",
+      "fixture": "text-500p.pdf",
+      "unit": "ms",
+      "detail": "FPDF_LoadPage sudah dilakukan",
+      "stats": {
+        "n": 20,
+        "min_ms": 9.991336,
+        "p50_ms": 15.07788,
+        "p95_ms": 21.657721000000002,
+        "p99_ms": 22.676381999999997,
+        "max_ms": 22.676381999999997,
+        "mean_ms": 15.408268099999997
+      }
+    },
+    {
+      "name": "rezoom_page_reloaded",
+      "fixture": "text-500p.pdf",
+      "unit": "ms",
+      "detail": "FPDF_LoadPage diulang tiap render",
+      "stats": {
+        "n": 20,
+        "min_ms": 9.487418,
+        "p50_ms": 14.728363,
+        "p95_ms": 20.797871,
+        "p99_ms": 21.716941,
+        "max_ms": 21.716941,
+        "mean_ms": 14.95505345
+      }
+    },
+    {
+      "name": "text_plain_per_page",
+      "fixture": "mixed-500p-lin.pdf",
+      "unit": "ms/halaman",
+      "detail": "1994 char/halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 1.522695,
+        "p50_ms": 1.611269,
+        "p95_ms": 1.803132,
+        "p99_ms": 3.3740200000000002,
+        "max_ms": 3.3740200000000002,
+        "mean_ms": 1.6583470333333339
+      }
+    },
+    {
+      "name": "text_boxed_per_page",
+      "fixture": "mixed-500p-lin.pdf",
+      "unit": "ms/halaman",
+      "detail": "termasuk kotak per karakter",
+      "stats": {
+        "n": 60,
+        "min_ms": 0.704094,
+        "p50_ms": 0.7446119999999999,
+        "p95_ms": 0.826001,
+        "p99_ms": 0.855366,
+        "max_ms": 0.855366,
+        "mean_ms": 0.7574633833333334
+      }
+    },
+    {
+      "name": "text_plain_per_page",
+      "fixture": "mixed-500p.pdf",
+      "unit": "ms/halaman",
+      "detail": "1994 char/halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 1.597592,
+        "p50_ms": 1.685455,
+        "p95_ms": 1.7994219999999999,
+        "p99_ms": 2.614529,
+        "max_ms": 2.614529,
+        "mean_ms": 1.7194238499999996
+      }
+    },
+    {
+      "name": "text_boxed_per_page",
+      "fixture": "mixed-500p.pdf",
+      "unit": "ms/halaman",
+      "detail": "termasuk kotak per karakter",
+      "stats": {
+        "n": 60,
+        "min_ms": 0.704724,
+        "p50_ms": 0.758398,
+        "p95_ms": 0.904388,
+        "p99_ms": 0.984305,
+        "max_ms": 0.984305,
+        "mean_ms": 0.7719287666666669
+      }
+    },
+    {
+      "name": "text_plain_per_page",
+      "fixture": "mixed-raw-500p.pdf",
+      "unit": "ms/halaman",
+      "detail": "1994 char/halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 1.564382,
+        "p50_ms": 1.680625,
+        "p95_ms": 1.832934,
+        "p99_ms": 2.6701699999999997,
+        "max_ms": 2.6701699999999997,
+        "mean_ms": 1.6999326499999996
+      }
+    },
+    {
+      "name": "text_boxed_per_page",
+      "fixture": "mixed-raw-500p.pdf",
+      "unit": "ms/halaman",
+      "detail": "termasuk kotak per karakter",
+      "stats": {
+        "n": 60,
+        "min_ms": 0.706788,
+        "p50_ms": 0.7590239999999999,
+        "p95_ms": 0.8288040000000001,
+        "p99_ms": 0.891197,
+        "max_ms": 0.891197,
+        "mean_ms": 0.7663413999999997
+      }
+    },
+    {
+      "name": "text_plain_per_page",
+      "fixture": "scan-500p-lin.pdf",
+      "unit": "ms/halaman",
+      "detail": "0 char/halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 0.130317,
+        "p50_ms": 0.154639,
+        "p95_ms": 0.201163,
+        "p99_ms": 0.458236,
+        "max_ms": 0.458236,
+        "mean_ms": 0.16662033333333331
+      }
+    },
+    {
+      "name": "text_boxed_per_page",
+      "fixture": "scan-500p-lin.pdf",
+      "unit": "ms/halaman",
+      "detail": "termasuk kotak per karakter",
+      "stats": {
+        "n": 60,
+        "min_ms": 0.000198,
+        "p50_ms": 0.000228,
+        "p95_ms": 0.00037099999999999996,
+        "p99_ms": 0.000494,
+        "max_ms": 0.000494,
+        "mean_ms": 0.0002611666666666666
+      }
+    },
+    {
+      "name": "text_plain_per_page",
+      "fixture": "scan-500p.pdf",
+      "unit": "ms/halaman",
+      "detail": "0 char/halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 0.12048,
+        "p50_ms": 0.144844,
+        "p95_ms": 0.197156,
+        "p99_ms": 0.494362,
+        "max_ms": 0.494362,
+        "mean_ms": 0.15943833333333332
+      }
+    },
+    {
+      "name": "text_boxed_per_page",
+      "fixture": "scan-500p.pdf",
+      "unit": "ms/halaman",
+      "detail": "termasuk kotak per karakter",
+      "stats": {
+        "n": 60,
+        "min_ms": 0.00019999999999999998,
+        "p50_ms": 0.00023999999999999998,
+        "p95_ms": 0.000377,
+        "p99_ms": 0.000583,
+        "max_ms": 0.000583,
+        "mean_ms": 0.00027226666666666665
+      }
+    },
+    {
+      "name": "text_plain_per_page",
+      "fixture": "scan-50mb-500p-lin.pdf",
+      "unit": "ms/halaman",
+      "detail": "0 char/halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 0.080765,
+        "p50_ms": 0.093936,
+        "p95_ms": 0.13467,
+        "p99_ms": 0.477291,
+        "max_ms": 0.477291,
+        "mean_ms": 0.1077613166666667
+      }
+    },
+    {
+      "name": "text_boxed_per_page",
+      "fixture": "scan-50mb-500p-lin.pdf",
+      "unit": "ms/halaman",
+      "detail": "termasuk kotak per karakter",
+      "stats": {
+        "n": 60,
+        "min_ms": 0.000203,
+        "p50_ms": 0.000235,
+        "p95_ms": 0.000372,
+        "p99_ms": 0.0007080000000000001,
+        "max_ms": 0.0007080000000000001,
+        "mean_ms": 0.0002648666666666667
+      }
+    },
+    {
+      "name": "text_plain_per_page",
+      "fixture": "scan-50mb-500p.pdf",
+      "unit": "ms/halaman",
+      "detail": "0 char/halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 0.077245,
+        "p50_ms": 0.091888,
+        "p95_ms": 0.12675499999999998,
+        "p99_ms": 0.441192,
+        "max_ms": 0.441192,
+        "mean_ms": 0.1030765833333333
+      }
+    },
+    {
+      "name": "text_boxed_per_page",
+      "fixture": "scan-50mb-500p.pdf",
+      "unit": "ms/halaman",
+      "detail": "termasuk kotak per karakter",
+      "stats": {
+        "n": 60,
+        "min_ms": 0.000202,
+        "p50_ms": 0.000241,
+        "p95_ms": 0.000404,
+        "p99_ms": 0.00042300000000000004,
+        "max_ms": 0.00042300000000000004,
+        "mean_ms": 0.0002688833333333333
+      }
+    },
+    {
+      "name": "text_plain_per_page",
+      "fixture": "scan-realistic-50mb-500p.pdf",
+      "unit": "ms/halaman",
+      "detail": "0 char/halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 0.05797,
+        "p50_ms": 0.068509,
+        "p95_ms": 0.10592,
+        "p99_ms": 0.375624,
+        "max_ms": 0.375624,
+        "mean_ms": 0.077779
+      }
+    },
+    {
+      "name": "text_boxed_per_page",
+      "fixture": "scan-realistic-50mb-500p.pdf",
+      "unit": "ms/halaman",
+      "detail": "termasuk kotak per karakter",
+      "stats": {
+        "n": 60,
+        "min_ms": 0.00019999999999999998,
+        "p50_ms": 0.000224,
+        "p95_ms": 0.00039799999999999997,
+        "p99_ms": 0.000489,
+        "max_ms": 0.000489,
+        "mean_ms": 0.00025278333333333334
+      }
+    },
+    {
+      "name": "text_plain_per_page",
+      "fixture": "text-500p-lin.pdf",
+      "unit": "ms/halaman",
+      "detail": "4468 char/halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 1.784211,
+        "p50_ms": 1.892684,
+        "p95_ms": 2.11546,
+        "p99_ms": 2.8701090000000002,
+        "max_ms": 2.8701090000000002,
+        "mean_ms": 1.928811816666667
+      }
+    },
+    {
+      "name": "text_boxed_per_page",
+      "fixture": "text-500p-lin.pdf",
+      "unit": "ms/halaman",
+      "detail": "termasuk kotak per karakter",
+      "stats": {
+        "n": 60,
+        "min_ms": 1.620337,
+        "p50_ms": 1.696322,
+        "p95_ms": 1.886166,
+        "p99_ms": 2.412382,
+        "max_ms": 2.412382,
+        "mean_ms": 1.7292504833333333
+      }
+    },
+    {
+      "name": "text_plain_per_page",
+      "fixture": "text-500p.pdf",
+      "unit": "ms/halaman",
+      "detail": "4468 char/halaman",
+      "stats": {
+        "n": 60,
+        "min_ms": 1.7927710000000001,
+        "p50_ms": 1.880131,
+        "p95_ms": 2.033082,
+        "p99_ms": 2.864432,
+        "max_ms": 2.864432,
+        "mean_ms": 1.913074066666667
+      }
+    },
+    {
+      "name": "text_boxed_per_page",
+      "fixture": "text-500p.pdf",
+      "unit": "ms/halaman",
+      "detail": "termasuk kotak per karakter",
+      "stats": {
+        "n": 60,
+        "min_ms": 1.612868,
+        "p50_ms": 1.686829,
+        "p95_ms": 1.8375620000000001,
+        "p99_ms": 1.907426,
+        "max_ms": 1.907426,
+        "mean_ms": 1.6930099833333336
+      }
+    },
+    {
+      "name": "rss_10_heavy_docs_mmap",
+      "fixture": "821MB total",
+      "unit": "MB",
+      "detail": "delta RSS untuk 10 dokumen + render halaman 0, 275 ms",
+      "stats": {
+        "n": 1,
+        "min_ms": 4.0,
+        "p50_ms": 4.0,
+        "p95_ms": 4.0,
+        "p99_ms": 4.0,
+        "max_ms": 4.0,
+        "mean_ms": 4.0
+      }
+    },
+    {
+      "name": "rss_10_heavy_docs_copied",
+      "fixture": "821MB total",
+      "unit": "MB",
+      "detail": "delta RSS untuk 10 dokumen + render halaman 0, 1785 ms",
+      "stats": {
+        "n": 1,
+        "min_ms": 811.0,
+        "p50_ms": 811.0,
+        "p95_ms": 811.0,
+        "p99_ms": 811.0,
+        "max_ms": 811.0,
+        "mean_ms": 811.0
+      }
+    }
+  ]
+}

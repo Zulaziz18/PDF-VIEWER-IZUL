@@ -1,0 +1,44 @@
+[package]
+name = "izul-app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+description = "PDF Studio Izul — proses UI, supervisor, dan asosiasi berkas"
+
+[[bin]]
+name = "pdf-studio-izul"
+path = "src/main.rs"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+izul-ipc.workspace = true
+izul-model.workspace = true
+izul-store.workspace = true
+tauri = { version = "2", features = [] }
+tauri-plugin-dialog = "2"
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+tracing-appender.workspace = true
+tokio.workspace = true
+parking_lot.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[target.'cfg(windows)'.dependencies.windows]
+version = "0.62"
+features = [
+    "Win32_Foundation",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+    "Win32_Security",
+]
+
+[lints]
+workspace = true

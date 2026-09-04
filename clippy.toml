@@ -1,0 +1,2 @@
+# Anything above this is a copy that will not fit in a cache line pair.
+trivial-copy-size-limit = 16

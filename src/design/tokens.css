@@ -1,0 +1,86 @@
+/*
+ * Design tokens (SPEC 12).
+ *
+ * The document is the star; the interface is the staff. Every value here is one
+ * the SPEC names explicitly, so a component never invents a colour or a radius.
+ */
+@import "tailwindcss";
+
+:root {
+  color-scheme: light;
+
+  /* Canvas is a neutral, never pure white: it has to sit behind a white page
+     without the page edge disappearing into it. */
+  --izul-canvas: #f5f5f4;
+  --izul-surface: #ffffff;
+  --izul-surface-raised: #fafaf9;
+  --izul-border: #e0e0dd;
+  --izul-text: #1c1c1e;
+  --izul-text-dim: #6b6b70;
+
+  /* One accent for the whole application. Other colours are status only. */
+  --izul-accent: #2f6feb;
+  --izul-danger: #d1343c;
+  --izul-unsaved: #e07b26;
+
+  --izul-radius: 8px;
+  --izul-radius-panel: 12px;
+  --izul-grid: 8px;
+
+  --izul-font: "Segoe UI Variable", "Segoe UI", Inter, system-ui, sans-serif;
+  --izul-size-xs: 12px;
+  --izul-size-sm: 13px;
+  --izul-size-md: 15px;
+  --izul-size-lg: 20px;
+  --izul-size-xl: 28px;
+
+  --izul-motion: 150ms;
+  --izul-ease: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  /* Not pure black: a true-black canvas makes a white page glare. */
+  --izul-canvas: #1c1c1e;
+  --izul-surface: #252528;
+  --izul-surface-raised: #2e2e32;
+  --izul-border: #3a3a3f;
+  --izul-text: #f2f2f4;
+  --izul-text-dim: #9a9aa2;
+  --izul-accent: #6f9dff;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--izul-canvas);
+  color: var(--izul-text);
+  font-family: var(--izul-font);
+  font-size: var(--izul-size-sm);
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Keyboard operability is a requirement, not a preference (SPEC 14). */
+:focus-visible {
+  outline: 2px solid var(--izul-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

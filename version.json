@@ -1,0 +1,11 @@
+{
+  "name": "PDF Studio Izul",
+  "codename": "Atlas",
+  "version": "7.0.0-alpha.0",
+  "phase": "0",
+  "phaseName": "Fondasi, Batas Proses, dan Spike Pengukuran",
+  "buildChannel": "dev",
+  "pdfiumVersion": "151.0.7881.0",
+  "minWindows": "10.0.19041",
+  "pdfiumTag": "chromium/7881"
+}

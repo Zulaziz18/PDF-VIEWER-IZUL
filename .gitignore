@@ -1,0 +1,27 @@
+# Build output
+/target
+**/target
+node_modules
+dist
+
+# The vendored PDFium tree is reproducible from a pinned tag, so only the
+# script that fetches it is tracked. See vendor/pdfium/fetch.sh.
+/vendor/pdfium/*
+!/vendor/pdfium/fetch.sh
+
+# Benchmark fixtures are hundreds of megabytes and are regenerated
+# deterministically from a fixed seed by bench/make_fixtures.py. The manifest
+# recording their sizes is tracked; the PDFs are not.
+/test-fixtures/*
+!/test-fixtures/MANIFEST.json
+!/test-fixtures/README.md
+
+# Benchmark output: the Phase 0 results are tracked as a record of what was
+# measured; later ad-hoc runs are not.
+/bench/results/*
+!/bench/results/.gitkeep
+!/bench/results/phase0-*
+
+.DS_Store
+*.log
+/.venv

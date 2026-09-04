@@ -1,0 +1,197 @@
+
+==============================================================================
+HOST
+------------------------------------------------------------------------------
+linux x86_64 · Intel(R) Xeon(R) Processor @ 2.80GHz · 4 core · 16075 MB RAM
+PDFium 151.0.7881.0 · profil release
+
+==============================================================================
+A. OPEN — berkas di disk sampai jumlah halaman diketahui
+------------------------------------------------------------------------------
+fixture                           MB  waktu                                                     
+mixed-500p-lin.pdf              48.1  cold     16.8ms · warm n=5    p50=    0.31ms  p95=    0.41ms  p99=    0.41ms  max=    0.41ms  (500 hal)
+mixed-500p.pdf                  50.0  cold     14.9ms · warm n=5    p50=    0.29ms  p95=    0.35ms  p99=    0.35ms  max=    0.35ms  (500 hal)
+mixed-raw-500p.pdf              10.4  cold     11.6ms · warm n=5    p50=    0.30ms  p95=    0.36ms  p99=    0.36ms  max=    0.36ms  (500 hal)
+scan-500p-lin.pdf              137.8  cold      9.3ms · warm n=5    p50=    0.33ms  p95=    0.36ms  p99=    0.36ms  max=    0.36ms  (500 hal)
+scan-500p.pdf                  137.8  cold      9.1ms · warm n=5    p50=    0.33ms  p95=    0.34ms  p99=    0.34ms  max=    0.34ms  (500 hal)
+scan-50mb-500p-lin.pdf          79.8  cold     10.8ms · warm n=5    p50=    0.33ms  p95=    0.43ms  p99=    0.43ms  max=    0.43ms  (500 hal)
+scan-50mb-500p.pdf              79.8  cold     10.4ms · warm n=5    p50=    0.32ms  p95=    0.35ms  p99=    0.35ms  max=    0.35ms  (500 hal)
+scan-realistic-50mb-500p.pdf      51.4  cold     10.6ms · warm n=5    p50=    0.32ms  p95=    0.34ms  p99=    0.34ms  max=    0.34ms  (500 hal)
+text-500p-lin.pdf                0.8  cold      1.5ms · warm n=5    p50=    0.26ms  p95=    0.28ms  p99=    0.28ms  max=    0.28ms  (500 hal)
+text-500p.pdf                    1.0  cold      1.5ms · warm n=5    p50=    0.27ms  p95=    0.29ms  p99=    0.29ms  max=    0.29ms  (500 hal)
+
+==============================================================================
+B. FIRST PAGE — target SPEC 13: < 400 ms untuk 50 MB / 500 halaman
+------------------------------------------------------------------------------
+berkas di disk -> piksel halaman 1 siap, lebar 1600px (fit width)
+fixture                           MB  waktu                                                     
+mixed-500p-lin.pdf              48.1  cold     93.4ms · warm n=5    p50=   33.60ms  p95=   44.33ms  p99=   44.33ms  max=   44.33ms  [LULUS vs 400ms]
+mixed-500p.pdf                  50.0  cold     47.9ms · warm n=5    p50=   31.71ms  p95=   39.98ms  p99=   39.98ms  max=   39.98ms  [LULUS vs 400ms]
+mixed-raw-500p.pdf              10.4  cold     42.2ms · warm n=5    p50=   31.20ms  p95=   32.12ms  p99=   32.12ms  max=   32.12ms  [LULUS vs 400ms]
+scan-500p-lin.pdf              137.8  cold     84.9ms · warm n=5    p50=   69.91ms  p95=   71.12ms  p99=   71.12ms  max=   71.12ms  [LULUS vs 400ms]
+scan-500p.pdf                  137.8  cold     79.8ms · warm n=5    p50=   70.68ms  p95=  112.13ms  p99=  112.13ms  max=  112.13ms  [LULUS vs 400ms]
+scan-50mb-500p-lin.pdf          79.8  cold     75.4ms · warm n=5    p50=   60.82ms  p95=   62.46ms  p99=   62.46ms  max=   62.46ms  [LULUS vs 400ms]
+scan-50mb-500p.pdf              79.8  cold     74.2ms · warm n=5    p50=   61.06ms  p95=   62.21ms  p99=   62.21ms  max=   62.21ms  [LULUS vs 400ms]
+scan-realistic-50mb-500p.pdf      51.4  cold     67.6ms · warm n=5    p50=   56.79ms  p95=   72.20ms  p99=   72.20ms  max=   72.20ms  [LULUS vs 400ms]
+text-500p-lin.pdf                0.8  cold     20.8ms · warm n=5    p50=   15.36ms  p95=   16.50ms  p99=   16.50ms  max=   16.50ms  [LULUS vs 400ms]
+text-500p.pdf                    1.0  cold     17.5ms · warm n=5    p50=   15.68ms  p95=   15.97ms  p99=   15.97ms  max=   15.97ms  [LULUS vs 400ms]
+
+==============================================================================
+C. PAGE METRICS — page_sizes() untuk 500 halaman
+------------------------------------------------------------------------------
+scrollbar tidak bisa punya ukuran benar sebelum ini selesai
+mixed-500p-lin.pdf         pohon  n=3    p50=    0.66ms  p95=    9.77ms  p99=    9.77ms  max=    9.77ms
+                           muat   n=3    p50=  419.07ms  p95=  426.16ms  p99=  426.16ms  max=  426.16ms
+mixed-500p.pdf             pohon  n=3    p50=    0.60ms  p95=    6.62ms  p99=    6.62ms  max=    6.62ms
+                           muat   n=3    p50=  465.16ms  p95=  471.90ms  p99=  471.90ms  max=  471.90ms
+mixed-raw-500p.pdf         pohon  n=3    p50=    0.71ms  p95=    7.08ms  p99=    7.08ms  max=    7.08ms
+                           muat   n=3    p50=  443.92ms  p95=  470.28ms  p99=  470.28ms  max=  470.28ms
+scan-500p-lin.pdf          pohon  n=3    p50=    0.93ms  p95=  119.33ms  p99=  119.33ms  max=  119.33ms
+                           muat   n=3    p50=    4.80ms  p95=  274.32ms  p99=  274.32ms  max=  274.32ms
+scan-500p.pdf              pohon  n=3    p50=    0.89ms  p95=  124.29ms  p99=  124.29ms  max=  124.29ms
+                           muat   n=3    p50=    5.25ms  p95=  237.75ms  p99=  237.75ms  max=  237.75ms
+scan-50mb-500p-lin.pdf     pohon  n=3    p50=    1.20ms  p95=   71.24ms  p99=   71.24ms  max=   71.24ms
+                           muat   n=3    p50=    5.48ms  p95=   88.58ms  p99=   88.58ms  max=   88.58ms
+scan-50mb-500p.pdf         pohon  n=3    p50=    0.85ms  p95=   61.15ms  p99=   61.15ms  max=   61.15ms
+                           muat   n=3    p50=    5.03ms  p95=  130.82ms  p99=  130.82ms  max=  130.82ms
+scan-realistic-50mb-500p.pdf pohon  n=3    p50=    0.77ms  p95=   41.91ms  p99=   41.91ms  max=   41.91ms
+                           muat   n=3    p50=    5.02ms  p95=   71.13ms  p99=   71.13ms  max=   71.13ms
+text-500p-lin.pdf          pohon  n=3    p50=    0.50ms  p95=    5.04ms  p99=    5.04ms  max=    5.04ms
+                           muat   n=3    p50=  111.61ms  p95=  111.97ms  p99=  111.97ms  max=  111.97ms
+text-500p.pdf              pohon  n=3    p50=    0.46ms  p95=    4.73ms  p99=    4.73ms  max=    4.73ms
+                           muat   n=3    p50=  121.18ms  p95=  122.33ms  p99=  122.33ms  max=  122.33ms
+
+==============================================================================
+D. RENDER — biaya per halaman pada skala yang dipakai viewport
+------------------------------------------------------------------------------
+fixture                    skala      waktu per halaman                                         
+mixed-500p-lin.pdf         fit 1600px n=60   p50=   27.27ms  p95=   29.95ms  p99=   36.08ms  max=   36.08ms
+mixed-500p-lin.pdf         zoom 200%  n=60   p50=   53.69ms  p95=   54.88ms  p99=   68.66ms  max=   68.66ms
+mixed-500p.pdf             fit 1600px n=60   p50=   28.25ms  p95=   30.38ms  p99=   31.66ms  max=   31.66ms
+mixed-500p.pdf             zoom 200%  n=60   p50=   54.89ms  p95=   57.53ms  p99=   62.20ms  max=   62.20ms
+mixed-raw-500p.pdf         fit 1600px n=60   p50=   27.60ms  p95=   29.09ms  p99=   31.39ms  max=   31.39ms
+mixed-raw-500p.pdf         zoom 200%  n=60   p50=   53.68ms  p95=   55.51ms  p99=   60.81ms  max=   60.81ms
+scan-500p-lin.pdf          fit 1600px n=60   p50=   66.03ms  p95=   67.29ms  p99=   67.47ms  max=   67.47ms
+scan-500p-lin.pdf          zoom 200%  n=60   p50=  124.80ms  p95=  125.73ms  p99=  132.23ms  max=  132.23ms
+scan-500p.pdf              fit 1600px n=60   p50=   66.65ms  p95=   68.25ms  p99=   68.76ms  max=   68.76ms
+scan-500p.pdf              zoom 200%  n=60   p50=  125.34ms  p95=  128.07ms  p99=  132.01ms  max=  132.01ms
+scan-50mb-500p-lin.pdf     fit 1600px n=60   p50=   58.72ms  p95=   61.01ms  p99=   69.41ms  max=   69.41ms
+scan-50mb-500p-lin.pdf     zoom 200%  n=60   p50=  116.04ms  p95=  119.46ms  p99=  119.98ms  max=  119.98ms
+scan-50mb-500p.pdf         fit 1600px n=60   p50=   59.48ms  p95=   61.86ms  p99=   90.04ms  max=   90.04ms
+scan-50mb-500p.pdf         zoom 200%  n=60   p50=  117.23ms  p95=  122.18ms  p99=  138.20ms  max=  138.20ms
+scan-realistic-50mb-500p.pdf fit 1600px n=60   p50=   54.81ms  p95=   59.52ms  p99=   75.70ms  max=   75.70ms
+scan-realistic-50mb-500p.pdf zoom 200%  n=60   p50=   85.41ms  p95=   87.54ms  p99=   89.57ms  max=   89.57ms
+text-500p-lin.pdf          fit 1600px n=60   p50=   12.80ms  p95=   13.83ms  p99=   15.56ms  max=   15.56ms
+text-500p-lin.pdf          zoom 200%  n=60   p50=   30.22ms  p95=   31.35ms  p99=   31.89ms  max=   31.89ms
+text-500p.pdf              fit 1600px n=60   p50=   13.57ms  p95=   14.65ms  p99=   16.42ms  max=   16.42ms
+text-500p.pdf              zoom 200%  n=60   p50=   30.23ms  p95=   31.26ms  p99=   32.04ms  max=   32.04ms
+
+==============================================================================
+E. TILES — ubin 512x512 pada zoom 400%
+------------------------------------------------------------------------------
+mixed-500p-lin.pdf         n=60   p50=    0.45ms  p95=    1.53ms  p99=    2.75ms  max=    2.75ms
+mixed-500p.pdf             n=60   p50=    0.44ms  p95=    1.51ms  p99=    2.80ms  max=    2.80ms
+mixed-raw-500p.pdf         n=60   p50=    0.41ms  p95=    1.53ms  p99=    2.65ms  max=    2.65ms
+scan-500p-lin.pdf          n=60   p50=    2.30ms  p95=    2.68ms  p99=   15.17ms  max=   15.17ms
+scan-500p.pdf              n=60   p50=    2.28ms  p95=    2.97ms  p99=   13.77ms  max=   13.77ms
+scan-50mb-500p-lin.pdf     n=60   p50=    2.23ms  p95=    2.34ms  p99=    9.44ms  max=    9.44ms
+scan-50mb-500p.pdf         n=60   p50=    2.22ms  p95=    2.75ms  p99=    9.25ms  max=    9.25ms
+scan-realistic-50mb-500p.pdf n=60   p50=    2.19ms  p95=    3.06ms  p99=    7.03ms  max=    7.03ms
+text-500p-lin.pdf          n=60   p50=    1.91ms  p95=    2.81ms  p99=    3.21ms  max=    3.21ms
+text-500p.pdf              n=60   p50=    1.87ms  p95=    2.55ms  p99=    2.69ms  max=    2.69ms
+
+==============================================================================
+E2. TILING OVERHEAD — satu halaman penuh: sekali render vs per-ubin
+------------------------------------------------------------------------------
+menentukan apakah jalur piksel bisa selalu berbasis ubin (slot shm tetap)
+mixed-500p-lin.pdf         utuh   n=10   p50=   28.99ms  p95=   32.60ms  p99=   32.60ms  max=   32.60ms
+                           4x5 ubin n=10   p50=   24.71ms  p95=   25.85ms  p99=   25.85ms  max=   25.85ms  (0.85x)
+mixed-500p.pdf             utuh   n=10   p50=   29.11ms  p95=   32.20ms  p99=   32.20ms  max=   32.20ms
+                           4x5 ubin n=10   p50=   24.05ms  p95=   25.43ms  p99=   25.43ms  max=   25.43ms  (0.83x)
+mixed-raw-500p.pdf         utuh   n=10   p50=   28.88ms  p95=   32.22ms  p99=   32.22ms  max=   32.22ms
+                           4x5 ubin n=10   p50=   24.88ms  p95=   25.78ms  p99=   25.78ms  max=   25.78ms  (0.86x)
+scan-500p-lin.pdf          utuh   n=10   p50=   67.75ms  p95=   68.40ms  p99=   68.40ms  max=   68.40ms
+                           4x5 ubin n=10   p50=   62.94ms  p95=   64.22ms  p99=   64.22ms  max=   64.22ms  (0.93x)
+scan-500p.pdf              utuh   n=10   p50=   67.11ms  p95=   68.69ms  p99=   68.69ms  max=   68.69ms
+                           4x5 ubin n=10   p50=   62.87ms  p95=   63.38ms  p99=   63.38ms  max=   63.38ms  (0.94x)
+scan-50mb-500p-lin.pdf     utuh   n=10   p50=   59.44ms  p95=   60.44ms  p99=   60.44ms  max=   60.44ms
+                           4x5 ubin n=10   p50=   59.23ms  p95=   59.96ms  p99=   59.96ms  max=   59.96ms  (1.00x)
+scan-50mb-500p.pdf         utuh   n=10   p50=   58.32ms  p95=   61.73ms  p99=   61.73ms  max=   61.73ms
+                           4x5 ubin n=10   p50=   58.84ms  p95=   59.83ms  p99=   59.83ms  max=   59.83ms  (1.01x)
+scan-realistic-50mb-500p.pdf utuh   n=10   p50=   54.49ms  p95=   57.61ms  p99=   57.61ms  max=   57.61ms
+                           4x5 ubin n=10   p50=   55.86ms  p95=   56.98ms  p99=   56.98ms  max=   56.98ms  (1.03x)
+text-500p-lin.pdf          utuh   n=10   p50=   15.14ms  p95=   17.22ms  p99=   17.22ms  max=   17.22ms
+                           4x5 ubin n=10   p50=   14.46ms  p95=   15.70ms  p99=   15.70ms  max=   15.70ms  (0.96x)
+text-500p.pdf              utuh   n=10   p50=   13.37ms  p95=   16.98ms  p99=   16.98ms  max=   16.98ms
+                           4x5 ubin n=10   p50=   14.80ms  p95=   15.67ms  p99=   15.67ms  max=   15.67ms  (1.11x)
+
+==============================================================================
+F. RE-RENDER — halaman yang sama pada zoom baru (handle di cache)
+------------------------------------------------------------------------------
+ini yang menentukan target 'versi tajam < 150 ms' saat zoom
+mixed-500p-lin.pdf         cache  n=20   p50=   30.61ms  p95=   41.00ms  p99=   41.13ms  max=   41.13ms
+                           muat   n=20   p50=   30.19ms  p95=   39.88ms  p99=   40.33ms  max=   40.33ms
+mixed-500p.pdf             cache  n=20   p50=   29.32ms  p95=   39.45ms  p99=   41.64ms  max=   41.64ms
+                           muat   n=20   p50=   28.89ms  p95=   38.91ms  p99=   39.87ms  max=   39.87ms
+mixed-raw-500p.pdf         cache  n=20   p50=   29.08ms  p95=   39.79ms  p99=   40.39ms  max=   40.39ms
+                           muat   n=20   p50=   29.24ms  p95=   38.87ms  p99=   39.73ms  max=   39.73ms
+scan-500p-lin.pdf          cache  n=20   p50=   65.63ms  p95=   87.76ms  p99=   89.69ms  max=   89.69ms
+                           muat   n=20   p50=   66.07ms  p95=   89.11ms  p99=   89.39ms  max=   89.39ms
+scan-500p.pdf              cache  n=20   p50=   66.61ms  p95=   88.29ms  p99=   91.60ms  max=   91.60ms
+                           muat   n=20   p50=   66.73ms  p95=   90.61ms  p99=   94.64ms  max=   94.64ms
+scan-50mb-500p-lin.pdf     cache  n=20   p50=   56.80ms  p95=   79.72ms  p99=   86.63ms  max=   86.63ms
+                           muat   n=20   p50=   55.83ms  p95=   79.44ms  p99=   79.94ms  max=   79.94ms
+scan-50mb-500p.pdf         cache  n=20   p50=   56.91ms  p95=   78.77ms  p99=   81.14ms  max=   81.14ms
+                           muat   n=20   p50=   55.44ms  p95=   78.73ms  p99=   80.12ms  max=   80.12ms
+scan-realistic-50mb-500p.pdf cache  n=20   p50=   54.69ms  p95=   74.79ms  p99=   77.93ms  max=   77.93ms
+                           muat   n=20   p50=   53.33ms  p95=   74.44ms  p99=   76.69ms  max=   76.69ms
+text-500p-lin.pdf          cache  n=20   p50=   13.96ms  p95=   22.65ms  p99=   22.81ms  max=   22.81ms
+                           muat   n=20   p50=   13.00ms  p95=   21.22ms  p99=   21.81ms  max=   21.81ms
+text-500p.pdf              cache  n=20   p50=   15.08ms  p95=   21.66ms  p99=   22.68ms  max=   22.68ms
+                           muat   n=20   p50=   14.73ms  p95=   20.80ms  p99=   21.72ms  max=   21.72ms
+
+==============================================================================
+G. TEXT — ekstraksi untuk indeks FTS5 dan lapisan seleksi
+------------------------------------------------------------------------------
+mixed-500p-lin.pdf         plain  n=60   p50=    1.61ms  p95=    1.80ms  p99=    3.37ms  max=    3.37ms   (1994 char/hal rata-rata)
+                           boxed  n=60   p50=    0.74ms  p95=    0.83ms  p99=    0.86ms  max=    0.86ms
+                           -> seluruh dokumen 500 halaman: 829 ms sekali jalan
+mixed-500p.pdf             plain  n=60   p50=    1.69ms  p95=    1.80ms  p99=    2.61ms  max=    2.61ms   (1994 char/hal rata-rata)
+                           boxed  n=60   p50=    0.76ms  p95=    0.90ms  p99=    0.98ms  max=    0.98ms
+                           -> seluruh dokumen 500 halaman: 860 ms sekali jalan
+mixed-raw-500p.pdf         plain  n=60   p50=    1.68ms  p95=    1.83ms  p99=    2.67ms  max=    2.67ms   (1994 char/hal rata-rata)
+                           boxed  n=60   p50=    0.76ms  p95=    0.83ms  p99=    0.89ms  max=    0.89ms
+                           -> seluruh dokumen 500 halaman: 850 ms sekali jalan
+scan-500p-lin.pdf          plain  n=60   p50=    0.15ms  p95=    0.20ms  p99=    0.46ms  max=    0.46ms   (0 char/hal rata-rata)
+                           boxed  n=60   p50=    0.00ms  p95=    0.00ms  p99=    0.00ms  max=    0.00ms
+                           -> seluruh dokumen 500 halaman: 83 ms sekali jalan
+scan-500p.pdf              plain  n=60   p50=    0.14ms  p95=    0.20ms  p99=    0.49ms  max=    0.49ms   (0 char/hal rata-rata)
+                           boxed  n=60   p50=    0.00ms  p95=    0.00ms  p99=    0.00ms  max=    0.00ms
+                           -> seluruh dokumen 500 halaman: 80 ms sekali jalan
+scan-50mb-500p-lin.pdf     plain  n=60   p50=    0.09ms  p95=    0.13ms  p99=    0.48ms  max=    0.48ms   (0 char/hal rata-rata)
+                           boxed  n=60   p50=    0.00ms  p95=    0.00ms  p99=    0.00ms  max=    0.00ms
+                           -> seluruh dokumen 500 halaman: 54 ms sekali jalan
+scan-50mb-500p.pdf         plain  n=60   p50=    0.09ms  p95=    0.13ms  p99=    0.44ms  max=    0.44ms   (0 char/hal rata-rata)
+                           boxed  n=60   p50=    0.00ms  p95=    0.00ms  p99=    0.00ms  max=    0.00ms
+                           -> seluruh dokumen 500 halaman: 52 ms sekali jalan
+scan-realistic-50mb-500p.pdf plain  n=60   p50=    0.07ms  p95=    0.11ms  p99=    0.38ms  max=    0.38ms   (0 char/hal rata-rata)
+                           boxed  n=60   p50=    0.00ms  p95=    0.00ms  p99=    0.00ms  max=    0.00ms
+                           -> seluruh dokumen 500 halaman: 39 ms sekali jalan
+text-500p-lin.pdf          plain  n=60   p50=    1.89ms  p95=    2.12ms  p99=    2.87ms  max=    2.87ms   (4468 char/hal rata-rata)
+                           boxed  n=60   p50=    1.70ms  p95=    1.89ms  p99=    2.41ms  max=    2.41ms
+                           -> seluruh dokumen 500 halaman: 964 ms sekali jalan
+text-500p.pdf              plain  n=60   p50=    1.88ms  p95=    2.03ms  p99=    2.86ms  max=    2.86ms   (4468 char/hal rata-rata)
+                           boxed  n=60   p50=    1.69ms  p95=    1.84ms  p99=    1.91ms  max=    1.91ms
+                           -> seluruh dokumen 500 halaman: 957 ms sekali jalan
+
+==============================================================================
+H. RAM — 10 dokumen terbuka bersamaan (target SPEC 13: < 1,5 GB)
+------------------------------------------------------------------------------
+10 dokumen berat, total 821 MB di disk
+
+mmap (default)   10 dok · RSS 75 -> 79 MB (delta 4 MB) · 275 ms
+salinan penuh    10 dok · RSS 75 -> 886 MB (delta 811 MB) · 1785 ms
+
+catatan: keduanya BELUM termasuk cache bitmap 2 GB dari SPEC 9
+
+hasil mentah -> bench/results/phase0-linux-full.json

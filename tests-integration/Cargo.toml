@@ -1,0 +1,30 @@
+[package]
+name = "izul-integration-tests"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+# No library and no binary: this crate exists only to host the integration
+# tests, which drive real worker processes rather than mocks.
+[lib]
+path = "src/lib.rs"
+
+[dependencies]
+
+[dev-dependencies]
+izul-ipc.workspace = true
+izul-model.workspace = true
+izul-pdf.workspace = true
+izul-store.workspace = true
+tokio = { workspace = true, features = ["rt", "macros", "time", "net", "io-util", "process"] }
+
+[[test]]
+name = "crash_isolation"
+path = "../tests/crash_isolation.rs"
+
+[lints.clippy]
+unwrap_used = "allow"
+expect_used = "allow"
+panic = "allow"

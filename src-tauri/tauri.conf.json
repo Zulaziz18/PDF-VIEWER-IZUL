@@ -1,0 +1,64 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "PDF Studio Izul",
+  "identifier": "id.izul.pdfstudio",
+  "version": "7.0.0-alpha.0",
+  "build": {
+    "frontendDist": "../dist",
+    "devUrl": "http://localhost:5173",
+    "beforeDevCommand": "npm run dev",
+    "beforeBuildCommand": "npm run build"
+  },
+  "app": {
+    "withGlobalTauri": false,
+    "windows": [
+      {
+        "title": "PDF Studio Izul",
+        "width": 1280,
+        "height": 860,
+        "minWidth": 880,
+        "minHeight": 560,
+        "resizable": true,
+        "decorations": false,
+        "transparent": false,
+        "dragDropEnabled": true,
+        "theme": null
+      }
+    ],
+    "security": {
+      "csp": "default-src 'self'; img-src 'self' izul: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost"
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [
+      "nsis",
+      "msi"
+    ],
+    "icon": [
+      "icons/icon.ico"
+    ],
+    "resources": [
+      "../vendor/pdfium/win-x64/bin/pdfium.dll"
+    ],
+    "windows": {
+      "nsis": {
+        "installMode": "perMachine",
+        "languages": [
+          "English",
+          "Indonesian"
+        ]
+      }
+    },
+    "fileAssociations": [
+      {
+        "ext": [
+          "pdf"
+        ],
+        "name": "PDF Document",
+        "description": "Dokumen PDF",
+        "role": "Editor"
+      }
+    ]
+  }
+}

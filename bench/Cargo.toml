@@ -1,0 +1,26 @@
+[package]
+name = "izul-bench"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+publish = false
+
+[[bin]]
+name = "spike"
+path = "src/spike.rs"
+
+[dependencies]
+izul-pdf.workspace = true
+izul-ipc.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+
+# The harness reports timings; a panic in it is a bug in the harness, not a
+# production failure path, so the strict production lints are relaxed here.
+[lints.clippy]
+unwrap_used = "allow"
+expect_used = "allow"
+panic = "allow"

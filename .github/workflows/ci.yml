@@ -1,0 +1,116 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+env:
+  CARGO_TERM_COLOR: always
+  # A warning that nobody fixes is a warning that hides the next one.
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  rust:
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        # Windows is the shipping target; Linux runs the same suite so a
+        # platform-specific regression is caught by whichever one it breaks.
+        os: [windows-latest, ubuntu-latest]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libgtk-3-dev \
+            libayatana-appindicator3-dev librsvg2-dev patchelf
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Vendor the pinned PDFium
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            ./vendor/pdfium/fetch.sh win-x64
+          else
+            ./vendor/pdfium/fetch.sh linux-x64
+          fi
+
+      - name: Formatting
+        run: cargo fmt --all --check
+
+      # SPEC 0: unwrap, expect and panic are denied in production code by the
+      # workspace lints. This is where that is enforced rather than hoped for.
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Build
+        run: cargo build --workspace
+
+      - name: Generate benchmark fixtures
+        shell: bash
+        run: |
+          python3 -m pip install --quiet reportlab pikepdf pypdf pillow
+          python3 bench/make_fixtures.py test-fixtures text
+
+      - name: Put PDFium beside the test binaries
+        shell: bash
+        run: |
+          mkdir -p target/debug
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp vendor/pdfium/win-x64/bin/pdfium.dll target/debug/
+          else
+            cp vendor/pdfium/linux-x64/lib/libpdfium.so target/debug/
+          fi
+
+      # A silently skipped integration test guards nothing, so a missing
+      # prerequisite fails the build here instead of printing a note nobody reads.
+      - name: Test
+        env:
+          IZUL_REQUIRE_FIXTURES: "1"
+        run: cargo test --workspace
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      # SPEC 0: strict, noUncheckedIndexedAccess, and no `any`.
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm run build
+
+  version-consistency:
+    name: Version consistency
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # version.json is the single source of truth (SPEC 0). Three files repeat
+      # it, and a mismatch would reach the user as an installer that disagrees
+      # with the About box.
+      - name: version.json matches every manifest
+        run: |
+          set -euo pipefail
+          V=$(python3 -c "import json;print(json.load(open('version.json'))['version'])")
+          echo "version.json: $V"
+          grep -q "^version = \"$V\"" Cargo.toml \
+            || { echo "Cargo.toml workspace version != $V"; exit 1; }
+          grep -q "\"version\": \"$V\"" package.json \
+            || { echo "package.json version != $V"; exit 1; }
+          grep -q "\"version\": \"$V\"" src-tauri/tauri.conf.json \
+            || { echo "tauri.conf.json version != $V"; exit 1; }
+          echo "all manifests agree"
