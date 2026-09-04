@@ -11,7 +11,19 @@ export default defineConfig({
     alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) },
   },
   clearScreen: false,
-  server: { port: 5173, strictPort: true },
+  server: {
+    port: 5173,
+    strictPort: true,
+    watch: {
+      // Vite watches the whole project root by default, and `target/` is
+      // where `cargo` writes and constantly rewrites build output — including
+      // the `.exe` Tauri's dev command is actively linking. Windows locks a
+      // file while it is being written (Unix does not), so an unfiltered
+      // watcher intermittently throws EBUSY there and kills `tauri dev`. None
+      // of `target/` is frontend source, so it never needed watching.
+      ignored: ["**/target/**", "**/src-tauri/gen/**"],
+    },
+  },
   build: {
     target: "chrome110",
     // Debug builds keep sourcemaps; a shipped build does not ship its sources.
