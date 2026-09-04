@@ -11,8 +11,17 @@
 //! same URI is a cache key on both sides of the boundary.
 //!
 //! ```text
-//!   izul://tile/{doc}/{page}/{rotation}/{scale}/{col}/{row}/{kind}?g={gen}&p={pri}
+//!   http://izul.localhost/tile/{doc}/{page}/{rotation}/{scale}/{col}/{row}/{kind}?g={gen}&p={pri}
 //! ```
+//!
+//! That is the form the frontend actually sends, and the only one WebView2 on
+//! Windows will `fetch()` at all — a bare custom scheme is not fetchable
+//! there. `wry` translates `http://izul.localhost/x` back to `izul://x`
+//! before this handler ever runs, but only for `http`, because this app does
+//! not opt into `useHttpsScheme` in `tauri.conf.json`. The parser below still
+//! accepts `izul://` (what macOS and Linux fetch directly) and
+//! `https://izul.localhost/` (harmless to keep tolerant), but `http://` is the
+//! one that matters on the platform this ships for.
 //!
 //! * `rotation` — quarter turns clockwise, 0..3.
 //! * `scale` — pixels per PDF point in thousandths; for a preview, the
@@ -71,9 +80,9 @@ pub fn parse_tile_uri(uri: &str) -> Result<TileUri, UriError> {
     // that is the form Tauri falls back to on Android, which this application
     // does not ship on but which costs nothing to also accept.
     let rest = uri
-        .strip_prefix("izul://")
+        .strip_prefix("http://izul.localhost/")
+        .or_else(|| uri.strip_prefix("izul://"))
         .or_else(|| uri.strip_prefix("https://izul.localhost/"))
-        .or_else(|| uri.strip_prefix("http://izul.localhost/"))
         .ok_or(UriError::WrongScheme)?;
     // Some webview builds normalise a custom scheme through a host component,
     // leaving a leading slash; accept both spellings and nothing else.
@@ -201,18 +210,22 @@ mod tests {
     #[test]
     fn the_windows_form_is_what_actually_gets_fetched_there() {
         // WebView2 will not `fetch()` a bare custom scheme, so the frontend
-        // addresses tiles this way on every platform. If this parse breaks, a
-        // Windows build renders nothing and looks fine everywhere else.
+        // addresses tiles this way — and specifically as `http`, not `https`,
+        // because this app does not set `useHttpsScheme`. If this parse
+        // breaks, a Windows build renders nothing and looks fine everywhere
+        // else, which is exactly the failure this guards against.
         assert_eq!(
-            key("https://izul.localhost/tile/1/0/0/1000/0/0/sharp"),
+            key("http://izul.localhost/tile/1/0/0/1000/0/0/sharp"),
             key("izul://tile/1/0/0/1000/0/0/sharp")
         );
     }
 
     #[test]
-    fn the_android_form_is_tolerated_too() {
+    fn the_https_form_is_tolerated_even_though_nothing_sends_it() {
+        // Kept accepted in case a future window opts into `useHttpsScheme`;
+        // costs nothing to allow and saves a debugging session if it changes.
         assert_eq!(
-            key("http://izul.localhost/tile/1/0/0/1000/0/0/sharp"),
+            key("https://izul.localhost/tile/1/0/0/1000/0/0/sharp"),
             key("izul://tile/1/0/0/1000/0/0/sharp")
         );
     }

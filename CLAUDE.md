@@ -53,17 +53,29 @@ belum familiar dengan command line, git, atau proses build. Instruksi harus:
        dialog, kalau tidak ada permintaan dialog ditolak diam-diam. Sudah
        ditambahkan.
     2. Setelah tombol diperbaiki dan PDF berhasil dibuka (diuji dengan PDF
-       811 halaman), **semua halaman tampil putih kosong** — tidak ada
-       konten yang tergambar sama sekali, walau frame rate DevTools normal
-       (~50 fps) dan tidak ada pesan galat yang terlihat pengguna. Sebabnya:
-       WebView2 (mesin tampilan Tauri di Windows) menolak `fetch()` ke skema
-       kustom `izul://` secara langsung — itu cuma jalan di macOS/Linux.
-       Harus ditulis sebagai `https://izul.localhost/...`. Kode sudah
-       diperbaiki di kedua sisi (pembuat URI di frontend, pengurai URI di
-       backend) dan diuji dengan test baru untuk bentuk Windows tersebut.
+       811 halaman), **semua halaman tampil putih kosong**. Percobaan
+       perbaikan pertama (menulis URI ubin sebagai `https://izul.localhost/...`)
+       **tidak cukup** — DevTools pengguna menunjukkan `TypeError: Failed to
+       fetch` dengan "Response headers (0)", yaitu permintaan gagal total
+       sebelum dapat balasan apa pun, bukan galat 400/404. Duduk perkaranya
+       baru ketemu setelah membaca langsung kode sumber `wry` (mesin WebView2
+       Tauri) yang terpasang di proyek: `wry` menerjemahkan
+       `{http_or_https}://izul.localhost/x` kembali ke `izul://x` sebelum
+       kode Rust melihatnya, tapi **hanya untuk skema yang benar-benar
+       dipakai jendela itu** — `http` secara bawaan, kecuali opsi
+       `useHttpsScheme` diaktifkan di `tauri.conf.json` (proyek ini tidak
+       mengaktifkannya). Menulis `https://` meleset dari penerjemah itu dan
+       jatuh sebagai pencarian DNS sungguhan ke host yang tidak ada — makanya
+       gagal instan tanpa balasan. Perbaikan final: URI ubin ditulis sebagai
+       `http://izul.localhost/...` (bukan `https://`). Kode Rust pengurainya
+       tetap menerima ketiga bentuk (`izul://`, `http://izul.localhost/`,
+       `https://izul.localhost/`) untuk jaga-jaga, dengan `http` di urutan
+       pertama karena itu yang sungguhan dipakai.
   - **Langkah berikutnya:** pengguna perlu `git pull` lagi lalu jalankan
     ulang `npm run tauri dev`, buka PDF yang sama, dan pastikan halamannya
-    kini benar-benar tergambar (bukan putih kosong).
+    kini benar-benar tergambar (bukan putih kosong). Kalau masih gagal,
+    minta pengguna cek tab Network DevTools lagi dengan cara yang sama —
+    kali ini diharapkan status seharusnya 200, bukan kosong/pending.
 
 ## Alur kerja proyek ini
 

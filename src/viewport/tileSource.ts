@@ -10,12 +10,16 @@
  * 1 MiB BGRA tile would arrive as several MiB of base64 and cost a parse on the
  * UI thread. The whole 16 ms frame budget would be gone before anything drew.
  *
- * Why `https://izul.localhost/...` and not `izul://...`: WebView2 (the engine
+ * Why `http://izul.localhost/...` and not `izul://...`: WebView2 (the engine
  * Tauri uses on Windows) refuses to `fetch()` a bare custom scheme — only
  * `http`/`https` are fetchable there, a restriction macOS and Linux's webviews
- * do not share. Tauri's registered-protocol handler answers both spellings, so
- * writing the `https://<scheme>.localhost/...` form is what makes the same
- * code work on every platform SPEC 4 targets, Windows included.
+ * do not share. `wry` (the crate underneath Tauri) papers over this with a
+ * virtual host, translating `http://izul.localhost/x` back to `izul://x`
+ * before the Rust handler ever sees it — but only for the scheme it actually
+ * listens for. That scheme is `http`, not `https`, unless the window opts
+ * into `useHttpsScheme`, which this app's `tauri.conf.json` does not; writing
+ * `https://` here would silently miss wry's translator and fall through to a
+ * real DNS lookup for a host that does not exist, failing every fetch.
  *
  * A tile is addressed by what it *is* rather than by where it happens to live,
  * so the same URI is the cache key in the webview, in the backend's LRU, and in
@@ -50,7 +54,7 @@ export interface TileRef {
 /** The URI that identifies a tile, and doubles as its cache key. */
 export function tileUri(ref: TileRef, generation: number, priority: Priority): string {
   return (
-    `https://izul.localhost/tile/${ref.doc}/${ref.page}/${ref.rotation}/${ref.scale}/${ref.col}/${ref.row}/${ref.tier}` +
+    `http://izul.localhost/tile/${ref.doc}/${ref.page}/${ref.rotation}/${ref.scale}/${ref.col}/${ref.row}/${ref.tier}` +
     `?g=${generation}&p=${priority}`
   );
 }
