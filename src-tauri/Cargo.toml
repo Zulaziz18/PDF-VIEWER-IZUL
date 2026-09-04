@@ -17,6 +17,7 @@ tauri-build = { version = "2", features = [] }
 izul-ipc.workspace = true
 izul-model.workspace = true
 izul-render.workspace = true
+postcard.workspace = true
 izul-store.workspace = true
 rusqlite.workspace = true
 tauri = { version = "2", features = [] }

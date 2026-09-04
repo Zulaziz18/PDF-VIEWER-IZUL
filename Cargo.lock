@@ -1676,6 +1676,7 @@ dependencies = [
  "izul-store",
  "libc",
  "parking_lot",
+ "postcard",
  "rusqlite",
  "serde",
  "serde_json",

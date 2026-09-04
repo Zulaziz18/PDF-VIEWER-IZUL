@@ -219,18 +219,57 @@ impl Worker {
 /// Drives one worker's channel: serialises requests onto it and routes replies
 /// back by request id.
 ///
-/// Replies are matched by id rather than assumed to arrive in order, because a
-/// thumbnail sweep streams many responses under one id while other requests are
-/// still in flight.
+/// Replies are matched by id rather than assumed to arrive in order, because
+/// several requests are in flight at once whenever the viewport asks for a
+/// screenful of tiles.
+///
+/// ## Why the reading happens in its own task
+///
+/// The obvious shape — one `select!` waiting on both "a new request to send"
+/// and "a frame to read" — is wrong, and wrong in a way that only shows under
+/// real load. `select!` drops the future of every branch that does not win, and
+/// [`read_frame`] is **not cancel-safe**: it reads a four-byte length, then the
+/// body. Cancel it in between and the length bytes are gone from the stream for
+/// good. The next read starts in the middle of a frame, reads body bytes as a
+/// length, and waits for a frame that will never come. The worker then looks
+/// silent, the supervisor kills it at the heartbeat timeout, the replacement
+/// meets the same fate on the next burst of tiles, and the application renders
+/// nothing while the log fills with `pekerja diam terlalu lama`.
+///
+/// So the stream is read by a task that is never cancelled, and hands whole
+/// frames over an `mpsc` channel. Both arms of the `select!` below are then
+/// cancel-safe — `Receiver::recv` documents itself so — and no byte can be lost
+/// between iterations.
 async fn pump<S>(stream: S, mut rx: mpsc::Receiver<Job>, last_beat: Arc<Mutex<Instant>>)
 where
     S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
 {
-    let (reader, writer) = tokio::io::split(stream);
-    let mut reader = reader;
-    let mut writer = writer;
+    let (reader, mut writer) = tokio::io::split(stream);
     let mut pending: HashMap<u64, oneshot::Sender<Result<Response, WorkerError>>> = HashMap::new();
     let mut next_id: u64 = 1;
+
+    // Bounded, because an unbounded queue here would let a worker that answers
+    // faster than the UI consumes grow memory without limit. 64 frames is far
+    // more than the pool ever has in flight.
+    let (frames_tx, mut frames) = mpsc::channel::<Result<Envelope<Response>, ()>>(64);
+    let reader_task = tokio::spawn(async move {
+        let mut reader = reader;
+        loop {
+            match read_frame::<_, Envelope<Response>>(&mut reader).await {
+                Ok(env) => {
+                    if frames_tx.send(Ok(env)).await.is_err() {
+                        return; // the pump is gone
+                    }
+                }
+                Err(_) => {
+                    // The channel died. Say so once and stop; the pump treats
+                    // this as the end of the worker.
+                    let _ = frames_tx.send(Err(())).await;
+                    return;
+                }
+            }
+        }
+    });
 
     loop {
         tokio::select! {
@@ -245,22 +284,25 @@ where
                 }
                 pending.insert(id, job.reply);
             }
-            incoming = read_frame::<_, Envelope<Response>>(&mut reader) => {
+            incoming = frames.recv() => {
                 match incoming {
-                    Ok(env) => {
+                    Some(Ok(env)) => {
                         *last_beat.lock().await = Instant::now();
                         if let Some(reply) = pending.remove(&env.id.0) {
                             let _ = reply.send(Ok(env.payload));
                         }
-                        // A response with no waiter is a streamed progress or
-                        // thumbnail message; Phase 1 routes those to the
-                        // viewport. Dropping it here is correct for Phase 0.
+                        // A reply with no waiter is one whose caller gave up
+                        // first — a timed-out request, or a cancelled fetch.
+                        // Dropping it is correct.
                     }
-                    Err(_) => break,
+                    // Read error, or the reader task ended: the worker is gone.
+                    Some(Err(())) | None => break,
                 }
             }
         }
     }
+
+    reader_task.abort();
 
     // The channel is gone. Everyone still waiting hears about it now rather than
     // hanging until their own timeout.
@@ -274,3 +316,193 @@ where
 
 /// How often the supervisor should sweep the pool.
 pub const SWEEP_INTERVAL: Duration = HEARTBEAT_INTERVAL;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use izul_ipc::message::Request;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    /// Sends a request through the pump the way `Worker::request` does.
+    async fn ask(tx: &mpsc::Sender<Job>, request: Request) -> Result<Response, WorkerError> {
+        let (reply, wait) = oneshot::channel();
+        tx.send(Job { request, reply }).await.expect("queue job");
+        wait.await.expect("pump answered")
+    }
+
+    /// The regression this exists for: a frame split across two writes, with a
+    /// new request arriving in the gap.
+    ///
+    /// That is the shape that broke a real Windows build — the viewport asks
+    /// for a screenful of tiles while replies are streaming back, so a request
+    /// lands mid-frame constantly. With a cancel-unsafe read inside `select!`,
+    /// the length bytes of the half-read frame are dropped, every later frame
+    /// is misread, and the worker goes silent until the supervisor kills it.
+    /// Nothing in the integration suite caught it, because those tests talk to
+    /// a worker sequentially and never go through the pump at all.
+    #[tokio::test]
+    async fn a_request_arriving_mid_frame_does_not_desynchronise_the_channel() {
+        let (ours, theirs) = tokio::io::duplex(64 * 1024);
+        let (tx, rx) = mpsc::channel::<Job>(16);
+        let beat = Arc::new(Mutex::new(Instant::now()));
+        tokio::spawn(pump(ours, rx, Arc::clone(&beat)));
+
+        // The far side plays the worker: it answers every ping, but writes the
+        // length and the body of each reply as two separate writes with a pause
+        // between them.
+        tokio::spawn(async move {
+            let mut peer = theirs;
+            loop {
+                let mut len_buf = [0u8; 4];
+                if peer.read_exact(&mut len_buf).await.is_err() {
+                    return;
+                }
+                let len = u32::from_le_bytes(len_buf) as usize;
+                let mut body = vec![0u8; len];
+                if peer.read_exact(&mut body).await.is_err() {
+                    return;
+                }
+                let env: Envelope<Request> = match postcard::from_bytes(&body) {
+                    Ok(env) => env,
+                    Err(_) => return,
+                };
+                let nonce = match env.payload {
+                    Request::Ping { nonce } => nonce,
+                    _ => 0,
+                };
+                let reply = Envelope {
+                    id: env.id,
+                    payload: Response::Pong { nonce },
+                };
+                let out = postcard::to_allocvec(&reply).expect("encode");
+                // Header first...
+                if peer
+                    .write_all(&(out.len() as u32).to_le_bytes())
+                    .await
+                    .is_err()
+                {
+                    return;
+                }
+                let _ = peer.flush().await;
+                // ...then a gap in which the pump is parked mid-frame, and
+                // then the body.
+                tokio::time::sleep(Duration::from_millis(30)).await;
+                if peer.write_all(&out).await.is_err() {
+                    return;
+                }
+                let _ = peer.flush().await;
+            }
+        });
+
+        // Ten requests, each issued while the previous reply is half-written.
+        for nonce in 0..10u64 {
+            let sender = tx.clone();
+            let answering =
+                tokio::spawn(async move { ask(&sender, Request::Ping { nonce }).await });
+            tokio::time::sleep(Duration::from_millis(10)).await;
+            let next = tx.clone();
+            let overlapping =
+                tokio::spawn(async move { ask(&next, Request::Ping { nonce: nonce + 100 }).await });
+
+            let first = tokio::time::timeout(Duration::from_secs(5), answering)
+                .await
+                .expect("the channel must not go silent")
+                .expect("task");
+            let second = tokio::time::timeout(Duration::from_secs(5), overlapping)
+                .await
+                .expect("the channel must not go silent")
+                .expect("task");
+
+            assert_eq!(first.expect("reply"), Response::Pong { nonce });
+            assert_eq!(
+                second.expect("reply"),
+                Response::Pong { nonce: nonce + 100 }
+            );
+        }
+    }
+
+    /// Replies are matched by id, not by arrival order.
+    #[tokio::test]
+    async fn replies_are_routed_by_id_even_when_they_arrive_out_of_order() {
+        let (ours, theirs) = tokio::io::duplex(64 * 1024);
+        let (tx, rx) = mpsc::channel::<Job>(16);
+        let beat = Arc::new(Mutex::new(Instant::now()));
+        tokio::spawn(pump(ours, rx, beat));
+
+        tokio::spawn(async move {
+            let mut peer = theirs;
+            let mut seen: Vec<Envelope<Request>> = Vec::new();
+            // Collect two requests, then answer them backwards.
+            while seen.len() < 2 {
+                let mut len_buf = [0u8; 4];
+                if peer.read_exact(&mut len_buf).await.is_err() {
+                    return;
+                }
+                let mut body = vec![0u8; u32::from_le_bytes(len_buf) as usize];
+                if peer.read_exact(&mut body).await.is_err() {
+                    return;
+                }
+                match postcard::from_bytes(&body) {
+                    Ok(env) => seen.push(env),
+                    Err(_) => return,
+                }
+            }
+            for env in seen.into_iter().rev() {
+                let nonce = match env.payload {
+                    Request::Ping { nonce } => nonce,
+                    _ => 0,
+                };
+                let out = postcard::to_allocvec(&Envelope {
+                    id: env.id,
+                    payload: Response::Pong { nonce },
+                })
+                .expect("encode");
+                let _ = peer.write_all(&(out.len() as u32).to_le_bytes()).await;
+                let _ = peer.write_all(&out).await;
+                let _ = peer.flush().await;
+            }
+        });
+
+        let a = tokio::spawn({
+            let tx = tx.clone();
+            async move { ask(&tx, Request::Ping { nonce: 1 }).await }
+        });
+        let b = tokio::spawn({
+            let tx = tx.clone();
+            async move { ask(&tx, Request::Ping { nonce: 2 }).await }
+        });
+
+        let (a, b) = tokio::join!(a, b);
+        assert_eq!(
+            a.expect("task").expect("reply"),
+            Response::Pong { nonce: 1 }
+        );
+        assert_eq!(
+            b.expect("task").expect("reply"),
+            Response::Pong { nonce: 2 }
+        );
+    }
+
+    /// A worker that dies must not leave callers waiting for their own timeout.
+    #[tokio::test]
+    async fn every_waiter_hears_about_it_when_the_channel_dies() {
+        let (ours, theirs) = tokio::io::duplex(1024);
+        let (tx, rx) = mpsc::channel::<Job>(16);
+        let beat = Arc::new(Mutex::new(Instant::now()));
+        tokio::spawn(pump(ours, rx, beat));
+
+        // Read the request, then hang up without answering.
+        tokio::spawn(async move {
+            let mut peer = theirs;
+            let mut len_buf = [0u8; 4];
+            let _ = peer.read_exact(&mut len_buf).await;
+            drop(peer);
+        });
+
+        let outcome =
+            tokio::time::timeout(Duration::from_secs(5), ask(&tx, Request::Ping { nonce: 7 }))
+                .await
+                .expect("a dead channel must fail fast, not hang");
+        assert!(matches!(outcome, Err(WorkerError::Gone)), "{outcome:?}");
+    }
+}

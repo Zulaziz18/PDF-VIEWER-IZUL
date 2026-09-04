@@ -71,11 +71,27 @@ belum familiar dengan command line, git, atau proses build. Instruksi harus:
        tetap menerima ketiga bentuk (`izul://`, `http://izul.localhost/`,
        `https://izul.localhost/`) untuk jaga-jaga, dengan `http` di urutan
        pertama karena itu yang sungguhan dipakai.
-  - **Langkah berikutnya:** pengguna perlu `git pull` lagi lalu jalankan
-    ulang `npm run tauri dev`, buka PDF yang sama, dan pastikan halamannya
-    kini benar-benar tergambar (bukan putih kosong). Kalau masih gagal,
-    minta pengguna cek tab Network DevTools lagi dengan cara yang sama —
-    kali ini diharapkan status seharusnya 200, bukan kosong/pending.
+    3. **Akar sebenarnya dari halaman putih** (perbaikan URI di atas perlu,
+       tapi tidak cukup): `pump()` di `src-tauri/src/supervisor/worker.rs`
+       memakai `tokio::select!` dengan `read_frame` sebagai salah satu
+       cabangnya. `read_frame` **tidak cancel-safe** — ia membaca 4 byte
+       panjang lalu isinya. Kalau perintah baru datang di antara keduanya,
+       `select!` membuang future itu berikut byte panjang yang sudah
+       terlanjur dibaca; pembacaan berikutnya mulai dari tengah pesan,
+       salah menafsirkan isi sebagai panjang, lalu menunggu selamanya.
+       Pekerja tampak diam, supervisor membunuhnya di detik ke-40
+       (`pekerja diam terlalu lama, dimatikan worker=N silent=40.3` di log),
+       restart, lalu rusak lagi pada semburan ubin berikutnya.
+       Diperbaiki: pembacaan dipindah ke task tersendiri yang tidak pernah
+       dibatalkan, menyalurkan frame utuh lewat `mpsc`; kedua cabang
+       `select!` sekarang cancel-safe. Tiga test regresi ditambahkan di
+       `worker.rs` — yang pertama terbukti GAGAL pada kode lama dan lulus
+       pada yang baru.
+       **Pelajaran penting:** seluruh test integrasi bicara ke pekerja
+       secara berurutan (kirim lalu tunggu) dan tidak pernah melewati
+       `pump()`, jadi bug ini tidak mungkin tertangkap sampai aplikasi
+       sungguhan dijalankan. Kalau ada gejala "pekerja diam" atau balasan
+       hilang di masa depan, curigai cancel-safety di jalur IPC lebih dulu.
 
 ## Alur kerja proyek ini
 
