@@ -26,10 +26,12 @@ belum familiar dengan command line, git, atau proses build. Instruksi harus:
   4. Microsoft Edge WebView2 Runtime (Evergreen Bootstrapper)
   5. Visual C++ Build Tools dengan workload "Desktop development with C++"
      (visualstudio.microsoft.com/downloads)
-- **Status terakhir diketahui:** kelima alat di atas sudah diunduh/dipasang.
-  Belum dikonfirmasi `git --version`, `node --version`, `cargo --version`
-  semuanya terbaca setelah restart — perlu ditanyakan/diverifikasi di sesi
-  berikutnya sebelum melanjutkan ke `npm ci` / `npm run tauri dev`.
+- **Status terakhir diketahui:** kelima alat terpasang dan **terverifikasi
+  bekerja** setelah restart — `git 2.55.0`, `node v24.20.0`, `cargo 1.98.1`
+  semua terbaca di PowerShell biasa. Langkah berikutnya: masuk ke folder
+  proyek, `git checkout` + `git pull` branch fase-1, ambil PDFium lewat Git
+  Bash (`./vendor/pdfium/fetch.sh win-x64`), lalu `npm ci` dan
+  `npm run tauri dev`. Belum dikonfirmasi apakah build pertama berhasil.
 
 ## Alur kerja proyek ini
 
