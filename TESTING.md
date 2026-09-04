@@ -106,11 +106,39 @@ Hasilnya di `bench/results/phase1-linux.txt`, berikut catatan tentang apa yang
 
 ## Regresi dari v6.2
 
-v6.2 punya 21 test case yang seluruhnya lulus. **Belum satupun dibawa ke v7.**
-Alasannya bukan kelalaian: repositori ini kosong saat Fase 0 dimulai, sehingga
-tidak ada kode maupun daftar test v6.2 yang bisa dibaca. Begitu v6.2 tersedia,
-21 kasus itu masuk sebagai suite regresi sebelum Fase 3 dinyatakan selesai —
-paritas anotasi tidak bisa dibuktikan tanpa keduanya.
+Kode v6.2 ada di branch `v6.2-reference` dan sudah dibaca pada Fase 1:
+`app.js` (1353 baris), `core.js` (165 baris, fungsi murni), `annots.js`
+(290 baris), plus `index.html`, `style.css`, dan `serve.py`.
+
+**Tidak ada berkas test di sana.** 21 test case yang disebut SPEC Bagian 16
+tidak ada sebagai kode di repositori v6.2 — tampaknya itu daftar pemeriksaan
+manual, bukan suite otomatis. Karena itu "membawa 21 test case ke v7" berarti
+menuliskannya ulang sebagai test otomatis terhadap perilaku v6.2 yang bisa
+dibaca dari kodenya, bukan menyalin berkas. Pekerjaan itu jatuh di Fase 3 dan
+Fase 4, tempat perilaku anotasi dan simpan dibangun; di sanalah daftar kasusnya
+akan disusun dari `annots.js` dan jalur simpan `app.js`.
+
+Yang sudah diperiksa pada Fase 1 (bagian viewer dari v6.2):
+
+| Perilaku v6.2 | Di v7 Fase 1 |
+|---|---|
+| Zoom 40–300 %, langkah 0,15 | 10–1600 % (SPEC 11.1), tangga langkah tetap |
+| `Ctrl` + roda memperbesar | Ada, dan kini mempertahankan titik di bawah kursor |
+| Indikator halaman = halaman terdekat ke atas viewport | Halaman yang menutupi area terbesar (lebih benar untuk mode dua halaman) |
+| Render/lepas per halaman lewat IntersectionObserver, margin 800 px | Tata letak tervirtualisasi, margin 200 px, ditambah prefetch prediktif |
+| Lapisan teks DOM di atas kanvas | Sama pendekatannya, kotak dari PDFium |
+| Daftar isi dari outline bawaan PDF | Ada |
+| **Daftar isi cadangan: deteksi judul bab dari teks** (BAB/BAGIAN/DAFTAR PUSTAKA dst.) | **Belum ada** — lihat catatan di bawah |
+
+`findChapters` di `core.js` v6.2 membaca teks seluruh dokumen dan menyusun
+daftar isi sendiri ketika PDF tidak membawa outline — dengan pola yang jelas
+disetel untuk dokumen berbahasa Indonesia. Untuk skripsi hasil pindai, itu
+kemungkinan besar satu-satunya cara panel daftar isi pernah berguna di v6.2.
+
+v7 belum punya padanannya, dan itu **disengaja untuk sekarang**: ia butuh sapuan
+teks seluruh dokumen, yang justru dibangun di Fase 2 bersama indeks FTS5.
+Menambahkannya di Fase 2 nyaris tanpa biaya tambahan; menambahkannya di Fase 1
+berarti membangun sapuan teks dua kali.
 
 ## Checklist manual
 

@@ -122,6 +122,23 @@ pengukuran di Windows.
   setiap pengambilan ubin akan diblokir di jendela sungguhan. Ditemukan saat
   membangun jalur ini, diperbaiki di sini.
 
+### Ditinjau dari v6.2
+
+Kode v6.2 di branch `v6.2-reference` dibaca pada fase ini (`app.js`, `core.js`,
+`annots.js`). Perbandingan perilaku viewer-nya ada di `TESTING.md`. Dua hal
+yang perlu dicatat:
+
+- Repositori v6.2 **tidak berisi berkas test**. 21 test case yang disebut
+  SPEC Bagian 16 tampaknya daftar pemeriksaan manual, bukan suite otomatis;
+  membawanya ke v7 berarti menuliskannya ulang dari perilaku yang terbaca di
+  kode, dan itu jatuh di Fase 3 dan 4 bersama anotasi dan simpan.
+- v6.2 menyusun **daftar isi cadangan** dengan mendeteksi judul bab dari teks
+  (BAB, BAGIAN, DAFTAR PUSTAKA, dan seterusnya) ketika PDF tidak membawa
+  outline. v7 belum punya padanannya. Ia butuh sapuan teks seluruh dokumen —
+  yang dibangun di Fase 2 bersama indeks FTS5 — jadi menambahkannya di sana
+  nyaris tanpa biaya, dan menambahkannya di sini berarti membangun sapuan teks
+  dua kali.
+
 ### Belum ada
 
 Sengaja belum ada, dan bukan pekerjaan yang tertinggal: tab dan multi-dokumen,
