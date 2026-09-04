@@ -53,6 +53,11 @@ jobs:
       - name: Clippy
         run: cargo clippy --workspace --all-targets -- -D warnings
 
+      # src-tauri/build.rs copies PDFium next to the binary it produces, so a
+      # plain `cargo build` is enough to leave `target/<profile>/` ready for
+      # `WorkerPaths::beside_current_exe` — no manual copy step needed here.
+      # The integration tests read `vendor/pdfium/` directly instead (see
+      # `tests/crash_isolation.rs`), so they need nothing extra either.
       - name: Build
         run: cargo build --workspace
 
@@ -61,16 +66,6 @@ jobs:
         run: |
           python3 -m pip install --quiet reportlab pikepdf pypdf pillow
           python3 bench/make_fixtures.py test-fixtures text
-
-      - name: Put PDFium beside the test binaries
-        shell: bash
-        run: |
-          mkdir -p target/debug
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            cp vendor/pdfium/win-x64/bin/pdfium.dll target/debug/
-          else
-            cp vendor/pdfium/linux-x64/lib/libpdfium.so target/debug/
-          fi
 
       # A silently skipped integration test guards nothing, so a missing
       # prerequisite fails the build here instead of printing a note nobody reads.

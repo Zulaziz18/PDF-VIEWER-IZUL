@@ -33,11 +33,10 @@ Tanpa variabel itu, test yang kekurangan fixture atau pustaka akan mencetak
 `LEWATI: ...` dan lulus — nyaman untuk klon baru, berbahaya untuk CI. CI
 menyetelnya.
 
-Test integrasi memerlukan PDFium di samping binari test:
-
-```bash
-cp vendor/pdfium/linux-x64/lib/libpdfium.so target/debug/    # atau pdfium.dll
-```
+Test integrasi (`crash_isolation`) membaca PDFium langsung dari
+`vendor/pdfium/`, dan `src-tauri/build.rs` menyalin PDFium ke samping binari
+aplikasi secara otomatis pada setiap `cargo build`. Tidak ada langkah salin
+manual yang diperlukan di kedua kasus — cukup `vendor/pdfium/fetch.sh` di atas.
 
 ## Hasil Fase 0
 
