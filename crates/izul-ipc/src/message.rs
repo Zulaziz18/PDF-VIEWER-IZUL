@@ -9,6 +9,20 @@ use serde::{Deserialize, Serialize};
 
 use izul_model::geom::{PdfRectF, RotationQuarter};
 
+/// Version of the wire protocol in this build.
+///
+/// `postcard` is not self-describing: an enum travels as the *index* of its
+/// variant, so two builds whose `Request` enums differ by one variant will
+/// happily talk past each other — a `Ping` decoded as a `Shutdown`, and a
+/// worker that exits instead of answering. That failure is silent, and it cost
+/// a long debugging session on a machine where `izul-worker.exe` was one phase
+/// older than the application that spawned it.
+///
+/// So the worker announces this number the moment it connects, and the
+/// supervisor refuses a worker that does not match. Bump it whenever anything
+/// in [`Request`] or [`Response`] changes shape.
+pub const PROTOCOL_VERSION: u32 = 2;
+
 /// Identifies one open document within a worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
 pub struct DocId(pub u64);
@@ -127,6 +141,14 @@ pub enum Request {
 /// Worker process -> UI process.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum Response {
+    /// Sent unprompted the moment the worker connects, before anything is
+    /// asked of it. A worker that does not send this is from a different
+    /// build and cannot be talked to (see [`PROTOCOL_VERSION`]).
+    Hello {
+        protocol: u32,
+        /// The worker's own `CARGO_PKG_VERSION`, for the log line.
+        version: String,
+    },
     Opened {
         doc: DocId,
         page_count: u32,

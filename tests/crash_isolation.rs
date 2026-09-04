@@ -105,10 +105,28 @@ async fn spawn_worker(worker_id: u32, session: u64) -> Option<Harness> {
         .spawn()
         .expect("spawn worker");
 
-    let stream = tokio::time::timeout(Duration::from_secs(15), listener.accept())
+    let mut stream = tokio::time::timeout(Duration::from_secs(15), listener.accept())
         .await
         .expect("worker connected in time")
         .expect("accept");
+
+    // The worker announces its protocol before anything is asked of it, and
+    // the supervisor refuses one whose number does not match. Asserting it
+    // here means a stale worker binary fails this suite loudly instead of
+    // being discovered by a user whose pages never render.
+    let hello: Envelope<Response> =
+        tokio::time::timeout(Duration::from_secs(10), read_frame(&mut stream))
+            .await
+            .expect("worker sent its protocol version")
+            .expect("read hello");
+    match hello.payload {
+        Response::Hello { protocol, .. } => assert_eq!(
+            protocol,
+            izul_ipc::PROTOCOL_VERSION,
+            "izul-worker is built against another protocol version; run `cargo build --workspace`"
+        ),
+        other => panic!("expected Hello, got {other:?}"),
+    }
 
     Some(Harness {
         child,

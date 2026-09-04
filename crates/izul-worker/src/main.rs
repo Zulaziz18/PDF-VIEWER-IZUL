@@ -143,8 +143,30 @@ async fn run(boot: Bootstrap) -> Result<(), String> {
         .await
         .map_err(|e| format!("kanal perintah: {e}"))?;
 
+    // Announce the protocol before anything else. The supervisor refuses a
+    // worker whose number does not match its own, which is what turns "this
+    // binary is a phase out of date" from a silent misparse — a `Ping` read as
+    // a `Shutdown` — into a message that says so.
+    write_frame(
+        &mut channel,
+        &Envelope {
+            id: RequestId(0),
+            payload: Response::Hello {
+                protocol: izul_ipc::PROTOCOL_VERSION,
+                version: env!("CARGO_PKG_VERSION").to_string(),
+            },
+        },
+    )
+    .await
+    .map_err(|e| format!("salam versi: {e}"))?;
+
     let mut sess = Session::new(engine);
-    tracing::info!(worker = boot.worker_id, slots = boot.shm_slots, "siap");
+    tracing::info!(
+        worker = boot.worker_id,
+        slots = boot.shm_slots,
+        protocol = izul_ipc::PROTOCOL_VERSION,
+        "siap"
+    );
 
     loop {
         let env: Envelope<Request> = match read_frame(&mut channel).await {

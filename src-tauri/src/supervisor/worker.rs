@@ -31,6 +31,17 @@ pub enum WorkerError {
     Unresponsive(Duration),
     #[error("pekerja sudah mati")]
     Gone,
+    #[error(
+        "pekerja bicara protokol {found} sementara aplikasi memakai {expected}. \
+         Binari izul-worker sudah usang — jalankan `cargo build --workspace` \
+         lalu jalankan aplikasi lagi."
+    )]
+    ProtocolMismatch { expected: u32, found: u32 },
+    #[error(
+        "pekerja tidak mengirim salam versi dalam {0:?}. Binari izul-worker \
+         kemungkinan usang — jalankan `cargo build --workspace`."
+    )]
+    NoHandshake(Duration),
     #[error("kanal: {0}")]
     Codec(#[from] izul_ipc::CodecError),
 }
@@ -135,10 +146,31 @@ impl Worker {
         let child = cmd.spawn().map_err(WorkerError::Spawn)?;
         sandbox.adopt(&child).map_err(WorkerError::Spawn)?;
 
-        let stream = tokio::time::timeout(Duration::from_secs(10), listener.accept())
+        let mut stream = tokio::time::timeout(Duration::from_secs(10), listener.accept())
             .await
             .map_err(|_| WorkerError::Unresponsive(Duration::from_secs(10)))?
             .map_err(WorkerError::Channel)?;
+
+        // The worker's first frame is its protocol number, sent unprompted. A
+        // binary from another build either sends nothing (it does not know to)
+        // or sends a number that does not match; either way it is refused here
+        // rather than left to misread every later message.
+        const HANDSHAKE: Duration = Duration::from_secs(10);
+        let hello: Envelope<Response> = tokio::time::timeout(HANDSHAKE, read_frame(&mut stream))
+            .await
+            .map_err(|_| WorkerError::NoHandshake(HANDSHAKE))??;
+        match hello.payload {
+            Response::Hello { protocol, version } if protocol == izul_ipc::PROTOCOL_VERSION => {
+                tracing::debug!(worker = id, %version, protocol, "salam pekerja diterima");
+            }
+            Response::Hello { protocol, .. } => {
+                return Err(WorkerError::ProtocolMismatch {
+                    expected: izul_ipc::PROTOCOL_VERSION,
+                    found: protocol,
+                })
+            }
+            _ => return Err(WorkerError::NoHandshake(HANDSHAKE)),
+        }
 
         let (tx, rx) = mpsc::channel::<Job>(256);
         let last_beat = Arc::new(Mutex::new(Instant::now()));

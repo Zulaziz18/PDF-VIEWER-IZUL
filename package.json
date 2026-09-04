@@ -4,13 +4,15 @@
   "version": "7.0.0-alpha.1",
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "tsc --noEmit && vite build",
+    "dev": "npm run worker && vite",
+    "build": "npm run worker:release && tsc --noEmit && vite build",
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --max-warnings 0",
     "tauri": "tauri",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "worker": "cargo build -p izul-worker",
+    "worker:release": "cargo build -p izul-worker --release"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",

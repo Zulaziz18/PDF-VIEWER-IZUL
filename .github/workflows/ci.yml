@@ -58,6 +58,11 @@ jobs:
       # `WorkerPaths::beside_current_exe` — no manual copy step needed here.
       # The integration tests read `vendor/pdfium/` directly instead (see
       # `tests/crash_isolation.rs`), so they need nothing extra either.
+      # `--workspace` matters: the application spawns `izul-worker` as a
+      # separate process, and nothing about building the app alone rebuilds
+      # that binary. A stale worker speaks an older wire protocol and misreads
+      # every message — which is exactly how a `Ping` once arrived as a
+      # `Shutdown` on a developer machine.
       - name: Build
         run: cargo build --workspace
 

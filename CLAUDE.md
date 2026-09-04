@@ -92,6 +92,35 @@ belum familiar dengan command line, git, atau proses build. Instruksi harus:
        `pump()`, jadi bug ini tidak mungkin tertangkap sampai aplikasi
        sungguhan dijalankan. Kalau ada gejala "pekerja diam" atau balasan
        hilang di masa depan, curigai cancel-safety di jalur IPC lebih dulu.
+    4. **Binari pekerja usang** — ini yang membuat halaman tetap putih
+       walau ketiga perbaikan di atas sudah benar. Log pengguna menunjukkan
+       aplikasi mengirim `Ping` tapi pekerja mencatat
+       `perintah shutdown diterima` lalu keluar. Sebabnya `postcard` tidak
+       self-describing: enum dikirim sebagai **indeks varian**, dan Fase 1
+       menambah dua varian `Request` di tengah daftar, sehingga `Ping`
+       bergeser dari indeks 8 ke 9 dan dibaca pekerja lama sebagai
+       `Shutdown` (indeks 9 di daftar lamanya). `npm run tauri dev` hanya
+       membangun ulang aplikasi, **tidak pernah** `izul-worker.exe`, jadi
+       binari pekerja di mesin pengguna tertinggal satu fase.
+       Diperbaiki tiga lapis: (a) `npm run dev`/`build` sekarang menjalankan
+       `cargo build -p izul-worker` lebih dulu; (b) pekerja mengirim salam
+       `Response::Hello { protocol }` begitu terhubung dan supervisor
+       menolak yang tidak cocok dengan pesan yang menyuruh
+       `cargo build --workspace`; (c) `izul_ipc::PROTOCOL_VERSION` wajib
+       dinaikkan tiap kali bentuk `Request`/`Response` berubah.
+    5. **Heartbeat membunuh pekerja yang belum pernah disapa.** `sweep()`
+       memeriksa "diam berapa lama" **sebelum** mencoba ping, padahal diam
+       hanya berarti "belum diajak bicara" — dan penyebab utamanya adalah
+       supervisor sendiri, karena menghidupkan 8 pekerja butuh ~2 detik
+       masing-masing di build debug. Akibatnya pada sapuan pertama semua
+       pekerja terlihat diam 6-14 detik dan langsung dibunuh, lalu masuk
+       lingkaran restart yang tidak pernah keluar (terlihat di log sebagai
+       `silent=14.4s, 12.4s, 10.3s...` menurun 2 detik per pekerja — persis
+       jarak spawn mereka). Diperbaiki: ping dulu, dan hanya vonis mati bila
+       ping gagal **dan** sudah diam melewati ambang. Ping ke semua pekerja
+       kini dilakukan serentak, supaya satu pekerja macet tidak menahan
+       kunci kolam selama 8 x 6 detik — selama kunci itu dipegang, viewport
+       tidak bisa merender apa pun.
 
 ## Alur kerja proyek ini
 
