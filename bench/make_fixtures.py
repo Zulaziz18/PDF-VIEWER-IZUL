@@ -27,8 +27,47 @@ SEED = 20260904
 PAGES = 500
 PW, PH = letter                      # 612 x 792 pt
 
-SERIF = "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf"
-SERIF_B = "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf"
+
+
+def _font(*candidates):
+    """First candidate that exists on this machine.
+
+    The fixtures are generated on Linux, Windows and a developer's laptop, and
+    no font ships on all three. Liberation stays first so the documents this
+    produces on Linux keep the same text as the ones the numbers in
+    `bench/results/` were measured against; the rest are fallbacks in
+    descending order of how close they are to it metrically.
+
+    (Not byte-identical: reportlab stamps `CreationDate` and `ModDate`, so two
+    runs of this script have always differed by those few bytes. Only the
+    rendered content is stable.)
+
+    The tests that read these fixtures assert structure — a tile grid that
+    lines up, a page that carries ink, a text box over the glyph it describes —
+    not exact pixels, so a substituted face changes nothing they check.
+    """
+    for path in candidates:
+        if Path(path).exists():
+            return path
+    raise SystemExit(
+        "tidak ada font serif yang bisa dipakai. Dicari:\n  "
+        + "\n  ".join(candidates)
+        + "\nDi Debian/Ubuntu: sudo apt-get install fonts-liberation"
+    )
+
+
+SERIF = _font(
+    "/usr/share/fonts/truetype/liberation/LiberationSerif-Regular.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSerif.ttf",
+    "/System/Library/Fonts/Supplemental/Times New Roman.ttf",
+    "C:/Windows/Fonts/times.ttf",
+)
+SERIF_B = _font(
+    "/usr/share/fonts/truetype/liberation/LiberationSerif-Bold.ttf",
+    "/usr/share/fonts/truetype/dejavu/DejaVuSerif-Bold.ttf",
+    "/System/Library/Fonts/Supplemental/Times New Roman Bold.ttf",
+    "C:/Windows/Fonts/timesbd.ttf",
+)
 
 WORDS = ("dokumen halaman anotasi sorotan gambar tanda tangan lampiran ekspor "
          "keterangan pendahuluan metodologi hasil pembahasan kesimpulan lampiran "
