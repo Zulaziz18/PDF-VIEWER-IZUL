@@ -502,22 +502,41 @@ mod rendered {
         })
     }
 
-    /// Skips rather than fails when PDFium has not been fetched, unless the
-    /// caller insisted the fixtures be there — same rule as the integration
-    /// tests, so `vendor/pdfium/fetch.sh` stays optional for a docs-only change.
-    macro_rules! engine_or_skip {
-        () => {
-            match engine() {
-                Some(e) => e,
-                None => {
-                    if std::env::var_os("IZUL_REQUIRE_FIXTURES").is_some() {
-                        panic!("PDFium tidak ada dan IZUL_REQUIRE_FIXTURES diset");
-                    }
-                    eprintln!("LEWATI: PDFium belum diambil");
-                    return;
+    /// Skips rather than fails when a prerequisite has not been fetched —
+    /// unless the caller insisted it be there, which is what CI does. A test
+    /// that silently passes because its fixture is missing guards nothing, so
+    /// the escape hatch exists only to keep `vendor/pdfium/fetch.sh` optional
+    /// for a docs-only change on a developer machine.
+    macro_rules! require {
+        ($what:expr, $missing:expr) => {
+            if $missing {
+                if std::env::var_os("IZUL_REQUIRE_FIXTURES").is_some() {
+                    panic!(concat!($what, " tidak ada dan IZUL_REQUIRE_FIXTURES diset"));
                 }
+                eprintln!(concat!("LEWATI: ", $what, " belum diambil"));
+                return;
             }
         };
+    }
+
+    macro_rules! engine_or_skip {
+        () => {{
+            require!("PDFium", engine().is_none());
+            match engine() {
+                Some(e) => e,
+                None => return,
+            }
+        }};
+    }
+
+    /// The small document with an outline, mixed page sizes and a page that
+    /// carries its own `/Rotate`; `bench/make_fixtures.py viewer` builds it.
+    macro_rules! fixture_or_skip {
+        () => {{
+            let path = root().join("test-fixtures/viewer-10p.pdf");
+            require!("test-fixtures/viewer-10p.pdf", !path.exists());
+            path
+        }};
     }
 
     /// Fraction of pixels that are not white, over a rectangle of the bitmap.
@@ -610,11 +629,7 @@ mod rendered {
     #[test]
     fn renders_identically_to_the_plain_api() {
         let engine = engine_or_skip!();
-        let fixture = root().join("test-fixtures/viewer-10p.pdf");
-        if !fixture.exists() {
-            eprintln!("LEWATI: fixture");
-            return;
-        }
+        let fixture = fixture_or_skip!();
         let doc = engine.open(&fixture, None).expect("buka");
         let size = doc.page_size(0).expect("ukuran");
         let (w, h) = (size.width.round() as u32, size.height.round() as u32);
@@ -673,11 +688,7 @@ mod rendered {
     #[test]
     fn zooming_past_one_to_one_still_puts_ink_on_the_tile() {
         let engine = engine_or_skip!();
-        let fixture = root().join("test-fixtures/viewer-10p.pdf");
-        if !fixture.exists() {
-            eprintln!("LEWATI: fixture");
-            return;
-        }
+        let fixture = fixture_or_skip!();
         let doc = engine.open(&fixture, None).expect("buka");
         let size = doc.page_size(0).expect("ukuran");
 
