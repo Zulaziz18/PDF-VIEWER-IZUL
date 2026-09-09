@@ -42,7 +42,7 @@ pub mod render;
 pub mod supervisor;
 pub mod version;
 
-use std::sync::atomic::AtomicU64;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use commands::AppState;
@@ -212,6 +212,112 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
     result.map_err(|e| format!("tauri: {e}"))
 }
 
+/// What became of one tile request.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Outcome {
+    Served,
+    BadUri,
+    Superseded,
+    SlotGone,
+    Missing,
+    WorkerDown,
+}
+
+impl Outcome {
+    fn label(self) -> &'static str {
+        match self {
+            Outcome::Served => "terkirim",
+            Outcome::BadUri => "uri ditolak",
+            Outcome::Superseded => "generasi lama",
+            Outcome::SlotGone => "slot didaur ulang",
+            Outcome::Missing => "dokumen/halaman tidak ada",
+            Outcome::WorkerDown => "pekerja gagal",
+        }
+    }
+}
+
+/// Running tally of what happens to tile requests.
+///
+/// This exists because three rounds of a "the pages are blank" report were
+/// inconclusive: a refused tile was logged at `debug!`, which the default
+/// `info` filter drops, and a served one was not logged at all. The log
+/// therefore looked exactly the same whether the viewport never asked for a
+/// tile or the backend refused every single one — the two cases that need
+/// telling apart first, and the only ones a user can report without opening
+/// DevTools.
+///
+/// Logging every tile is not an option: one screenful is dozens of requests
+/// and a scroll is thousands. So the first few of each outcome are logged in
+/// full, which answers "did anything arrive, and what happened to it", and
+/// after that only a periodic summary keeps the log honest without flooding it.
+struct TileTraffic {
+    served: AtomicU64,
+    bad_uri: AtomicU64,
+    superseded: AtomicU64,
+    slot_gone: AtomicU64,
+    missing: AtomicU64,
+    worker_down: AtomicU64,
+    total: AtomicU64,
+}
+
+static TRAFFIC: TileTraffic = TileTraffic {
+    served: AtomicU64::new(0),
+    bad_uri: AtomicU64::new(0),
+    superseded: AtomicU64::new(0),
+    slot_gone: AtomicU64::new(0),
+    missing: AtomicU64::new(0),
+    worker_down: AtomicU64::new(0),
+    total: AtomicU64::new(0),
+};
+
+/// How many of each outcome are reported in full before summaries take over.
+const VERBOSE_FIRST: u64 = 3;
+/// How many requests between summary lines once past that.
+const SUMMARY_EVERY: u64 = 200;
+
+/// Whether the `n`th occurrence of an outcome is worth a line of its own.
+fn is_verbose(n: u64) -> bool {
+    n <= VERBOSE_FIRST
+}
+
+/// Whether the `total`th request should carry a summary of the tally.
+fn is_summary(total: u64) -> bool {
+    total > 0 && total.is_multiple_of(SUMMARY_EVERY)
+}
+
+impl TileTraffic {
+    fn counter(&self, outcome: Outcome) -> &AtomicU64 {
+        match outcome {
+            Outcome::Served => &self.served,
+            Outcome::BadUri => &self.bad_uri,
+            Outcome::Superseded => &self.superseded,
+            Outcome::SlotGone => &self.slot_gone,
+            Outcome::Missing => &self.missing,
+            Outcome::WorkerDown => &self.worker_down,
+        }
+    }
+
+    fn record(&self, outcome: Outcome, uri: &str, detail: &str) {
+        let n = self.counter(outcome).fetch_add(1, Ordering::Relaxed) + 1;
+        let total = self.total.fetch_add(1, Ordering::Relaxed) + 1;
+        if is_verbose(n) {
+            tracing::info!(hasil = outcome.label(), ke = n, uri, detail, "ubin");
+        }
+        if is_summary(total) {
+            tracing::info!(
+                total,
+                terkirim = self.served.load(Ordering::Relaxed),
+                uri_ditolak = self.bad_uri.load(Ordering::Relaxed),
+                generasi_lama = self.superseded.load(Ordering::Relaxed),
+                slot_hilang = self.slot_gone.load(Ordering::Relaxed),
+                tidak_ada = self.missing.load(Ordering::Relaxed),
+                pekerja_gagal = self.worker_down.load(Ordering::Relaxed),
+                "ringkasan lalu lintas ubin"
+            );
+        }
+    }
+}
+
 /// Serves `izul://tile/...`: cache hit, or render and then cache.
 ///
 /// The status codes are part of the contract with the viewport:
@@ -242,7 +348,7 @@ pub async fn serve_tile(service: &Arc<RenderService>, uri: &str) -> tauri::http:
     let parsed = match protocol::parse_tile_uri(uri) {
         Ok(u) => u,
         Err(e) => {
-            tracing::debug!(error = %e, uri, "permintaan ubin ditolak");
+            TRAFFIC.record(Outcome::BadUri, uri, &e.to_string());
             return deny(StatusCode::BAD_REQUEST);
         }
     };
@@ -252,18 +358,30 @@ pub async fn serve_tile(service: &Arc<RenderService>, uri: &str) -> tauri::http:
         .await
     {
         Ok(tile) => tile,
-        Err(RenderError::Superseded) | Err(RenderError::Busy) | Err(RenderError::Cancelled) => {
-            return deny(StatusCode::CONFLICT)
+        Err(e @ (RenderError::Superseded | RenderError::Busy | RenderError::Cancelled)) => {
+            TRAFFIC.record(Outcome::Superseded, uri, &e.to_string());
+            return deny(StatusCode::CONFLICT);
         }
-        Err(RenderError::SlotGone) => return deny(StatusCode::GONE),
-        Err(RenderError::UnknownDocument(_)) | Err(RenderError::PageOutOfRange { .. }) => {
-            return deny(StatusCode::NOT_FOUND)
+        Err(e @ RenderError::SlotGone) => {
+            TRAFFIC.record(Outcome::SlotGone, uri, &e.to_string());
+            return deny(StatusCode::GONE);
+        }
+        Err(e @ (RenderError::UnknownDocument(_) | RenderError::PageOutOfRange { .. })) => {
+            TRAFFIC.record(Outcome::Missing, uri, &e.to_string());
+            return deny(StatusCode::NOT_FOUND);
         }
         Err(RenderError::Worker(e)) => {
+            TRAFFIC.record(Outcome::WorkerDown, uri, &e.to_string());
             tracing::warn!(error = %e, uri, "render gagal");
             return deny(StatusCode::SERVICE_UNAVAILABLE);
         }
     };
+
+    TRAFFIC.record(
+        Outcome::Served,
+        uri,
+        &format!("{}x{}", tile.width, tile.height),
+    );
 
     let mut builder = Response::builder()
         .status(StatusCode::OK)
@@ -287,7 +405,59 @@ pub async fn serve_tile(service: &Arc<RenderService>, uri: &str) -> tauri::http:
 /// the viewport writes is the one the scheduler reads.
 #[cfg(test)]
 mod tests {
+    use super::{is_summary, is_verbose, Outcome, SUMMARY_EVERY, VERBOSE_FIRST};
     use crate::render::Priority;
+
+    /// The instrument has to answer "did anything arrive at all" on the very
+    /// first request, or it is useless for the report it exists to serve.
+    #[test]
+    fn the_first_tile_of_each_outcome_is_always_reported() {
+        assert!(is_verbose(1), "yang pertama harus selalu tercatat");
+        for n in 1..=VERBOSE_FIRST {
+            assert!(is_verbose(n), "ke-{n} masih dalam jatah rinci");
+        }
+    }
+
+    /// And it must not drown the log once the viewport is scrolling: a
+    /// screenful is dozens of tiles, a scroll is thousands.
+    #[test]
+    fn a_scroll_does_not_flood_the_log() {
+        assert!(!is_verbose(VERBOSE_FIRST + 1));
+        assert!(!is_verbose(10_000));
+        let lines = (1..=10_000u64).filter(|n| is_verbose(*n)).count()
+            + (1..=10_000u64).filter(|t| is_summary(*t)).count();
+        assert!(
+            lines < 100,
+            "10.000 ubin tidak boleh jadi {lines} baris log"
+        );
+    }
+
+    #[test]
+    fn the_tally_is_summarised_at_a_steady_interval() {
+        assert!(!is_summary(0), "belum ada apa-apa untuk diringkas");
+        assert!(is_summary(SUMMARY_EVERY));
+        assert!(is_summary(SUMMARY_EVERY * 2));
+        assert!(!is_summary(SUMMARY_EVERY + 1));
+    }
+
+    /// Each outcome needs its own words: a log that calls every refusal
+    /// "ditolak" is the log that made three rounds of this inconclusive.
+    #[test]
+    fn every_outcome_reads_differently_in_the_log() {
+        let all = [
+            Outcome::Served,
+            Outcome::BadUri,
+            Outcome::Superseded,
+            Outcome::SlotGone,
+            Outcome::Missing,
+            Outcome::WorkerDown,
+        ];
+        let mut labels: Vec<&str> = all.iter().map(|o| o.label()).collect();
+        labels.sort_unstable();
+        let before = labels.len();
+        labels.dedup();
+        assert_eq!(labels.len(), before, "dua hasil memakai kata yang sama");
+    }
 
     #[test]
     fn the_viewports_priority_numbers_mean_what_the_scheduler_thinks() {
