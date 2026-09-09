@@ -36,14 +36,15 @@ jobs:
 
       - uses: Swatinem/rust-cache@v2
 
+      # Both trees on both runners, which is what `fetch.sh` does by default
+      # and what a developer machine ends up with. Fetching only the host's
+      # made `the_vendored_pdfium_is_present_for_the_target_we_ship` fail on
+      # the Linux runner: that test checks the library that actually ships to
+      # users — the Windows one — and it is worth keeping meaningful on both
+      # runners rather than weakening it to whatever the host happens to have.
       - name: Vendor the pinned PDFium
         shell: bash
-        run: |
-          if [ "$RUNNER_OS" = "Windows" ]; then
-            ./vendor/pdfium/fetch.sh win-x64
-          else
-            ./vendor/pdfium/fetch.sh linux-x64
-          fi
+        run: ./vendor/pdfium/fetch.sh
 
       - name: Formatting
         run: cargo fmt --all --check
