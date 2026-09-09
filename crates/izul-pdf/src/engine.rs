@@ -405,18 +405,20 @@ impl Drop for Document {
     }
 }
 
-/// A page's shape as the renderer needs it.
+/// A page's shape as the layout needs it.
 ///
-/// Two facts that a page's *size* alone cannot express, and that both change
-/// where a tile has to draw:
+/// Two facts a page's *size* alone cannot express:
 ///
 /// * the bounding box (`/MediaBox` intersected with `/CropBox`) need not start
-///   at the origin, so content is offset by its corner;
-/// * the page carries its own `/Rotate`, which PDFium applies for you in
-///   `FPDF_RenderPageBitmap` but *not* when you supply your own matrix — and
-///   supplying our own matrix is the whole reason tiles are possible.
+///   at the origin, so user-space coordinates are offset by its corner;
+/// * the page carries its own `/Rotate`, so the page the reader sees may have
+///   its axes swapped relative to the coordinates PDFium reports for text.
 ///
-/// So the tile matrix takes this, not a width and a height.
+/// Both matter for mapping *text boxes* into display space, which is what
+/// [`PageGeometry::to_display`] is for. Neither reaches the tile matrix:
+/// PDFium composes the page's own display matrix before applying ours, and
+/// that matrix has already subtracted the bounding box and applied `/Rotate`
+/// (see `tile_matrix` in `render.rs`, and the pixel test that pins it).
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct PageGeometry {
     /// Bounding box in unrotated user space.

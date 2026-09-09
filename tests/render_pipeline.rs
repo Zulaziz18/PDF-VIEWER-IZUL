@@ -624,3 +624,52 @@ async fn a_thumbnail_sweep_does_not_leave_the_whole_document_resident() {
     assert!(page_count > SLOTS / 2);
     h.kill();
 }
+
+/// The whole pipeline, at the zoom levels that used to render white.
+///
+/// `izul-pdf` pins the matrix itself with pixel tests, but the tile grid, the
+/// source rect it derives, and the IPC round trip all sit between the viewport
+/// and that matrix. A tile of the page's top-left corner — the first thing a
+/// reader sees — must carry ink at every zoom, not just at 100 %.
+#[cfg(unix)]
+#[tokio::test]
+async fn a_zoomed_tile_of_the_top_left_corner_is_never_blank() {
+    let Some(fixture) = viewer_fixture() else {
+        return skip("fixture");
+    };
+    let Some(mut h) = spawn_worker(30, 0xC1).await else {
+        return skip("worker");
+    };
+    let doc = DocId(1);
+    let (_, sizes) = h.open(doc, &fixture).await;
+    let (w, ph) = sizes.first().copied().expect("page");
+
+    for ppp in [1.0f32, 1.5, 2.0, 3.0] {
+        let (source, dw, dh) = tile_source(w, ph, ppp, 0, 0);
+        let reply = h
+            .call(Request::RenderTile {
+                doc,
+                page: 0,
+                source,
+                dest_w: dw,
+                dest_h: dh,
+                rotation: RotationQuarter::None,
+                quality: RenderQuality::Sharp,
+                generation: Generation(1),
+            })
+            .await;
+        match reply {
+            Response::TileReady { slot, .. } => {
+                let bytes = h.take(&slot);
+                let got = ink(&bytes);
+                assert!(
+                    got > 0.001,
+                    "zoom {ppp}x: ubin kiri-atas kosong (tinta {got:.4}), source {source:?}, \
+                     dest {dw}x{dh}"
+                );
+            }
+            other => panic!("zoom {ppp}x: {other:?}"),
+        }
+    }
+    h.kill();
+}

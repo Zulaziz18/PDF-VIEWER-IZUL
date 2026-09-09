@@ -37,9 +37,11 @@ dibuktikan dan dicatat apa adanya.
 - **Zoom** 10–1600 % dengan tangga langkah tetap, fit width, fit page, ukuran
   asli, Ctrl+scroll dan pinch touchpad, **mempertahankan titik fokus kursor**.
 - **Rotasi per dokumen dan per halaman**, diterapkan di dalam matriks ubin.
-  Rotasi bawaan halaman (`/Rotate`) ikut dihitung: PDFium menerapkannya sendiri
-  pada render biasa tapi **tidak** pada render bermatriks, dan render bermatriks
-  itulah yang membuat ubin mungkin.
+  Rotasi bawaan halaman (`/Rotate`) ikut dihitung — oleh PDFium, yang menyusun
+  matriks tampilan halaman sebelum menerapkan matriks kita, jadi matriks ubin
+  hanya membawa rotasi tambahan dari pengguna. Lihat "Diperbaiki setelah
+  pengujian pertama di Windows": menganggapnya sebaliknya membuat setiap ubin
+  di atas zoom 100 % tergambar putih.
 - **Lapisan teks** dari kotak karakter PDFium, dikelompokkan menjadi baris,
   transparan di atas kanvas — jadi seleksi, salin, dan pembaca layar bekerja
   pada teks dokumen, bukan pada gambarnya. Kotaknya dipetakan ke ruang tampilan,
@@ -92,6 +94,63 @@ Begitu pula **cold start < 1 detik**: yang terukur di sini hanya lantainya —
 spawn pekerja, kanal, muat PDFium, ping pertama: 2,6 ms p95 di Linux dengan page
 cache panas. Jendela dan frame pertama adalah sisa anggaran itu dan milik
 pengukuran di Windows.
+
+### Diperbaiki setelah pengujian pertama di Windows
+
+Fase 1 dinyatakan selesai berdasarkan test dan benchmark di Linux. Menjalankan
+build sungguhan di Windows menemukan tujuh cacat yang tak satu pun bisa
+tertangkap oleh suite yang ada, karena semuanya hidup di lapisan yang tidak
+dilewati test mana pun: jendela, webview, dan pompa kanal supervisor. Semuanya
+kini punya test regresi yang **gagal pada kode lama**.
+
+- **Tombol "Buka Berkas" tidak merespons.** Tauri v2 menolak permintaan plugin
+  dialog secara diam-diam tanpa `src-tauri/capabilities/default.json`. Berkas
+  itu ditambahkan.
+- **URI ubin tidak pernah sampai ke Rust.** `wry` menerjemahkan
+  `{http|https}://izul.localhost/x` kembali ke `izul://x`, tapi hanya untuk
+  skema yang benar-benar dipakai jendela — `http` secara bawaan, karena proyek
+  ini tidak menyalakan `useHttpsScheme`. Bentuk `https` meleset dari penerjemah
+  itu dan jatuh sebagai pencarian DNS ke host yang tidak ada. Frontend sekarang
+  menulis `http://izul.localhost/...`; pengurainya tetap menerima ketiga bentuk.
+- **Pekerja diam lalu dibunuh, berulang-ulang.** `pump()` menaruh `read_frame`
+  di dalam `tokio::select!`, dan `read_frame` tidak cancel-safe: ia membaca
+  4 byte panjang lalu isinya, jadi perintah yang datang di antara keduanya
+  membuang future itu berikut byte panjang yang sudah terbaca. Pembacaan
+  berikutnya mulai dari tengah pesan dan menunggu selamanya. Pembacaan
+  dipindah ke task tersendiri yang tidak pernah dibatalkan, menyalurkan frame
+  utuh lewat `mpsc`.
+- **`Ping` terbaca sebagai `Shutdown`.** `postcard` mengirim enum sebagai indeks
+  varian, dan Fase 1 menyisipkan dua varian `Request` di tengah daftar, jadi
+  binari pekerja lama menggeser semuanya. `npm run dev`/`build` sekarang
+  membangun pekerja lebih dulu, pekerja mengirim salam `Response::Hello
+  { protocol }`, dan supervisor menolak protokol yang tidak cocok dengan pesan
+  yang menyuruh `cargo build --workspace`.
+- **Balasan ubin dibuang browser.** Halaman dev berjalan di `localhost:5173`,
+  ubin datang dari `izul.localhost` — lintas asal. Protokol yang didaftarkan
+  tangan harus memasang `Access-Control-Allow-Origin` sendiri, dan tanpa
+  `Access-Control-Expose-Headers` dimensi ubin terbaca `null` walau ubinnya
+  sampai utuh. Keduanya kini dipasang pada **semua** balasan, termasuk yang
+  galat, jadi status 409/410 pun sampai ke frontend.
+- **Denyut jantung membunuh pekerja yang belum pernah disapa.** `sweep()`
+  memeriksa lama diam sebelum mencoba ping, padahal diam hanya berarti "belum
+  diajak bicara" — dan penyebabnya adalah supervisor sendiri, yang butuh ~2
+  detik per pekerja untuk menghidupkan delapan. Sekarang ping dulu, vonis mati
+  hanya bila ping gagal **dan** sudah lewat ambang; ping ke semua pekerja
+  berjalan serentak agar satu pekerja macet tidak menahan kunci kolam.
+- **Setiap ubin di atas zoom 100 % tergambar putih.** `FPDF_RenderPageBitmapWithMatrix`
+  tidak menerima matriks ruang-pengguna: PDFium menyusun matriks tampilan
+  halaman itu sendiri lebih dulu, lalu menerapkan matriks kita di atasnya.
+  Matriks ubin lama membalik sumbu y, mengurangi kotak pembatas, dan memutar
+  `/Rotate` untuk kedua kalinya. Pada zoom 100 % kebetulan masih ada yang
+  mendarat di bitmap; begitu faktor skalanya meninggalkan 1,0 seluruh isi
+  terdorong ke luar area klip. Matriksnya ditulis ulang di ruang yang benar —
+  titik, origin kiri-atas, `/MediaBox` dan `/Rotate` sudah ditangani PDFium —
+  sehingga yang tersisa hanyalah rotasi tambahan dari pengguna, offset rect
+  sumber, dan skala. Header PDFium tidak menjelaskan ruang ini sama sekali, jadi
+  ia dipatok dengan pengukuran: render bermatriks identitas kini wajib identik
+  byte-per-byte dengan `FPDF_RenderPageBitmap`, dan halaman sintetis dengan
+  `/MediaBox` bergeser serta `/Rotate` 90/180/270 memastikan tidak ada yang
+  diterapkan dua kali.
 
 ### Diputuskan selama Fase 1
 

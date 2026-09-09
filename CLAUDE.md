@@ -45,7 +45,7 @@ belum familiar dengan command line, git, atau proses build. Instruksi harus:
     startup pertama — kemungkinan besar cuma build `dev` (belum optimal)
     lambat memuat PDFium di 8 proses sekaligus; belum jadi masalah kalau
     tidak berulang terus-menerus.
-  - **Dua bug ditemukan dan sudah diperbaiki** lewat pengujian langsung di
+  - **Tujuh bug ditemukan dan sudah diperbaiki** lewat pengujian langsung di
     Windows-nya (keduanya baru ketahuan sekarang karena sebelumnya belum ada
     yang menjalankan build sungguhan di Windows):
     1. Tombol "Buka Berkas" tidak merespons sama sekali — Tauri v2 butuh
@@ -139,6 +139,49 @@ belum familiar dengan command line, git, atau proses build. Instruksi harus:
        kini dilakukan serentak, supaya satu pekerja macet tidak menahan
        kunci kolam selama 8 x 6 detik — selama kunci itu dipegang, viewport
        tidak bisa merender apa pun.
+    7. **Setiap ubin di atas zoom 100 % tergambar putih.** Ini cacat terakhir
+       yang tersisa setelah keenam di atas benar, dan yang paling halus.
+       `FPDF_RenderPageBitmapWithMatrix` **tidak** menerima matriks ruang
+       pengguna. PDFium menyusun matriks tampilan halaman sendiri lebih dulu
+       (yang sudah mengurangi `/MediaBox`, sudah menerapkan `/Rotate`, dan sudah
+       membalik sumbu y), lalu menerapkan matriks kita **di atas** hasil itu.
+       Matriks ubin lama mengerjakan ketiganya sekali lagi. Pada zoom 100 %
+       faktor skalanya kebetulan 1,0 dan sebagian isi masih mendarat di bitmap
+       — makanya ada tinta; begitu skalanya 1,5 atau 2,0 seluruh isi terdorong
+       ke luar area klip dan ubin keluar putih bersih.
+       Diperbaiki dengan menulis ulang `tile_matrix` di ruang yang benar
+       (*ruang halaman*: titik, origin kiri-atas, y ke bawah, `/MediaBox` dan
+       `/Rotate` sudah ditangani PDFium), sehingga yang tersisa hanya rotasi
+       tambahan pengguna, offset rect sumber, dan skala.
+       **Pelajaran penting:** header PDFium hanya menulis "the transform
+       matrix, which must be invertible" — ruangnya tidak dijelaskan sama
+       sekali, dan dua kali sesi ini rugi waktu karena menebaknya. Ruang itu
+       akhirnya dipatok dengan **eksperimen**: render bermatriks identitas
+       ternyata identik byte-per-byte dengan `FPDF_RenderPageBitmap`, yang hanya
+       mungkin kalau PDFium mengalikan matriks tampilannya lebih dulu. Test
+       `renders_identically_to_the_plain_api` di `crates/izul-pdf/src/render.rs`
+       menjaga kesimpulan itu, ditemani halaman PDF sintetis (`corner_page`)
+       dengan `/MediaBox` bergeser dan `/Rotate` 90/180/270 yang membuktikan
+       tidak ada yang diterapkan dua kali. Ketiga belas test itu **gagal pada
+       matriks lama** — sudah diperiksa dengan mengembalikannya sementara.
+       Kalau nanti ada gejala "halaman putih hanya saat di-zoom", curigai ruang
+       koordinat matriks lebih dulu, dan **ukur**, jangan mengingat.
+
+## Cara kerja yang terbukti berguna di proyek ini
+
+Tiga dari delapan cacat sesi ini lahir dari menebak perilaku pustaka pihak
+ketiga dari ingatan. Yang menyelesaikannya selalu salah satu dari:
+
+- **Membaca kode sumber yang benar-benar terpasang** (`wry` di `~/.cargo`,
+  header PDFium di `vendor/pdfium/*/include`), bukan dokumentasi dari ingatan.
+- **Menjalankan eksperimen kecil yang jawabannya cuma satu bit** — Chromium
+  sungguhan lewat Playwright untuk CORS, matriks identitas untuk ruang
+  koordinat PDFium.
+- **Membuktikan test regresinya gagal pada kode lama** sebelum percaya ia
+  menjaga sesuatu.
+
+Kalau sebuah dugaan tidak bisa diuji dalam sepuluh menit, itu tanda dugaannya
+belum cukup tajam — bukan tanda harus dicoba di komputer pengguna.
 
 ## Alur kerja proyek ini
 
