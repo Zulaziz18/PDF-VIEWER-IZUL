@@ -167,6 +167,42 @@ belum familiar dengan command line, git, atau proses build. Instruksi harus:
        Kalau nanti ada gejala "halaman putih hanya saat di-zoom", curigai ruang
        koordinat matriks lebih dulu, dan **ukur**, jangan mengingat.
 
+## Keadaan CI
+
+Sejak PR #1, **CI hijau penuh untuk pertama kalinya** di repositori ini: Rust
+di ubuntu dan windows, Frontend, dan Version consistency. Sebelumnya selalu
+merah — enam run terakhir di branch basis gagal karena dua cacat yang tidak
+pernah diperbaiki, dan karenanya tahap Test tidak pernah dijalankan sama
+sekali di Linux, dan tidak pernah di Windows.
+
+Yang perlu diingat saat CI merah lagi nanti:
+
+- **Tiap perbaikan membuka tahap berikutnya, dan tahap itu punya cacatnya
+  sendiri.** Lima cacat beruntun ditemukan begitu, satu per push. Kalau CI
+  baru saja lolos ke tahap yang belum pernah dijalankan, harapkan ia gagal —
+  itu bukan tanda perbaikan sebelumnya salah.
+- **Lingkungan pengembangan di sini punya kedua pohon PDFium** (linux-x64 dan
+  win-x64), sedangkan runner hanya punya miliknya sendiri sampai CI diperbaiki
+  supaya mengambil keduanya. Suite yang lulus di sini karena itu tidak
+  membuktikan CI hijau. Kalau ada kegagalan yang hanya muncul di CI, curigai
+  asimetri lingkungan lebih dulu.
+- **Cara mensimulasikan Windows dari sini:** ganti sementara semua
+  `#[cfg(unix)]`/`#![cfg(unix)]` di berkas test jadi `cfg(any())`, lalu
+  jalankan `cargo clippy --workspace --all-targets -- -D warnings`. Itu
+  memunculkan galat unused-import yang sama persis dengan yang dilaporkan CI
+  Windows, tanpa perlu mesin Windows.
+- **Jalankan `cargo test --workspace --no-fail-fast`** sebelum push. Tanpa itu
+  cargo berhenti di binari test pertama yang gagal, dan kegagalan berikutnya
+  baru terlihat satu putaran CI kemudian.
+
+**Cakupan yang belum ada:** seluruh test integrasi memakai soket Unix dan
+digerbangi `#![cfg(unix)]`, jadi di Windows berkas-berkas itu kosong. Yang
+benar-benar berjalan di Windows hanya test unit dan test piksel `izul-pdf`.
+Padahal Windows-lah platform yang dikirim, dan ketujuh bug Fase 1 ditemukan di
+sana oleh pengguna, bukan oleh test. Menutupnya berarti memberi harness jalur
+named pipe di samping soket unix — pekerjaan tersendiri, sudah dicatat di
+`tests/render_pipeline.rs` dan `src-tauri/tests/render_end_to_end.rs`.
+
 ## Cara kerja yang terbukti berguna di proyek ini
 
 Tiga dari delapan cacat sesi ini lahir dari menebak perilaku pustaka pihak
