@@ -10,6 +10,18 @@
 //! cargo test --test render_pipeline -- --nocapture
 //! ```
 
+// Every test in this file drives a real worker over a Unix socket, so the whole
+// file is Unix-only. Gating the crate root rather than each test keeps the
+// imports gated with them — an import left behind by a `#[cfg(unix)]` test is an
+// unused import on Windows, which the workspace's `-D warnings` makes a build
+// failure — and it cannot drift when the next test is added.
+//
+// The cost is real and worth stating: these tests never run on Windows, which
+// is the platform this application ships on. Making them cross-platform means
+// giving the harness a named-pipe path beside the Unix-socket one; until then,
+// Windows coverage comes from the unit tests and from running the application.
+#![cfg(unix)]
+
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Duration;
@@ -75,7 +87,6 @@ struct Harness {
     next_id: u64,
 }
 
-#[cfg(unix)]
 async fn spawn_worker(worker_id: u32, session: u64) -> Option<Harness> {
     let (worker, lib) = (worker_binary()?, pdfium()?);
     let channel = ChannelName::for_worker(session, worker_id);
@@ -211,7 +222,6 @@ fn tile_source(page_w: f32, page_h: f32, ppp: f32, col: u32, row: u32) -> (PdfRe
     )
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn the_preview_tier_answers_with_a_whole_page_small_enough_to_be_instant() {
     let Some(fixture) = viewer_fixture() else {
@@ -258,7 +268,6 @@ async fn the_preview_tier_answers_with_a_whole_page_small_enough_to_be_instant()
     h.kill();
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn a_rotated_page_renders_turned_rather_than_stretched() {
     let Some(fixture) = viewer_fixture() else {
@@ -314,7 +323,6 @@ async fn a_rotated_page_renders_turned_rather_than_stretched() {
     h.kill();
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn a_page_with_its_own_rotate_is_laid_out_and_drawn_the_same_way() {
     let Some(fixture) = viewer_fixture() else {
@@ -354,7 +362,6 @@ async fn a_page_with_its_own_rotate_is_laid_out_and_drawn_the_same_way() {
     h.kill();
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn the_tiles_of_a_page_cover_it_and_line_up_with_their_neighbours() {
     let Some(fixture) = viewer_fixture() else {
@@ -410,7 +417,6 @@ async fn the_tiles_of_a_page_cover_it_and_line_up_with_their_neighbours() {
     h.kill();
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn work_from_a_superseded_generation_is_dropped_rather_than_rendered() {
     let Some(fixture) = viewer_fixture() else {
@@ -484,7 +490,6 @@ async fn work_from_a_superseded_generation_is_dropped_rather_than_rendered() {
     h.kill();
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn the_outline_comes_back_as_a_navigable_tree() {
     let Some(fixture) = viewer_fixture() else {
@@ -517,7 +522,6 @@ async fn the_outline_comes_back_as_a_navigable_tree() {
     h.kill();
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn text_boxes_land_on_the_page_they_describe() {
     let Some(fixture) = viewer_fixture() else {
@@ -589,7 +593,6 @@ async fn text_boxes_land_on_the_page_they_describe() {
     h.kill();
 }
 
-#[cfg(unix)]
 #[tokio::test]
 async fn a_thumbnail_sweep_does_not_leave_the_whole_document_resident() {
     let Some(fixture) = viewer_fixture() else {
@@ -631,7 +634,6 @@ async fn a_thumbnail_sweep_does_not_leave_the_whole_document_resident() {
 /// source rect it derives, and the IPC round trip all sit between the viewport
 /// and that matrix. A tile of the page's top-left corner — the first thing a
 /// reader sees — must carry ink at every zoom, not just at 100 %.
-#[cfg(unix)]
 #[tokio::test]
 async fn a_zoomed_tile_of_the_top_left_corner_is_never_blank() {
     let Some(fixture) = viewer_fixture() else {

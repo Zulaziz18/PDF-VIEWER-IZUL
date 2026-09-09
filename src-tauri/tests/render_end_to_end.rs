@@ -27,6 +27,17 @@
 // code and `izul-integration-tests` makes in its manifest: inside a test,
 // `expect` *is* the failure report. This file cannot take the manifest route
 // because it lives in the application's own package, so it says it here.
+// Every test in this file drives a real worker over a Unix socket, so the whole
+// file is Unix-only. Gating the crate root rather than each test keeps the
+// imports gated with them — an import left behind by a `#[cfg(unix)]` test is an
+// unused import on Windows, which the workspace's `-D warnings` makes a build
+// failure — and it cannot drift when the next test is added.
+//
+// The cost is real and worth stating: these tests never run on Windows, which
+// is the platform this application ships on. Making them cross-platform means
+// giving the harness a named-pipe path beside the Unix-socket one; until then,
+// Windows coverage comes from the unit tests and from running the application.
+#![cfg(unix)]
 #![allow(
     clippy::unwrap_used,
     clippy::expect_used,
@@ -160,7 +171,6 @@ fn ink(bytes: &[u8]) -> f64 {
     painted as f64 / (bytes.len() / 4).max(1) as f64
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_tile_uri_from_the_webview_comes_back_as_pixels() {
     let Some(live) = Live::start().await else {
@@ -189,7 +199,6 @@ async fn a_tile_uri_from_the_webview_comes_back_as_pixels() {
     live.shutdown().await;
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_screenful_of_tiles_arrives_while_the_heartbeat_runs() {
     // The failure this guards against is the one that shipped: the viewport
@@ -270,7 +279,6 @@ async fn a_screenful_of_tiles_arrives_while_the_heartbeat_runs() {
     live.shutdown().await;
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn the_pool_survives_a_worker_being_killed_mid_render() {
     // SPEC 3.4: a dead worker costs the affected tabs, briefly, and nothing
@@ -308,7 +316,6 @@ async fn the_pool_survives_a_worker_being_killed_mid_render() {
     live.shutdown().await;
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn text_and_outline_travel_the_same_road_as_tiles() {
     // These go through `Pool::ask` rather than the render service, and they are
@@ -350,7 +357,6 @@ async fn text_and_outline_travel_the_same_road_as_tiles() {
     live.shutdown().await;
 }
 
-#[cfg(unix)]
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn a_superseded_request_is_refused_rather_than_drawn() {
     let Some(live) = Live::start().await else {
