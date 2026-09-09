@@ -6,6 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 description = "PDF Studio Izul — proses UI, supervisor, dan asosiasi berkas"
 
+[lib]
+name = "izul_app"
+path = "src/lib.rs"
+
 [[bin]]
 name = "pdf-studio-izul"
 path = "src/main.rs"
@@ -42,6 +46,9 @@ features = [
     "Win32_System_Threading",
     "Win32_Security",
 ]
+
+[dev-dependencies]
+izul-store.workspace = true
 
 [lints]
 workspace = true
