@@ -38,9 +38,6 @@
     "icon": [
       "icons/icon.ico"
     ],
-    "resources": [
-      "../vendor/pdfium/win-x64/bin/pdfium.dll"
-    ],
     "windows": {
       "nsis": {
         "installMode": "perMachine",
