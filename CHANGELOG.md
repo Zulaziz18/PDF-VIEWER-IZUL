@@ -152,6 +152,21 @@ kini punya test regresi yang **gagal pada kode lama**.
   `/MediaBox` bergeser serta `/Rotate` 90/180/270 memastikan tidak ada yang
   diterapkan dua kali.
 
+- **`localhost` sisa penerjemahan `wry` ditolak sebagai jenis sumber daya
+  tak dikenal — seluruh ubin ditolak di Windows, terbukti dari log lalu
+  lintas ubin baru: 1400 permintaan, 0 terkirim.** `wry` menerjemahkan
+  `http://izul.localhost/x` menjadi `izul://localhost/x`, bukan
+  `izul://x` — kode sumbernya sendiri menyebut bentuk kanoniknya
+  `{protocol}://localhost/abc`. Pengurai URI kita mengasumsikan tidak ada
+  authority dan membaca `localhost` sebagai jenis sumber daya. Diperbaiki:
+  authority dilucuti tepat di awal path, sebelum dibaca, dan hanya di
+  posisi itu.
+- **Log lalu lintas ubin.** Sebelumnya penolakan dicatat di `debug!` (di
+  bawah saringan bawaan) atau tidak dicatat sama sekali, sehingga log
+  terlihat sama baik saat viewport tidak meminta ubin maupun saat backend
+  menolak semuanya. Sekarang tiap permintaan dihitung menurut hasilnya,
+  dengan ringkasan berkala supaya scroll ribuan ubin tidak membanjiri log.
+
 ### Diputuskan selama Fase 1
 
 - **Pipeline render menjadi crate sendiri, `izul-render`** — deviasi dari daftar

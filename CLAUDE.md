@@ -167,6 +167,44 @@ belum familiar dengan command line, git, atau proses build. Instruksi harus:
        Kalau nanti ada gejala "halaman putih hanya saat di-zoom", curigai ruang
        koordinat matriks lebih dulu, dan **ukur**, jangan mengingat.
 
+    8. **`localhost` yang tersisa dari wry ditolak sebagai jenis sumber daya
+       yang tidak dikenal — semua 1400 ubin ditolak dalam satu sesi, semua
+       terkirim=0.** Ini yang akhirnya ditemukan lewat log lalu lintas ubin
+       (lihat bug #9 di bawah) begitu instrumennya terpasang. `wry`
+       menerjemahkan `http://izul.localhost/tile/...` bukan menjadi
+       `izul://tile/...`, melainkan `izul://localhost/tile/...` — kode
+       sumbernya sendiri (`custom_protocol_workaround.rs`) menyebut bentuk
+       kanoniknya `{protocol}://localhost/abc`, jadi `localhost` memang selalu
+       ikut. Pengurai kita mengasumsikan tidak ada authority sama sekali dan
+       membaca `localhost` sebagai segmen pertama path — yang seharusnya
+       `tile` — lalu menolaknya sebagai "jenis sumber daya tidak dikenal".
+       Diperbaiki: authority `localhost/` dilucuti tepat di awal, sebelum
+       path dibaca, dan hanya di posisi itu — supaya segmen path yang
+       kebetulan bertulisan `localhost` lebih dalam tetap ditolak sebagaimana
+       mestinya. Dijaga dengan test yang memakai URI persis dari log pengguna
+       (`izul://localhost/tile/1/0/0/256/0/0/preview?g=2&p=0`), test yang
+       memastikan keempat ejaan URI (dua bentuk `izul://`, `http://`,
+       `https://`) mengurai ke kunci ubin yang sama, dan satu baris tambahan
+       di test ujung-ke-ujung yang memakai bentuk Windows ini secara eksplisit
+       — sebelumnya test itu hanya memakai bentuk `http://`, yang tidak
+       pernah benar-benar dikirim di Windows, sehingga tetap hijau sementara
+       Windows sungguhan menolak semuanya.
+    9. **Instrumen yang membuat bug #8 ketemu.** Sebelum ini, `serve_tile`
+       mencatat URI yang ditolak lewat `tracing::debug!` — dibuang saringan
+       bawaan `info` — dan tidak mencatat sama sekali penolakan Superseded,
+       SlotGone, atau NotFound, atau ubin yang berhasil. Log jadi terlihat
+       persis sama baik ketika viewport tidak pernah meminta ubin maupun
+       ketika backend menolak semuanya — dua kemungkinan yang paling perlu
+       dibedakan, dan satu-satunya diagnosis yang bisa diminta dari pengguna
+       tanpa membuka DevTools. Tiga putaran pelaporan "halaman putih"
+       sebelumnya tidak konklusif karena ini, bukan karena dugaan yang
+       kurang tajam. Ditambahkan: tiap permintaan ubin dihitung menurut
+       hasilnya (terkirim/uri ditolak/generasi lama/slot hilang/tidak
+       ada/pekerja gagal), tiga yang pertama dari tiap jenis dicatat utuh,
+       sesudahnya ringkasan tiap 200 permintaan.
+       **Pelajaran penting:** kalau laporan bug lewat beberapa putaran tidak
+       konklusif, curigai alat ukurnya sebelum mempertajam dugaan lebih jauh.
+
 ## Keadaan CI
 
 Sejak PR #1, **CI hijau penuh untuk pertama kalinya** di repositori ini: Rust

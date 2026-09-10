@@ -71,19 +71,30 @@ pub enum UriError {
 const MAX_PPP_MILLI: u64 = 64_000;
 
 pub fn parse_tile_uri(uri: &str) -> Result<TileUri, UriError> {
-    // Three spellings reach this handler for the same request. `izul://...`
-    // is what macOS and Linux's webviews will fetch directly. WebView2 on
-    // Windows refuses to `fetch()` a bare custom scheme at all — only
+    // Four spellings reach this handler for the same request, and which one
+    // arrives is decided by the webview, not by us.
+    //
+    // WebView2 on Windows cannot `fetch()` a bare custom scheme at all — only
     // `http`/`https` are fetchable there — so the frontend addresses tiles as
-    // `https://izul.localhost/...`, and Tauri delivers that here exactly as
-    // it arrived. `http://izul.localhost/...` is accepted alongside it because
-    // that is the form Tauri falls back to on Android, which this application
-    // does not ship on but which costs nothing to also accept.
+    // `http://izul.localhost/...`. `wry` intercepts that and hands it over as
+    // `izul://localhost/...`: its `revert_uri_work_around` simply replaces the
+    // literal `http://izul.` with `izul://`, so the `localhost` that was part
+    // of the virtual host is left behind as the custom scheme's authority.
+    // That is the shape Windows actually delivers, and it is the form every
+    // real tile request takes there.
+    //
+    // macOS and Linux fetch the custom scheme directly and give `izul://...`
+    // with no authority at all. The `http`/`https` forms are accepted too, in
+    // case a request ever reaches us before wry's translation.
     let rest = uri
         .strip_prefix("http://izul.localhost/")
         .or_else(|| uri.strip_prefix("izul://"))
         .or_else(|| uri.strip_prefix("https://izul.localhost/"))
         .ok_or(UriError::WrongScheme)?;
+    // The authority, where the webview left one. Stripped only here, at the
+    // very front, so a path segment further in that happens to read
+    // `localhost` is still the nonsense it looks like.
+    let rest = rest.strip_prefix("localhost/").unwrap_or(rest);
     // Some webview builds normalise a custom scheme through a host component,
     // leaving a leading slash; accept both spellings and nothing else.
     let rest = rest.strip_prefix('/').unwrap_or(rest);
@@ -243,6 +254,56 @@ mod tests {
     #[test]
     fn a_leading_slash_from_the_webview_is_tolerated() {
         assert_eq!(key("izul:///tile/1/0/0/1000/0/0/sharp").doc, 1);
+    }
+
+    /// The URI Windows actually delivers, copied from a user's log.
+    ///
+    /// `wry` rewrites `http://izul.localhost/x` by replacing the literal
+    /// `http://izul.` with `izul://` (see its `revert_uri_work_around`), so the
+    /// `localhost` that was part of the virtual host survives as the custom
+    /// scheme's authority. Every tile request on Windows arrived in this shape
+    /// and every one was refused — 1400 of them in one session — because the
+    /// parser read `localhost` as the resource kind.
+    #[test]
+    fn the_authority_wry_leaves_behind_is_not_part_of_the_path() {
+        let uri = "izul://localhost/tile/1/0/0/256/0/0/preview?g=2&p=0";
+        let parsed = parse_tile_uri(uri).expect("uri dari log pengguna harus terurai");
+        assert_eq!(parsed.key.doc, 1);
+        assert_eq!(parsed.key.page, 0);
+        assert_eq!(parsed.key.ppp_milli, 256);
+        assert_eq!(parsed.key.kind, TileKind::Preview);
+        assert_eq!(parsed.generation, 2);
+    }
+
+    /// The same request in all four spellings names the same tile. Which one
+    /// arrives depends on the webview, and no caller should have to care.
+    #[test]
+    fn every_spelling_of_the_same_tile_parses_to_the_same_key() {
+        let tail = "tile/7/3/1/1500/2/4/sharp?g=9&p=2";
+        let forms = [
+            format!("izul://localhost/{tail}"),
+            format!("izul://{tail}"),
+            format!("http://izul.localhost/{tail}"),
+            format!("https://izul.localhost/{tail}"),
+        ];
+        let mut keys = Vec::new();
+        for form in &forms {
+            let parsed = parse_tile_uri(form).unwrap_or_else(|e| panic!("{form}: {e}"));
+            keys.push(parsed.key);
+        }
+        for (form, key) in forms.iter().zip(keys.iter()) {
+            assert_eq!(*key, keys[0], "{form} mengurai jadi ubin yang berbeda");
+        }
+    }
+
+    /// `localhost` is an authority, not a resource kind — but only where an
+    /// authority can appear. A path segment that happens to say `localhost`
+    /// deeper in is still nonsense and must stay refused.
+    #[test]
+    fn localhost_is_only_stripped_where_the_authority_belongs() {
+        assert!(parse_tile_uri("izul://localhost/localhost/1/0/0/256/0/0/preview").is_err());
+        assert!(parse_tile_uri("izul://localhost").is_err());
+        assert!(parse_tile_uri("izul://localhost/").is_err());
     }
 
     #[test]

@@ -177,17 +177,33 @@ async fn a_tile_uri_from_the_webview_comes_back_as_pixels() {
         return skip("izul-worker, PDFium, atau test-fixtures/viewer-10p.pdf tidak ada");
     };
 
-    // The exact shape `tileUri()` in src/viewport/tileSource.ts produces.
-    let preview = format!(
-        "http://izul.localhost/tile/{}/0/0/256/0/0/preview?g=1&p=1",
-        live.doc
-    );
-    let tile = live.fetch(&preview).await.expect("preview");
-    assert!(tile.width > 0 && tile.height > 0, "preview has no size");
-    assert!(
-        ink(&tile.bytes) > 0.001,
-        "the preview came back blank — the pipeline answered, but with nothing on it"
-    );
+    // The shape `tileUri()` in src/viewport/tileSource.ts writes, and the
+    // shape `wry` rewrites it into before the Rust handler sees it. On Windows
+    // only the second one ever arrives, and asking for the first alone is what
+    // let every tile be refused there while this test stayed green.
+    for uri in [
+        format!(
+            "http://izul.localhost/tile/{}/0/0/256/0/0/preview?g=1&p=1",
+            live.doc
+        ),
+        format!(
+            "izul://localhost/tile/{}/0/0/256/0/0/preview?g=1&p=1",
+            live.doc
+        ),
+    ] {
+        let tile = live
+            .fetch(&uri)
+            .await
+            .unwrap_or_else(|e| panic!("{uri}: {e}"));
+        assert!(
+            tile.width > 0 && tile.height > 0,
+            "{uri}: preview has no size"
+        );
+        assert!(
+            ink(&tile.bytes) > 0.001,
+            "{uri}: the preview came back blank — the pipeline answered, but with nothing on it"
+        );
+    }
 
     let sharp = format!(
         "http://izul.localhost/tile/{}/0/0/1000/0/0/sharp?g=1&p=2",
