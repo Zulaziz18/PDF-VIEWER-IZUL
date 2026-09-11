@@ -84,3 +84,47 @@ body {
     transition-duration: 0.01ms !important;
   }
 }
+
+/*
+ * The selectable text layer (SPEC 11.1, SPEC 14).
+ *
+ * Invisible text sitting exactly over the rendered glyphs: the page the user
+ * sees is the canvas, the text they select and the screen reader reads is this.
+ * The text is transparent rather than hidden, because `display: none` and
+ * `visibility: hidden` both remove it from selection and from the accessibility
+ * tree along with the view.
+ */
+.izul-text-layer {
+  color: transparent;
+  cursor: text;
+  transform-origin: 0 0;
+  /* Selection must reach the text, but a click that is not a drag belongs to
+     the viewport underneath. */
+  user-select: text;
+}
+
+.izul-text-layer ::selection {
+  /* The one accent colour, at an opacity that lets the glyphs through. */
+  background: color-mix(in srgb, var(--izul-accent) 35%, transparent);
+  color: transparent;
+}
+
+.izul-text-page div {
+  transform-origin: 0 0;
+  /* A line box that stretched would move the highlight off the glyphs. */
+  margin: 0;
+  padding: 0;
+}
+
+/* Screen-reader-only text: present in the accessibility tree, absent on screen. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}

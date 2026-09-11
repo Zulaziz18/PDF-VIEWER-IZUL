@@ -2,12 +2,12 @@ use std::os::raw::{c_int, c_ushort};
 
 use pdfium_render::prelude::{FPDF_PAGE, FPDF_TEXTPAGE, FS_RECTF};
 
-use crate::engine::Document;
+use crate::engine::{Document, PageGeometry};
 use crate::error::{PdfError, Result};
 use crate::ffi_guard::guard;
-use crate::geom::PdfRectF;
+use crate::geom::{PdfRectF, RotationQuarter};
 
-/// One character with its box in PDF space.
+/// One character with its box in display space.
 ///
 /// SPEC 11.1 asks for selection based on PDFium's character boxes rather than a
 /// layout we re-derive ourselves. Carrying the box per character is what makes
@@ -120,16 +120,24 @@ impl Document {
     }
 
     /// Text plus per-character boxes, for the selection layer.
-    pub fn page_text_boxed(&self, page: u32) -> Result<PageText> {
+    ///
+    /// Boxes come back in **display space** at `rotation`, the same space the
+    /// tiles are drawn in. PDFium reports them in the page's own user space, so
+    /// without the mapping a selection on a rotated page would sit where the
+    /// glyph would have been had the page not been turned.
+    pub fn page_text_boxed(&self, page: u32, rotation: RotationQuarter) -> Result<PageText> {
         self.check_page(page)?;
+        let engine = self.engine();
         guard("page_text_boxed", || {
             self.with_page(page, |p| {
+                let geometry = PageGeometry::of_page(engine, p);
                 let tp = TextPage::load(self, p)?;
                 let n = tp.count();
                 let text = tp.all_text(n);
                 let mut chars = Vec::with_capacity(n.max(0) as usize);
                 for i in 0..n {
-                    if let Some(cb) = tp.char_at(i) {
+                    if let Some(mut cb) = tp.char_at(i) {
+                        cb.rect = geometry.to_display(cb.rect, rotation);
                         chars.push(cb);
                     }
                 }

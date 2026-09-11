@@ -10,15 +10,29 @@
 //! ```
 
 use std::path::{Path, PathBuf};
+
+// Everything below drives a live worker over a Unix socket, which is what the
+// five tests in this file are for. Windows has no `UnixStream`, so those tests
+// — and everything only they use — are configured out there, leaving the two
+// platform-neutral checks at the bottom. Without gating the imports too, an
+// unused one is an error on Windows under the workspace's `-D warnings`.
+#[cfg(unix)]
 use std::process::{Command, Stdio};
+#[cfg(unix)]
 use std::time::Duration;
 
+#[cfg(unix)]
 use izul_ipc::codec::{read_frame, write_frame};
+#[cfg(unix)]
 use izul_ipc::message::{DocId, Envelope, Generation, RenderQuality, Request, RequestId, Response};
+#[cfg(unix)]
 use izul_ipc::ring::TileRing;
+#[cfg(unix)]
 use izul_ipc::{region_bytes, ChannelName, Listener, SharedRegion};
+#[cfg(unix)]
 use izul_model::geom::{PdfRectF, RotationQuarter};
 
+#[cfg(unix)]
 const SLOTS: u32 = 16;
 
 /// The workspace root.
@@ -32,6 +46,7 @@ fn repo_root() -> PathBuf {
         .unwrap_or_else(|| PathBuf::from("."))
 }
 
+#[cfg(unix)]
 fn worker_binary() -> Option<PathBuf> {
     // The integration test runs from `target/<profile>/deps`, so the worker sits
     // two levels up.
@@ -46,6 +61,7 @@ fn worker_binary() -> Option<PathBuf> {
     path.exists().then_some(path)
 }
 
+#[cfg(unix)]
 fn pdfium() -> Option<PathBuf> {
     let p = if cfg!(windows) {
         repo_root().join("vendor/pdfium/win-x64/bin/pdfium.dll")
@@ -55,6 +71,7 @@ fn pdfium() -> Option<PathBuf> {
     p.exists().then_some(p)
 }
 
+#[cfg(unix)]
 fn fixture() -> Option<PathBuf> {
     let dir = repo_root().join("test-fixtures");
     for name in [
@@ -71,6 +88,7 @@ fn fixture() -> Option<PathBuf> {
 }
 
 /// Everything needed to talk to one live worker.
+#[cfg(unix)]
 struct Harness {
     child: std::process::Child,
     stream: tokio::net::UnixStream,
@@ -105,10 +123,28 @@ async fn spawn_worker(worker_id: u32, session: u64) -> Option<Harness> {
         .spawn()
         .expect("spawn worker");
 
-    let stream = tokio::time::timeout(Duration::from_secs(15), listener.accept())
+    let mut stream = tokio::time::timeout(Duration::from_secs(15), listener.accept())
         .await
         .expect("worker connected in time")
         .expect("accept");
+
+    // The worker announces its protocol before anything is asked of it, and
+    // the supervisor refuses one whose number does not match. Asserting it
+    // here means a stale worker binary fails this suite loudly instead of
+    // being discovered by a user whose pages never render.
+    let hello: Envelope<Response> =
+        tokio::time::timeout(Duration::from_secs(10), read_frame(&mut stream))
+            .await
+            .expect("worker sent its protocol version")
+            .expect("read hello");
+    match hello.payload {
+        Response::Hello { protocol, .. } => assert_eq!(
+            protocol,
+            izul_ipc::PROTOCOL_VERSION,
+            "izul-worker is built against another protocol version; run `cargo build --workspace`"
+        ),
+        other => panic!("expected Hello, got {other:?}"),
+    }
 
     Some(Harness {
         child,
@@ -120,6 +156,7 @@ async fn spawn_worker(worker_id: u32, session: u64) -> Option<Harness> {
     })
 }
 
+#[cfg(unix)]
 impl Harness {
     async fn call(&mut self, req: Request) -> Response {
         let id = RequestId(self.next_id);
@@ -147,6 +184,7 @@ impl Harness {
 /// sets `IZUL_REQUIRE_FIXTURES=1` and a skip becomes a failure there. Locally it
 /// stays a skip, because a fresh clone has no fixtures until
 /// `bench/make_fixtures.py` has been run.
+#[cfg(unix)]
 fn skip(reason: &str) {
     if std::env::var_os("IZUL_REQUIRE_FIXTURES").is_some() {
         panic!("prasyarat hilang dan IZUL_REQUIRE_FIXTURES diset: {reason}");

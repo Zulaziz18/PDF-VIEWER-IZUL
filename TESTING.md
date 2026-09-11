@@ -20,7 +20,7 @@ dapat dibuat ulang secara deterministik dari seed tetap di `bench/make_fixtures.
 cargo fmt --all --check
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
-npm run typecheck && npm run lint && npm run build
+npm run typecheck && npm run lint && npm test && npm run build
 ```
 
 Agar test integrasi tidak diam-diam dilewati ketika prasyaratnya hilang:
@@ -38,18 +38,39 @@ Test integrasi (`crash_isolation`) membaca PDFium langsung dari
 aplikasi secara otomatis pada setiap `cargo build`. Tidak ada langkah salin
 manual yang diperlukan di kedua kasus — cukup `vendor/pdfium/fetch.sh` di atas.
 
-## Hasil Fase 0
+## Hasil Fase 1
 
 | Suite | Jumlah | Status |
 |---|---|---|
 | `izul-model` (geometri, display list) | 19 | lulus |
 | `izul-ipc` (shm, ring, codec, transport) | 21 | lulus |
-| `izul-store` (skema, migrasi, identitas berkas) | 19 | lulus |
-| `izul-pdf` (matriks ubin) | 5 | lulus |
+| `izul-store` (skema, migrasi, identitas, preferensi) | 24 | lulus |
+| `izul-pdf` (matriks ubin & rotasi, ruang tampilan) | 14 | lulus |
+| `izul-render` (cache LRU, prioritas, penggabungan, pembatalan) | 29 | lulus |
 | `izul-worker` (epoch pembatalan, klasifikasi galat) | 7 | lulus |
-| `izul-app` (kebijakan kolam, racun, sandbox, protokol, versi) | 33 | lulus |
+| `izul-app` (kolam, racun, sandbox, protokol ubin, versi) | 37 | lulus |
 | `crash_isolation` (proses pekerja nyata) | 7 | lulus |
-| **Total** | **111** | **lulus** |
+| `render_pipeline` (proses pekerja nyata, Fase 1) | 8 | lulus |
+| **Total Rust** | **166** | **lulus** |
+| `src/viewport` (geometri, tata letak, prediksi, teks, cache bitmap, URI) | 63 | lulus |
+| **Total** | **229** | **lulus** |
+
+Suite frontend dijalankan dengan `npm test` (vitest). Yang diuji adalah modul
+murni: konversi koordinat, tata letak dokumen dan kueri visibilitas, prediksi
+scroll, pengelompokan karakter menjadi baris, cache bitmap, dan bentuk URI ubin.
+Komponen React tidak diuji di sini — yang bisa salah pada mereka adalah hal
+visual, dan itu ada di checklist manual.
+
+Grid ubin didefinisikan di dua tempat — `izul-render` dan
+`src/viewport/geometry.ts` — dan keduanya punya test yang menegaskan angka yang
+sama. Perbedaan satu piksel di antara keduanya akan tampil sebagai garis rambut
+di tiap batas ubin.
+
+## Hasil Fase 0 (rujukan)
+
+| Suite | Jumlah | Status |
+|---|---|---|
+| Seluruh suite Fase 0 | 111 | lulus |
 
 ## Benchmark
 
@@ -67,13 +88,166 @@ mengutip.
 Hasil Fase 0 ada di `bench/results/phase0-linux-full.txt` (tabel) dan
 `.json` (mentah).
 
+### Fase 1
+
+```bash
+cargo build --release          # izul-worker dan viewport
+./target/release/viewport --json bench/results/phase1-linux.json
+./target/release/viewport --only scroll,zoom       # sebagian saja
+```
+
+`viewport` mendorong pipeline yang sebenarnya — pekerja tersandbox, ring memori
+bersama, cache ubin, antrean prioritas, pembatalan — lewat satu proses pekerja
+sungguhan. Ia butuh `test-fixtures/text-500p.pdf` dan `mixed-500p.pdf`.
+
+Hasilnya di `bench/results/phase1-linux.txt`, berikut catatan tentang apa yang
+**tidak** diukurnya: tanpa webview tidak ada kompositor, jadi klaim SPEC 13
+"mengunci di refresh rate" belum terbukti dan ditulis begitu.
+
 ## Regresi dari v6.2
 
-v6.2 punya 21 test case yang seluruhnya lulus. **Belum satupun dibawa ke v7.**
-Alasannya bukan kelalaian: repositori ini kosong saat Fase 0 dimulai, sehingga
-tidak ada kode maupun daftar test v6.2 yang bisa dibaca. Begitu v6.2 tersedia,
-21 kasus itu masuk sebagai suite regresi sebelum Fase 3 dinyatakan selesai —
-paritas anotasi tidak bisa dibuktikan tanpa keduanya.
+Kode v6.2 ada di branch `v6.2-reference` dan sudah dibaca pada Fase 1:
+`app.js` (1353 baris), `core.js` (165 baris, fungsi murni), `annots.js`
+(290 baris), plus `index.html`, `style.css`, dan `serve.py`.
+
+**Tidak ada berkas test di sana.** 21 test case yang disebut SPEC Bagian 16
+tidak ada sebagai kode di repositori v6.2 — tampaknya itu daftar pemeriksaan
+manual, bukan suite otomatis. Karena itu "membawa 21 test case ke v7" berarti
+menuliskannya ulang sebagai test otomatis terhadap perilaku v6.2 yang bisa
+dibaca dari kodenya, bukan menyalin berkas. Pekerjaan itu jatuh di Fase 3 dan
+Fase 4, tempat perilaku anotasi dan simpan dibangun; di sanalah daftar kasusnya
+akan disusun dari `annots.js` dan jalur simpan `app.js`.
+
+Yang sudah diperiksa pada Fase 1 (bagian viewer dari v6.2):
+
+| Perilaku v6.2 | Di v7 Fase 1 |
+|---|---|
+| Zoom 40–300 %, langkah 0,15 | 10–1600 % (SPEC 11.1), tangga langkah tetap |
+| `Ctrl` + roda memperbesar | Ada, dan kini mempertahankan titik di bawah kursor |
+| Indikator halaman = halaman terdekat ke atas viewport | Halaman yang menutupi area terbesar (lebih benar untuk mode dua halaman) |
+| Render/lepas per halaman lewat IntersectionObserver, margin 800 px | Tata letak tervirtualisasi, margin 200 px, ditambah prefetch prediktif |
+| Lapisan teks DOM di atas kanvas | Sama pendekatannya, kotak dari PDFium |
+| Daftar isi dari outline bawaan PDF | Ada |
+| **Daftar isi cadangan: deteksi judul bab dari teks** (BAB/BAGIAN/DAFTAR PUSTAKA dst.) | **Belum ada** — lihat catatan di bawah |
+
+`findChapters` di `core.js` v6.2 membaca teks seluruh dokumen dan menyusun
+daftar isi sendiri ketika PDF tidak membawa outline — dengan pola yang jelas
+disetel untuk dokumen berbahasa Indonesia. Untuk skripsi hasil pindai, itu
+kemungkinan besar satu-satunya cara panel daftar isi pernah berguna di v6.2.
+
+v7 belum punya padanannya, dan itu **disengaja untuk sekarang**: ia butuh sapuan
+teks seluruh dokumen, yang justru dibangun di Fase 2 bersama indeks FTS5.
+Menambahkannya di Fase 2 nyaris tanpa biaya tambahan; menambahkannya di Fase 1
+berarti membangun sapuan teks dua kali.
+
+## Menjalankan sendiri di Windows (langkah demi langkah)
+
+Bagian ini ditulis untuk yang belum pernah membangun aplikasi dari kode.
+Dikerjakan sekali; sesudahnya cukup langkah 6.
+
+### 1. Pasang alat (sekali saja)
+
+Buka **PowerShell sebagai Administrator**, lalu jalankan satu per satu:
+
+```powershell
+winget install --id Git.Git -e
+winget install --id OpenJS.NodeJS.LTS -e
+winget install --id Rustlang.Rustup -e
+winget install --id Microsoft.EdgeWebView2Runtime -e
+winget install --id Microsoft.VisualStudio.2022.BuildTools -e ^
+  --override "--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+```
+
+Yang terakhir adalah kompilator C++ milik Microsoft. Rust memerlukannya untuk
+menautkan program di Windows, dan ukurannya beberapa gigabita — biarkan selesai.
+
+**Tutup PowerShell, lalu buka lagi** supaya perintah `git`, `node`, dan `cargo`
+dikenali. Periksa:
+
+```powershell
+git --version
+node --version
+cargo --version
+```
+
+Ketiganya harus menjawab dengan nomor versi. Kalau ada yang bilang "not
+recognized", restart komputer dan periksa lagi.
+
+### 2. Ambil kodenya
+
+```powershell
+cd $HOME\Documents
+git clone https://github.com/Zulaziz18/PDF-VIEWER-IZUL.git
+cd PDF-VIEWER-IZUL
+git checkout claude/pdf-studio-izul-v7-fase-1-tki5pi
+```
+
+### 3. Ambil PDFium
+
+PDFium tidak ikut di repositori. Klik kanan di dalam folder proyek →
+**Open Git Bash here** (dipasang bersama Git), lalu:
+
+```bash
+./vendor/pdfium/fetch.sh win-x64
+```
+
+Kalau berhasil, baris terakhirnya menyebut `MAJOR=151 ... BUILD=7881`.
+
+### 4. Pasang paket frontend
+
+Kembali ke PowerShell, di folder proyek:
+
+```powershell
+npm ci
+```
+
+### 5. Jalankan
+
+```powershell
+npm run tauri dev
+```
+
+Pertama kali perlu **5–15 menit**: Rust mengompilasi ratusan pustaka. Layar akan
+penuh baris `Compiling ...` — itu normal, bukan galat. Jendela aplikasi terbuka
+sendiri setelah selesai. Berikutnya jauh lebih cepat.
+
+Kalau berhenti dengan pesan merah, salin lima baris terakhirnya — itu yang
+dibutuhkan untuk menolong.
+
+### 6. Siapkan berkas uji
+
+Checklist di bawah butuh PDF **besar** (ratusan halaman) supaya scroll benar-benar
+diuji. Pakai apa saja yang Anda punya: skripsi, buku pindaian, manual tebal.
+Bila tidak ada, buat sendiri (butuh Python):
+
+```powershell
+python -m pip install reportlab pikepdf pypdf pillow
+python bench/make_fixtures.py test-fixtures text
+```
+
+Hasilnya `test-fixtures/text-500p.pdf`, 500 halaman.
+
+### 7. Cara melihat frame rate (untuk tiga item pertama checklist)
+
+Ini satu-satunya bagian yang butuh trik, dan hanya bekerja pada
+`npm run tauri dev` (bukan hasil `build`):
+
+1. Klik kanan di area dokumen → **Inspect** (DevTools terbuka).
+2. Tekan `Ctrl` + `Shift` + `P`.
+3. Ketik `frame`, pilih **Show frame rendering stats**, tekan Enter.
+4. Kotak kecil muncul di pojok kanan atas dengan angka FPS.
+5. Gulir dokumen cepat-cepat sambil melihat angka itu.
+
+Yang dicari: angka bertahan mendekati refresh rate monitor (60, 120, atau 144),
+dan grafiknya tidak menunjukkan batang merah panjang. Kalau angkanya jatuh ke
+20–30 saat menggulir, itu temuan — catat berkas apa dan di zoom berapa.
+
+Tutup DevTools sesudahnya; ia sendiri memakan sebagian tenaga mesin.
+
+### 8. Jalankan checklist
+
+Kerjakan daftar **Fase 1** di bawah satu per satu, dan catat yang gagal beserta
+apa yang Anda lihat. Yang gagal jauh lebih berguna daripada yang lulus.
 
 ## Checklist manual
 
@@ -93,9 +267,35 @@ fase, pada Windows dengan skala tampilan 100 %, 125 %, 150 %, dan 175 %.
 - [ ] Folder log berisi berkas JSON yang terisi, dan tidak ada koneksi jaringan
       keluar sama sekali (periksa dengan Resource Monitor).
 
+### Fase 1
+
+Hal-hal yang hanya bisa dinilai dengan melihat, dan — tiga yang pertama —
+satu-satunya cara membuktikan klaim yang benchmark headless tidak bisa sentuh.
+
+- [ ] Scroll cepat pada dokumen 500 halaman terkunci di refresh rate monitor,
+      tanpa frame drop (buka Task Manager → GPU, atau `dxdiag` refresh rate).
+- [ ] Selama scroll cepat, tidak pernah ada halaman putih: yang tampak adalah
+      pratinjau buram yang berganti tajam, bukan kekosongan.
+- [ ] Setelah scroll berhenti, versi tajam datang dalam waktu yang terasa
+      seketika (< 150 ms).
+- [ ] Ctrl+scroll: titik di bawah kursor tidak bergeser selama zoom.
+- [ ] Zoom cepat bolak-balik tidak membuat halaman berkedip putih.
+- [ ] Scrollbar tidak pernah melompat saat halaman selesai dirender.
+- [ ] Mode dua halaman dan dua halaman dengan sampul: halaman ganjil di kanan.
+- [ ] Rotasi dokumen dan rotasi satu halaman: teks yang diseleksi tetap
+      mendarat di glif, bukan di posisi sebelum diputar.
+- [ ] Seleksi teks lintas baris menyalin teks dengan tata letak terjaga.
+- [ ] Sidebar thumbnail pada dokumen 500 halaman: menggulir mulus, dan halaman
+      yang sedang dibaca selalu terlihat di panel.
+- [ ] Daftar isi melompat ke posisi yang benar, termasuk ke tengah halaman.
+- [ ] Menutup dan membuka ulang berkas mengembalikan halaman, scroll, zoom,
+      rotasi, dan mode tampilan yang sama.
+- [ ] Memindahkan jendela ke monitor dengan DPI berbeda: halaman tetap tajam.
+- [ ] Rapi pada skala Windows 100 %, 125 %, 150 %, dan 175 %.
+- [ ] Seluruh viewport bisa dioperasikan tanpa mouse: Tab, panah, Page Up/Down,
+      Home/End, Ctrl+0/+/−.
+
 ### Menyusul (fase terkait)
 
-- [ ] Scroll terkunci di refresh rate, tanpa halaman putih (Fase 1).
-- [ ] Zoom mempertahankan titik fokus kursor (Fase 1).
 - [ ] Dark mode dengan invert cerdas: teks terang, foto tidak terbalik (Fase 8).
 - [ ] Paritas anotasi saat objek diam, ambang perseptual < 0,5 % (Fase 3).

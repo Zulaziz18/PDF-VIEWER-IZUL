@@ -27,6 +27,19 @@ use policy::{pool_size, restart_backoff, Placement, HEARTBEAT_TIMEOUT};
 use sandbox::Sandbox;
 use worker::{Worker, WorkerError, WorkerPaths};
 
+/// What one heartbeat probe concluded about a worker.
+#[derive(Debug, Clone, Copy)]
+enum Health {
+    /// Answered its ping.
+    Alive,
+    /// Missed a ping but has been heard from recently — busy, not hung.
+    Slow,
+    /// The OS says the process is gone.
+    Dead,
+    /// Missed a ping and has been silent past the heartbeat window.
+    Hung { silent: Duration },
+}
+
 /// A document's placement and identity within the pool.
 #[derive(Debug, Clone)]
 struct DocSlot {
@@ -47,7 +60,7 @@ pub struct Pool {
     session: u64,
     paths: WorkerPaths,
     sandbox: Sandbox,
-    workers: Vec<Option<Worker>>,
+    workers: Vec<Option<Arc<Worker>>>,
     failures: Vec<u32>,
     docs: HashMap<DocId, DocSlot>,
     poison: PoisonList,
@@ -85,7 +98,7 @@ impl Pool {
         for id in 0..size as u32 {
             let w = Worker::spawn(id, session, &paths, &sandbox).await?;
             tracing::info!(worker = id, pid = w.pid(), "pekerja siap");
-            workers.push(Some(w));
+            workers.push(Some(Arc::new(w)));
         }
         Ok(Pool {
             session,
@@ -153,24 +166,35 @@ impl Pool {
         self.request_on(index, req).await
     }
 
-    pub async fn request(&self, doc: DocId, req: Request) -> Result<Response, WorkerError> {
-        let slot = self.docs.get(&doc).ok_or(WorkerError::Gone)?;
-        self.request_on(slot.worker, req).await
+    /// The worker holding a document, as a handle that outlives the pool lock.
+    ///
+    /// This is how the render pipeline avoids serialising every tile behind the
+    /// supervisor's lock: it takes the handle, releases the lock, and only then
+    /// waits for pixels.
+    pub fn worker_for(&self, doc: DocId) -> Option<Arc<Worker>> {
+        let slot = self.docs.get(&doc)?;
+        self.workers.get(slot.worker)?.clone()
+    }
+
+    /// Sends one request to a worker under the standard timeout.
+    ///
+    /// A bounded wait, so a worker that wedges on one pathological page cannot
+    /// leave a UI call pending forever. The heartbeat sweep is what then
+    /// notices the worker is gone and replaces it.
+    pub async fn ask(worker: &Worker, req: Request) -> Result<Response, WorkerError> {
+        match tokio::time::timeout(REQUEST_TIMEOUT, worker.request(req)).await {
+            Ok(result) => result,
+            Err(_) => Err(WorkerError::Unresponsive(REQUEST_TIMEOUT)),
+        }
     }
 
     async fn request_on(&self, index: usize, req: Request) -> Result<Response, WorkerError> {
         let worker = self
             .workers
             .get(index)
-            .and_then(|w| w.as_ref())
+            .and_then(|w| w.clone())
             .ok_or(WorkerError::Gone)?;
-        // A bounded wait, so a worker that wedges on one pathological page
-        // cannot leave a UI call pending forever. The heartbeat sweep is what
-        // then notices the worker is gone and replaces it.
-        match tokio::time::timeout(REQUEST_TIMEOUT, worker.request(req)).await {
-            Ok(result) => result,
-            Err(_) => Err(WorkerError::Unresponsive(REQUEST_TIMEOUT)),
-        }
+        Self::ask(&worker, req).await
     }
 
     pub fn worker_ring(&self, doc: DocId) -> Option<Arc<izul_ipc::TileRing>> {
@@ -189,36 +213,73 @@ impl Pool {
         let mut casualties: Vec<usize> = Vec::new();
         let mut healthy: Vec<usize> = Vec::new();
 
-        for index in 0..self.workers.len() {
-            let Some(worker) = self.workers.get_mut(index).and_then(|w| w.as_mut()) else {
-                casualties.push(index);
+        // Every live worker is probed at once. Sequentially, one hung worker
+        // would delay the check on the next by the whole heartbeat timeout,
+        // and the pool's write lock is held for all of it — which stops the
+        // viewport from rendering anything in the meantime.
+        let live: Vec<(usize, Arc<Worker>)> = (0..self.workers.len())
+            .filter_map(|i| match self.workers.get(i).and_then(|w| w.clone()) {
+                Some(worker) => Some((i, worker)),
+                None => {
+                    casualties.push(i);
+                    None
+                }
+            })
+            .collect();
+
+        let mut probes = Vec::with_capacity(live.len());
+        for (index, worker) in live {
+            probes.push(tokio::spawn(async move {
+                if worker.has_exited() {
+                    return (index, Health::Dead);
+                }
+                // Ping *first*, and judge silence only if it fails. Silence on
+                // its own means "we have not spoken to it", not "it is hung" —
+                // and the supervisor is itself the reason for most of it, since
+                // starting eight workers takes several seconds each on a cold
+                // debug build. Killing on silence alone executed every worker
+                // on the first sweep and put the pool in a restart loop it
+                // never left.
+                if worker.ping().await.is_ok() {
+                    return (index, Health::Alive);
+                }
+                let silent = worker.silent_for().await;
+                if silent > HEARTBEAT_TIMEOUT {
+                    worker.kill();
+                    (index, Health::Hung { silent })
+                } else {
+                    // One missed ping while a long render is in flight is not
+                    // a death sentence; the next sweep asks again.
+                    (index, Health::Slow)
+                }
+            }));
+        }
+
+        for probe in probes {
+            let Ok((index, health)) = probe.await else {
                 continue;
             };
-            if worker.has_exited() {
-                tracing::warn!(worker = index, "pekerja mati");
-                casualties.push(index);
-                continue;
+            match health {
+                Health::Alive => healthy.push(index),
+                Health::Slow => {
+                    tracing::debug!(
+                        worker = index,
+                        "pekerja sibuk, dicoba lagi sapuan berikutnya"
+                    );
+                }
+                Health::Dead => {
+                    tracing::warn!(worker = index, "pekerja mati");
+                    casualties.push(index);
+                }
+                Health::Hung { silent } => {
+                    tracing::warn!(
+                        worker = index,
+                        ?silent,
+                        "pekerja tidak menjawab dan diam terlalu lama, dimatikan"
+                    );
+                    casualties.push(index);
+                }
             }
-            let silent = worker.silent_for().await;
-            if silent > HEARTBEAT_TIMEOUT {
-                tracing::warn!(
-                    worker = index,
-                    ?silent,
-                    "pekerja diam terlalu lama, dimatikan"
-                );
-                worker.kill();
-                casualties.push(index);
-                continue;
-            }
-            if worker.ping().await.is_err() {
-                tracing::warn!(worker = index, "pekerja tidak menjawab ping, dimatikan");
-                worker.kill();
-                casualties.push(index);
-                continue;
-            }
-            // A worker that answered has earned a clean slate. Without this a
-            // worker that died once would still restart slowly a day later.
-            healthy.push(index);
         }
         for index in healthy {
             self.note_healthy(index);
@@ -246,7 +307,7 @@ impl Pool {
         self.poison.worker_died_holding(&keys);
 
         if let Some(slot) = self.workers.get_mut(index) {
-            if let Some(mut old) = slot.take() {
+            if let Some(old) = slot.take() {
                 old.kill();
             }
         }
@@ -261,7 +322,7 @@ impl Pool {
             Ok(w) => {
                 tracing::info!(worker = index, pid = w.pid(), "pekerja hidup kembali");
                 if let Some(slot) = self.workers.get_mut(index) {
-                    *slot = Some(w);
+                    *slot = Some(Arc::new(w));
                 }
             }
             Err(e) => {
@@ -297,7 +358,7 @@ impl Pool {
 
     pub async fn shutdown(&mut self) {
         for slot in self.workers.iter_mut() {
-            if let Some(w) = slot.as_mut() {
+            if let Some(w) = slot.take() {
                 w.shutdown().await;
             }
         }

@@ -19,6 +19,45 @@ pub struct FileRow {
     pub pinned: bool,
 }
 
+/// How pages are laid out on screen (SPEC 11.1).
+///
+/// Stored as text rather than a number because the column is read by hand
+/// during support work as often as by the application, and `single` says what
+/// `0` does not.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum ViewMode {
+    #[default]
+    Single,
+    Dual,
+    /// Two pages side by side with the first page alone, as a book's cover sits.
+    DualCover,
+    Horizontal,
+}
+
+impl ViewMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ViewMode::Single => "single",
+            ViewMode::Dual => "dual",
+            ViewMode::DualCover => "dual_cover",
+            ViewMode::Horizontal => "horizontal",
+        }
+    }
+
+    /// Parses a stored value, falling back to the single-page layout.
+    ///
+    /// A row written by a newer build must not stop an older one from opening
+    /// the document; the worst outcome of an unknown mode is the default one.
+    pub fn parse(s: &str) -> Self {
+        match s {
+            "dual" => ViewMode::Dual,
+            "dual_cover" => ViewMode::DualCover,
+            "horizontal" => ViewMode::Horizontal,
+            _ => ViewMode::Single,
+        }
+    }
+}
+
 /// What we last recorded about where the user was in a document.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct ReadingState {
@@ -26,6 +65,7 @@ pub struct ReadingState {
     pub scroll_y: f64,
     pub zoom: f64,
     pub rotation: u8,
+    pub view_mode: ViewMode,
 }
 
 impl Default for ReadingState {
@@ -35,6 +75,7 @@ impl Default for ReadingState {
             scroll_y: 0.0,
             zoom: 1.0,
             rotation: 0,
+            view_mode: ViewMode::Single,
         }
     }
 }
@@ -149,15 +190,24 @@ pub fn set_pinned(conn: &Connection, id: FileId, pinned: bool) -> Result<()> {
 
 pub fn save_reading_state(conn: &Connection, id: FileId, s: ReadingState) -> Result<()> {
     conn.execute(
-        "INSERT INTO reading_state (file_id, page, scroll_y, zoom, rotation, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+        "INSERT INTO reading_state (file_id, page, scroll_y, zoom, rotation, view_mode, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
          ON CONFLICT (file_id) DO UPDATE SET
              page = excluded.page,
              scroll_y = excluded.scroll_y,
              zoom = excluded.zoom,
              rotation = excluded.rotation,
+             view_mode = excluded.view_mode,
              updated_at = excluded.updated_at",
-        params![id.0, s.page, s.scroll_y, s.zoom, s.rotation, now()],
+        params![
+            id.0,
+            s.page,
+            s.scroll_y,
+            s.zoom,
+            s.rotation,
+            s.view_mode.as_str(),
+            now()
+        ],
     )?;
     Ok(())
 }
@@ -165,7 +215,8 @@ pub fn save_reading_state(conn: &Connection, id: FileId, s: ReadingState) -> Res
 pub fn reading_state(conn: &Connection, id: FileId) -> Result<Option<ReadingState>> {
     let row = conn
         .query_row(
-            "SELECT page, scroll_y, zoom, rotation FROM reading_state WHERE file_id = ?1",
+            "SELECT page, scroll_y, zoom, rotation, view_mode
+               FROM reading_state WHERE file_id = ?1",
             params![id.0],
             |r| {
                 Ok(ReadingState {
@@ -173,6 +224,7 @@ pub fn reading_state(conn: &Connection, id: FileId) -> Result<Option<ReadingStat
                     scroll_y: r.get(1)?,
                     zoom: r.get(2)?,
                     rotation: r.get::<_, i64>(3)? as u8,
+                    view_mode: ViewMode::parse(&r.get::<_, String>(4)?),
                 })
             },
         )
@@ -279,6 +331,7 @@ mod tests {
             scroll_y: 133.5,
             zoom: 1.75,
             rotation: 1,
+            view_mode: ViewMode::DualCover,
         };
         save_reading_state(&c, id, s).expect("save");
         assert_eq!(reading_state(&c, id).expect("get"), Some(s));
@@ -290,6 +343,34 @@ mod tests {
             .query_row("SELECT count(*) FROM reading_state", [], |r| r.get(0))
             .expect("count");
         assert_eq!(n, 1);
+    }
+
+    #[test]
+    fn an_unknown_view_mode_reads_back_as_the_default_rather_than_failing() {
+        // A row written by a newer build must not stop this one from opening
+        // the document.
+        let c = conn();
+        let id = touch(&c, &PathBuf::from("/a.pdf"), stamp(1, 1)).expect("touch");
+        save_reading_state(&c, id, ReadingState::default()).expect("save");
+        c.execute(
+            "UPDATE reading_state SET view_mode = 'kaleidoscope' WHERE file_id = ?1",
+            params![id.0],
+        )
+        .expect("write an unknown mode");
+        let got = reading_state(&c, id).expect("get").expect("some");
+        assert_eq!(got.view_mode, ViewMode::Single);
+    }
+
+    #[test]
+    fn every_view_mode_survives_the_round_trip_through_text() {
+        for mode in [
+            ViewMode::Single,
+            ViewMode::Dual,
+            ViewMode::DualCover,
+            ViewMode::Horizontal,
+        ] {
+            assert_eq!(ViewMode::parse(mode.as_str()), mode);
+        }
     }
 
     #[test]

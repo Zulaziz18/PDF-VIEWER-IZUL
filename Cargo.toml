@@ -3,6 +3,7 @@ resolver = "2"
 members = [
     "crates/izul-model",
     "crates/izul-pdf",
+    "crates/izul-render",
     "crates/izul-ipc",
     "crates/izul-worker",
     "crates/izul-store",
@@ -12,7 +13,7 @@ members = [
 ]
 
 [workspace.package]
-version = "7.0.0-alpha.0"
+version = "7.0.0-alpha.1"
 edition = "2021"
 rust-version = "1.94"
 license = "Proprietary"
@@ -21,6 +22,7 @@ authors = ["PDF Studio Izul"]
 [workspace.dependencies]
 izul-model = { path = "crates/izul-model" }
 izul-pdf = { path = "crates/izul-pdf" }
+izul-render = { path = "crates/izul-render" }
 izul-ipc = { path = "crates/izul-ipc" }
 izul-store = { path = "crates/izul-store" }
 

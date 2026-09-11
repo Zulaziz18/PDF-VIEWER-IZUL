@@ -22,6 +22,7 @@ mod stats;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
+use izul_pdf::geom::RotationQuarter;
 use izul_pdf::render::Quality;
 use izul_pdf::{Engine, PdfRectF, TileRequest};
 use serde::Serialize;
@@ -348,6 +349,7 @@ fn main() {
                         ),
                         dest_w: 512,
                         dest_h: 512,
+                        rotation: RotationQuarter::None,
                         draw_annotations: true,
                         quality: Quality::Sharp,
                         limit_image_cache: false,
@@ -420,6 +422,7 @@ fn main() {
                             ),
                             dest_w: TILE,
                             dest_h: TILE,
+                            rotation: RotationQuarter::None,
                             draw_annotations: true,
                             quality: Quality::Sharp,
                             limit_image_cache: false,
@@ -513,7 +516,7 @@ fn main() {
                 chars_total += s.map(|s| s.chars().count()).unwrap_or(0);
 
                 let t = Instant::now();
-                let _ = doc.page_text_boxed(p);
+                let _ = doc.page_text_boxed(p, RotationQuarter::None);
                 boxed.push(t.elapsed().as_secs_f64() * 1e3);
                 doc.release_page(p);
             }

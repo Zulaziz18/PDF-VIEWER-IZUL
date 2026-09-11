@@ -1668,13 +1668,16 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "izul-app"
-version = "7.0.0-alpha.0"
+version = "7.0.0-alpha.1"
 dependencies = [
  "izul-ipc",
  "izul-model",
+ "izul-render",
  "izul-store",
  "libc",
  "parking_lot",
+ "postcard",
+ "rusqlite",
  "serde",
  "serde_json",
  "tauri",
@@ -1690,19 +1693,23 @@ dependencies = [
 
 [[package]]
 name = "izul-bench"
-version = "7.0.0-alpha.0"
+version = "7.0.0-alpha.1"
 dependencies = [
  "izul-ipc",
+ "izul-model",
  "izul-pdf",
+ "izul-render",
+ "parking_lot",
  "serde",
  "serde_json",
+ "tokio",
  "tracing",
  "tracing-subscriber",
 ]
 
 [[package]]
 name = "izul-integration-tests"
-version = "7.0.0-alpha.0"
+version = "7.0.0-alpha.1"
 dependencies = [
  "izul-ipc",
  "izul-model",
@@ -1713,7 +1720,7 @@ dependencies = [
 
 [[package]]
 name = "izul-ipc"
-version = "7.0.0-alpha.0"
+version = "7.0.0-alpha.1"
 dependencies = [
  "izul-model",
  "libc",
@@ -1728,7 +1735,7 @@ dependencies = [
 
 [[package]]
 name = "izul-model"
-version = "7.0.0-alpha.0"
+version = "7.0.0-alpha.1"
 dependencies = [
  "postcard",
  "serde",
@@ -1737,7 +1744,7 @@ dependencies = [
 
 [[package]]
 name = "izul-pdf"
-version = "7.0.0-alpha.0"
+version = "7.0.0-alpha.1"
 dependencies = [
  "izul-model",
  "memmap2",
@@ -1748,8 +1755,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "izul-render"
+version = "7.0.0-alpha.1"
+dependencies = [
+ "izul-ipc",
+ "izul-model",
+ "parking_lot",
+ "serde",
+ "thiserror 2.0.20",
+ "tokio",
+ "tracing",
+]
+
+[[package]]
 name = "izul-store"
-version = "7.0.0-alpha.0"
+version = "7.0.0-alpha.1"
 dependencies = [
  "blake3",
  "rusqlite",
@@ -1762,7 +1782,7 @@ dependencies = [
 
 [[package]]
 name = "izul-worker"
-version = "7.0.0-alpha.0"
+version = "7.0.0-alpha.1"
 dependencies = [
  "izul-ipc",
  "izul-model",

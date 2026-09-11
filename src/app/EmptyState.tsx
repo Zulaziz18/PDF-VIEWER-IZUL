@@ -11,12 +11,23 @@ import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { t } from "@/i18n";
 import { useDocument } from "@/state/documentStore";
 
+interface RecentFile {
+  readonly path: string;
+  readonly name: string;
+  readonly last_opened: number | null;
+  readonly pinned: boolean;
+  /** False when the file has moved or been deleted since it was last opened. */
+  readonly available: boolean;
+}
+
 export function EmptyState(): React.JSX.Element {
   const openDoc = useDocument((s) => s.open);
-  const [recent, setRecent] = useState<string[]>([]);
+  const [recent, setRecent] = useState<RecentFile[]>([]);
 
   useEffect(() => {
-    void invoke<string[]>("recent_files").then(setRecent).catch(() => setRecent([]));
+    void invoke<RecentFile[]>("recent_files")
+      .then(setRecent)
+      .catch(() => setRecent([]));
   }, []);
 
   async function pick(): Promise<void> {
@@ -50,15 +61,16 @@ export function EmptyState(): React.JSX.Element {
           <p className="mt-2 text-[var(--izul-text-dim)]">{t("empty.noRecent")}</p>
         ) : (
           <ul className="mt-2 space-y-1">
-            {recent.map((path) => (
-              <li key={path}>
+            {recent.map((file) => (
+              <li key={file.path}>
                 <button
                   type="button"
-                  onClick={() => void openDoc(path)}
-                  title={path}
-                  className="w-full text-left truncate rounded-[8px] px-2 py-1.5 hover:bg-[var(--izul-surface-raised)]"
+                  onClick={() => void openDoc(file.path)}
+                  disabled={!file.available}
+                  title={file.available ? file.path : `${file.path} — ${t("empty.missing")}`}
+                  className="w-full text-left truncate rounded-[8px] px-2 py-1.5 hover:bg-[var(--izul-surface-raised)] disabled:opacity-50"
                 >
-                  {path.split(/[\\/]/).pop()}
+                  {file.name}
                 </button>
               </li>
             ))}

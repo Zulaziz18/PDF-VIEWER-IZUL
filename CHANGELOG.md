@@ -3,6 +3,226 @@
 Semua perubahan penting per fase. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/);
 versi mengikuti `version.json` sebagai sumber tunggal.
 
+## [7.0.0-alpha.1] — Fase 1: Mesin Viewer
+
+Fase ini membuat aplikasi bisa dibaca: pipeline render lengkap, scroll
+tervirtualisasi, seluruh mode tampilan, zoom, rotasi, lapisan teks, dan sidebar
+thumbnail serta daftar isi. Kriteria lulusnya angka, dan angkanya ada di
+`bench/results/phase1-linux.txt` — termasuk satu klaim yang **belum** bisa
+dibuktikan dan dicatat apa adanya.
+
+### Ditambahkan
+
+- **Pipeline render dua tingkat** (SPEC 9). Tingkat pertama adalah pratinjau
+  seluruh halaman beresolusi thumbnail; tingkat kedua adalah ubin 512x512 pada
+  skala saat ini yang digambar menimpanya begitu siap. Pratinjau itu **juga**
+  thumbnail sidebar — satu bitmap, satu URI, satu render, dipakai keduanya.
+- **Cache ubin LRU** beranggaran byte (bawaan 2 GiB, SPEC 9), hidup di proses
+  UI: ia selamat dari matinya pekerja, dipakai bersama oleh dokumen yang
+  kebetulan berada di pekerja berbeda, dan kuncinya adalah isi ubin — bukan
+  generasi — sehingga zoom bolak-balik tidak membuang apa pun.
+- **Penjadwal** dengan prioritas (terlihat > pratinjau > prefetch),
+  penggabungan permintaan (dua peminta satu ubin = satu render), dan pembatalan
+  di dua tempat: di proses UI sebelum permintaan dikirim, dan di pekerja untuk
+  pekerjaan yang sudah diterima.
+- **Prefetch prediktif** dari arah dan kecepatan scroll, menjangkau lebih jauh
+  saat scroll cepat dan simetris saat pengguna berhenti.
+- **Scroll tervirtualisasi**: tata letak seluruh dokumen dihitung sekali per
+  perubahan zoom/rotasi/mode, dan pertanyaan per frame — halaman mana yang
+  terlihat — dijawab dengan pencarian biner atas baris. Dokumen 500 halaman dan
+  5 halaman berbiaya sama per frame. Placeholder berukuran benar sejak frame
+  pertama, jadi scrollbar tidak pernah melompat.
+- **Mode tampilan** satu halaman, dua halaman, dua halaman dengan sampul, dan
+  scroll mendatar.
+- **Zoom** 10–1600 % dengan tangga langkah tetap, fit width, fit page, ukuran
+  asli, Ctrl+scroll dan pinch touchpad, **mempertahankan titik fokus kursor**.
+- **Rotasi per dokumen dan per halaman**, diterapkan di dalam matriks ubin.
+  Rotasi bawaan halaman (`/Rotate`) ikut dihitung — oleh PDFium, yang menyusun
+  matriks tampilan halaman sebelum menerapkan matriks kita, jadi matriks ubin
+  hanya membawa rotasi tambahan dari pengguna. Lihat "Diperbaiki setelah
+  pengujian pertama di Windows": menganggapnya sebaliknya membuat setiap ubin
+  di atas zoom 100 % tergambar putih.
+- **Lapisan teks** dari kotak karakter PDFium, dikelompokkan menjadi baris,
+  transparan di atas kanvas — jadi seleksi, salin, dan pembaca layar bekerja
+  pada teks dokumen, bukan pada gambarnya. Kotaknya dipetakan ke ruang tampilan,
+  sehingga seleksi tetap mendarat di glif pada halaman yang diputar.
+- **Sidebar** thumbnail (tervirtualisasi: 500 halaman tidak berarti 500 kanvas)
+  dan daftar isi dari bookmark dokumen, termasuk tujuan lewat aksi GoTo dan
+  penjagaan terhadap outline yang siklik.
+- **Posisi baca diingat per berkas** — halaman, scroll, zoom, rotasi, dan mode
+  tampilan — disimpan ke `app.db` saat scroll berhenti dan dipulihkan saat
+  dokumen dibuka lagi.
+- **Protokol ubin sekali jalan**: `izul://tile/{doc}/{page}/{rot}/{skala}/{col}/{row}/{tingkat}`
+  dilayani secara asinkron, dan satu permintaan itu berarti "kena cache" atau
+  "jadwalkan render lalu jawab". Sebelumnya butuh dua perjalanan: `invoke` untuk
+  merender, `fetch` untuk mengambil.
+- **Test**: 166 test Rust (dari 111) dan 63 test TypeScript (dari nol), termasuk
+  8 test integrasi Fase 1 yang menjalankan pekerja sungguhan untuk membuktikan
+  ubin, pratinjau, rotasi, daftar isi, kotak teks, dan pembatalan.
+- **`bench/viewport`**, harness pengukuran Fase 1 yang mendorong pipeline
+  sungguhan lewat pekerja sungguhan.
+
+### Angka (Linux, 4 core, profil release)
+
+Rinciannya di `bench/results/phase1-linux.txt`; `mixed-500p.pdf` adalah berkas
+50 MB / 500 halaman yang disebut SPEC 13.
+
+| Metrik | Target | text-500p | mixed-500p |
+|---|---|---|---|
+| Buka → pratinjau halaman 1 (p95) | < 400 ms | 9,1 ms | 18,0 ms |
+| Buka → layar pertama tajam (p95) | < 400 ms | 22,1 ms | 35,4 ms |
+| Zoom → ada yang bisa digambar (p95) | < 16 ms | 0,0 ms | 0,0 ms |
+| Zoom → versi tajam (p95) | < 150 ms | 25,6 ms | 16,9 ms |
+| Layar penuh, cache panas (p95) | < 16 ms | 2,2 ms | 1,4 ms |
+| RAM 10 dokumen (UI + pekerja) | < 1,5 GB | — | 428 MB |
+
+Scroll 2500 px/detik selama 4 detik: satu frame dari 240 tanpa apa pun untuk
+digambar (frame pertama, sebelum pratinjau pertama tiba), 21 frame menampilkan
+pratinjau alih-alih ubin tajam, sisanya tajam.
+
+### Belum terbukti
+
+SPEC 13 meminta scroll "mengunci di refresh rate, nol frame drop". **Itu belum
+dibuktikan.** Webview tidak bisa berjalan tanpa layar, jadi tidak ada kompositor
+untuk diukur di sini. Yang bisa diukur sudah diukur — pada tiap frame 60 fps,
+apakah pipeline punya sesuatu untuk digambar dan apakah versi tajamnya siap —
+dan hasilnya ada di atas. Klaim frame pacing yang sesungguhnya harus diukur di
+Windows dengan jendela nyata, dan sampai itu terjadi ia tetap ditulis sebagai
+belum terbukti, bukan sebagai lulus.
+
+Begitu pula **cold start < 1 detik**: yang terukur di sini hanya lantainya —
+spawn pekerja, kanal, muat PDFium, ping pertama: 2,6 ms p95 di Linux dengan page
+cache panas. Jendela dan frame pertama adalah sisa anggaran itu dan milik
+pengukuran di Windows.
+
+### Diperbaiki setelah pengujian pertama di Windows
+
+Fase 1 dinyatakan selesai berdasarkan test dan benchmark di Linux. Menjalankan
+build sungguhan di Windows menemukan tujuh cacat yang tak satu pun bisa
+tertangkap oleh suite yang ada, karena semuanya hidup di lapisan yang tidak
+dilewati test mana pun: jendela, webview, dan pompa kanal supervisor. Semuanya
+kini punya test regresi yang **gagal pada kode lama**.
+
+- **Tombol "Buka Berkas" tidak merespons.** Tauri v2 menolak permintaan plugin
+  dialog secara diam-diam tanpa `src-tauri/capabilities/default.json`. Berkas
+  itu ditambahkan.
+- **URI ubin tidak pernah sampai ke Rust.** `wry` menerjemahkan
+  `{http|https}://izul.localhost/x` kembali ke `izul://x`, tapi hanya untuk
+  skema yang benar-benar dipakai jendela — `http` secara bawaan, karena proyek
+  ini tidak menyalakan `useHttpsScheme`. Bentuk `https` meleset dari penerjemah
+  itu dan jatuh sebagai pencarian DNS ke host yang tidak ada. Frontend sekarang
+  menulis `http://izul.localhost/...`; pengurainya tetap menerima ketiga bentuk.
+- **Pekerja diam lalu dibunuh, berulang-ulang.** `pump()` menaruh `read_frame`
+  di dalam `tokio::select!`, dan `read_frame` tidak cancel-safe: ia membaca
+  4 byte panjang lalu isinya, jadi perintah yang datang di antara keduanya
+  membuang future itu berikut byte panjang yang sudah terbaca. Pembacaan
+  berikutnya mulai dari tengah pesan dan menunggu selamanya. Pembacaan
+  dipindah ke task tersendiri yang tidak pernah dibatalkan, menyalurkan frame
+  utuh lewat `mpsc`.
+- **`Ping` terbaca sebagai `Shutdown`.** `postcard` mengirim enum sebagai indeks
+  varian, dan Fase 1 menyisipkan dua varian `Request` di tengah daftar, jadi
+  binari pekerja lama menggeser semuanya. `npm run dev`/`build` sekarang
+  membangun pekerja lebih dulu, pekerja mengirim salam `Response::Hello
+  { protocol }`, dan supervisor menolak protokol yang tidak cocok dengan pesan
+  yang menyuruh `cargo build --workspace`.
+- **Balasan ubin dibuang browser.** Halaman dev berjalan di `localhost:5173`,
+  ubin datang dari `izul.localhost` — lintas asal. Protokol yang didaftarkan
+  tangan harus memasang `Access-Control-Allow-Origin` sendiri, dan tanpa
+  `Access-Control-Expose-Headers` dimensi ubin terbaca `null` walau ubinnya
+  sampai utuh. Keduanya kini dipasang pada **semua** balasan, termasuk yang
+  galat, jadi status 409/410 pun sampai ke frontend.
+- **Denyut jantung membunuh pekerja yang belum pernah disapa.** `sweep()`
+  memeriksa lama diam sebelum mencoba ping, padahal diam hanya berarti "belum
+  diajak bicara" — dan penyebabnya adalah supervisor sendiri, yang butuh ~2
+  detik per pekerja untuk menghidupkan delapan. Sekarang ping dulu, vonis mati
+  hanya bila ping gagal **dan** sudah lewat ambang; ping ke semua pekerja
+  berjalan serentak agar satu pekerja macet tidak menahan kunci kolam.
+- **Setiap ubin di atas zoom 100 % tergambar putih.** `FPDF_RenderPageBitmapWithMatrix`
+  tidak menerima matriks ruang-pengguna: PDFium menyusun matriks tampilan
+  halaman itu sendiri lebih dulu, lalu menerapkan matriks kita di atasnya.
+  Matriks ubin lama membalik sumbu y, mengurangi kotak pembatas, dan memutar
+  `/Rotate` untuk kedua kalinya. Pada zoom 100 % kebetulan masih ada yang
+  mendarat di bitmap; begitu faktor skalanya meninggalkan 1,0 seluruh isi
+  terdorong ke luar area klip. Matriksnya ditulis ulang di ruang yang benar —
+  titik, origin kiri-atas, `/MediaBox` dan `/Rotate` sudah ditangani PDFium —
+  sehingga yang tersisa hanyalah rotasi tambahan dari pengguna, offset rect
+  sumber, dan skala. Header PDFium tidak menjelaskan ruang ini sama sekali, jadi
+  ia dipatok dengan pengukuran: render bermatriks identitas kini wajib identik
+  byte-per-byte dengan `FPDF_RenderPageBitmap`, dan halaman sintetis dengan
+  `/MediaBox` bergeser serta `/Rotate` 90/180/270 memastikan tidak ada yang
+  diterapkan dua kali.
+
+- **`localhost` sisa penerjemahan `wry` ditolak sebagai jenis sumber daya
+  tak dikenal — seluruh ubin ditolak di Windows, terbukti dari log lalu
+  lintas ubin baru: 1400 permintaan, 0 terkirim.** `wry` menerjemahkan
+  `http://izul.localhost/x` menjadi `izul://localhost/x`, bukan
+  `izul://x` — kode sumbernya sendiri menyebut bentuk kanoniknya
+  `{protocol}://localhost/abc`. Pengurai URI kita mengasumsikan tidak ada
+  authority dan membaca `localhost` sebagai jenis sumber daya. Diperbaiki:
+  authority dilucuti tepat di awal path, sebelum dibaca, dan hanya di
+  posisi itu.
+- **Log lalu lintas ubin.** Sebelumnya penolakan dicatat di `debug!` (di
+  bawah saringan bawaan) atau tidak dicatat sama sekali, sehingga log
+  terlihat sama baik saat viewport tidak meminta ubin maupun saat backend
+  menolak semuanya. Sekarang tiap permintaan dihitung menurut hasilnya,
+  dengan ringkasan berkala supaya scroll ribuan ubin tidak membanjiri log.
+
+### Diputuskan selama Fase 1
+
+- **Pipeline render menjadi crate sendiri, `izul-render`** — deviasi dari daftar
+  crate di SPEC 5, dan disengaja. Di sinilah target SPEC 13 dipenuhi atau
+  gagal, dan fase yang harus *membuktikannya* dengan benchmark perlu mendorong
+  cache, antrean prioritas, dan pembatalan yang sebenarnya dari sebuah harness —
+  bukan dari dalam aplikasi berjendela. Menaruhnya di `src-tauri` akan membuat
+  benchmark jadi implementasi ulang dari hal yang diukurnya. Crate ini tidak
+  tahu apa-apa tentang Tauri; ia mencapai pekerja lewat satu trait.
+- **Ubin dialamatkan berdasarkan isi, bukan slot.** URI ubin menyebut dokumen,
+  halaman, rotasi, skala, dan posisi grid, sehingga URI yang sama adalah kunci
+  cache di webview, di backend, dan di log. Satu perjalanan menggantikan dua.
+- **Generasi bukan bagian dari identitas ubin.** Ia mengatur penjadwalan, bukan
+  isi. Memasukkannya ke kunci cache akan membuang seluruh cache tiap kali roda
+  zoom diputar — persis saat cache paling berharga.
+- **Pratinjau kebal terhadap pembatalan.** Ia tidak bergantung pada zoom maupun
+  scroll, dan ia yang mencegah halaman putih; membuangnya karena pengguna masih
+  menggulir akan meniadakan gunanya.
+- **Satu permintaan menunggak per pekerja.** Pekerja merender di satu thread,
+  jadi permintaan kedua hanya akan mengantre di dalamnya, di tempat penjadwal
+  tidak bisa lagi mengubah prioritasnya.
+- **Satu balasan untuk satu permintaan.** Protokol Fase 0 mengalirkan banyak
+  balasan di bawah satu id untuk sapuan thumbnail; tabel balasan supervisor
+  tidak bisa merutekannya dan diam-diam membuangnya. Fase 1 menariknya
+  per halaman.
+- **CSP diperbaiki.** `connect-src` Fase 0 tidak mengizinkan `izul:`, sehingga
+  setiap pengambilan ubin akan diblokir di jendela sungguhan. Ditemukan saat
+  membangun jalur ini, diperbaiki di sini.
+
+### Ditinjau dari v6.2
+
+Kode v6.2 di branch `v6.2-reference` dibaca pada fase ini (`app.js`, `core.js`,
+`annots.js`). Perbandingan perilaku viewer-nya ada di `TESTING.md`. Dua hal
+yang perlu dicatat:
+
+- Repositori v6.2 **tidak berisi berkas test**. 21 test case yang disebut
+  SPEC Bagian 16 tampaknya daftar pemeriksaan manual, bukan suite otomatis;
+  membawanya ke v7 berarti menuliskannya ulang dari perilaku yang terbaca di
+  kode, dan itu jatuh di Fase 3 dan 4 bersama anotasi dan simpan.
+- v6.2 menyusun **daftar isi cadangan** dengan mendeteksi judul bab dari teks
+  (BAB, BAGIAN, DAFTAR PUSTAKA, dan seterusnya) ketika PDF tidak membawa
+  outline. v7 belum punya padanannya. Ia butuh sapuan teks seluruh dokumen —
+  yang dibangun di Fase 2 bersama indeks FTS5 — jadi menambahkannya di sana
+  nyaris tanpa biaya, dan menambahkannya di sini berarti membangun sapuan teks
+  dua kali.
+
+### Belum ada
+
+Sengaja belum ada, dan bukan pekerjaan yang tertinggal: tab dan multi-dokumen,
+split view, pencarian, seluruh mesin anotasi, penulisan, operasi halaman, mode
+presentasi, dark mode dengan invert cerdas, dan command palette. Ekstraksi teks
+sudah ada sebagai lapisan seleksi; indeks FTS5 dan pencarian tiga tingkat adalah
+Fase 2.
+
+[7.0.0-alpha.1]: https://github.com/Zulaziz18/PDF-VIEWER-IZUL/tree/claude/pdf-studio-izul-v7-fase-1-tki5pi
+
 ## [7.0.0-alpha.0] — Fase 0: Fondasi, Batas Proses, dan Spike Pengukuran
 
 Fase fondasi. Tujuannya bukan fitur, melainkan menjawab satu pertanyaan sebelum

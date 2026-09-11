@@ -20,11 +20,16 @@ dist
 !/test-fixtures/MANIFEST.json
 !/test-fixtures/README.md
 
-# Benchmark output: the Phase 0 results are tracked as a record of what was
-# measured; later ad-hoc runs are not.
+# Benchmark output: the results quoted in CHANGELOG.md are tracked as the
+# record of what was actually measured at the end of each phase; ad-hoc runs
+# are not.
 /bench/results/*
 !/bench/results/.gitkeep
 !/bench/results/phase0-*
+!/bench/results/phase1-*
+
+# Python byte cache from the fixture generator.
+__pycache__/
 
 .DS_Store
 *.log

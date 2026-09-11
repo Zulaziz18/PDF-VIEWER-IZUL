@@ -6,6 +6,10 @@ rust-version.workspace = true
 license.workspace = true
 description = "PDF Studio Izul — proses UI, supervisor, dan asosiasi berkas"
 
+[lib]
+name = "izul_app"
+path = "src/lib.rs"
+
 [[bin]]
 name = "pdf-studio-izul"
 path = "src/main.rs"
@@ -16,7 +20,10 @@ tauri-build = { version = "2", features = [] }
 [dependencies]
 izul-ipc.workspace = true
 izul-model.workspace = true
+izul-render.workspace = true
+postcard.workspace = true
 izul-store.workspace = true
+rusqlite.workspace = true
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 serde.workspace = true
@@ -39,6 +46,9 @@ features = [
     "Win32_System_Threading",
     "Win32_Security",
 ]
+
+[dev-dependencies]
+izul-store.workspace = true
 
 [lints]
 workspace = true
