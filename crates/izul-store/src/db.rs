@@ -7,10 +7,13 @@ use rusqlite::Connection;
 use crate::error::{Result, StoreError};
 
 /// Schema version this build understands. Bumped whenever a migration is added.
-pub const APP_SCHEMA_VERSION: i64 = 1;
+pub const APP_SCHEMA_VERSION: i64 = 2;
 pub const CACHE_SCHEMA_VERSION: i64 = 1;
 
-const APP_MIGRATIONS: &[(i64, &str)] = &[(1, include_str!("../migrations/app_001_initial.sql"))];
+const APP_MIGRATIONS: &[(i64, &str)] = &[
+    (1, include_str!("../migrations/app_001_initial.sql")),
+    (2, include_str!("../migrations/app_002_index_state.sql")),
+];
 const CACHE_MIGRATIONS: &[(i64, &str)] =
     &[(1, include_str!("../migrations/cache_001_initial.sql"))];
 
