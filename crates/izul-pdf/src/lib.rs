@@ -35,6 +35,8 @@ pub mod geom;
 pub mod outline;
 pub mod render;
 pub mod sys;
+#[cfg(test)]
+pub mod test_support;
 pub mod text;
 
 pub use engine::{Document, Engine, PageGeometry};

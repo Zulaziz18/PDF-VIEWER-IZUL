@@ -17,7 +17,11 @@ use crate::sys::{FPDF_MATCHCASE, FPDF_MATCHWHOLEWORD};
 use crate::text::TextPage;
 
 /// How to match (SPEC 11.1).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+///
+/// The default is the forgiving one — case-insensitive, substrings allowed, no
+/// cap — because that is what a reader typing into a search box expects before
+/// touching any of the toggles.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct FindOptions {
     pub case_sensitive: bool,
     pub whole_word: bool,
@@ -27,16 +31,6 @@ pub struct FindOptions {
     /// can match thousands of times, and neither the wire nor the results panel
     /// gains anything from the tail of that list.
     pub max_hits: u32,
-}
-
-impl Default for FindOptions {
-    fn default() -> Self {
-        Self {
-            case_sensitive: false,
-            whole_word: false,
-            max_hits: 0,
-        }
-    }
 }
 
 impl FindOptions {
@@ -220,59 +214,18 @@ impl TextPage<'_> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::engine::Engine;
-    use std::path::{Path, PathBuf};
-    use std::sync::OnceLock;
+    use crate::{engine_and_lock, viewer_fixture};
 
-    fn root() -> PathBuf {
-        Path::new(env!("CARGO_MANIFEST_DIR"))
-            .parent()
-            .and_then(Path::parent)
-            .map(Path::to_path_buf)
-            .unwrap_or_default()
-    }
-
-    fn engine() -> Option<&'static Engine> {
-        static ENGINE: OnceLock<Option<&'static Engine>> = OnceLock::new();
-        *ENGINE.get_or_init(|| {
-            let lib = if cfg!(windows) {
-                root().join("vendor/pdfium/win-x64/bin/pdfium.dll")
-            } else {
-                root().join("vendor/pdfium/linux-x64/lib/libpdfium.so")
-            };
-            lib.exists().then(|| Engine::load_from(&lib).ok()).flatten()
-        })
-    }
-
-    /// Skips rather than fails when a prerequisite has not been fetched — unless
-    /// the caller insisted it be there, which is what CI does. A test that
-    /// silently passes because its fixture is missing guards nothing.
-    macro_rules! require {
-        ($what:expr, $missing:expr) => {
-            if $missing {
-                if std::env::var_os("IZUL_REQUIRE_FIXTURES").is_some() {
-                    panic!(concat!($what, " tidak ada dan IZUL_REQUIRE_FIXTURES diset"));
-                }
-                eprintln!(concat!("LEWATI: ", $what, " belum diambil"));
-                return;
-            }
-        };
-    }
-
-    /// The ten-page fixture. `bench/make_fixtures.py viewer` writes a heading
-    /// reading `Bagian N — halaman M` at the top of every page, which is the
-    /// only text in it this module relies on being exact.
+    /// The fixture opened, with the PDFium lock held for as long as the document
+    /// lives. The guard is returned rather than dropped here: `cargo test` runs
+    /// these on a thread pool, and PDFium tolerates exactly one at a time.
     macro_rules! doc_or_skip {
         () => {{
-            require!("PDFium", engine().is_none());
-            let path = root().join("test-fixtures/viewer-10p.pdf");
-            require!("test-fixtures/viewer-10p.pdf", !path.exists());
-            match engine() {
-                Some(e) => match e.open(&path, None) {
-                    Ok(d) => d,
-                    Err(e) => panic!("buka fixture: {e}"),
-                },
-                None => return,
+            let (engine, pdfium) = engine_and_lock!();
+            let path = viewer_fixture!();
+            match engine.open(&path, None) {
+                Ok(d) => (d, pdfium),
+                Err(e) => panic!("buka fixture: {e}"),
             }
         }};
     }
@@ -283,7 +236,7 @@ mod tests {
 
     #[test]
     fn a_word_on_the_page_is_found_with_a_box_to_highlight() {
-        let doc = doc_or_skip!();
+        let (doc, _pdfium) = doc_or_skip!();
         let hits = doc
             .find_on_page(0, "Bagian", opts(), RotationQuarter::None)
             .expect("cari");
@@ -307,7 +260,7 @@ mod tests {
         // The index is what lets the UI line a hit up with the text layer it
         // already has, so it has to agree with `page_text`, not merely be
         // plausible.
-        let doc = doc_or_skip!();
+        let (doc, _pdfium) = doc_or_skip!();
         let text = doc.page_text(0).expect("teks");
         let hits = doc
             .find_on_page(0, "halaman", opts(), RotationQuarter::None)
@@ -327,7 +280,7 @@ mod tests {
 
     #[test]
     fn case_sensitivity_is_honoured() {
-        let doc = doc_or_skip!();
+        let (doc, _pdfium) = doc_or_skip!();
         let insensitive = doc
             .find_on_page(0, "BAGIAN", opts(), RotationQuarter::None)
             .expect("cari");
@@ -352,7 +305,7 @@ mod tests {
 
     #[test]
     fn whole_word_rejects_a_prefix_that_is_part_of_a_longer_word() {
-        let doc = doc_or_skip!();
+        let (doc, _pdfium) = doc_or_skip!();
         let partial = doc
             .find_on_page(0, "Bagia", opts(), RotationQuarter::None)
             .expect("cari");
@@ -377,7 +330,7 @@ mod tests {
 
     #[test]
     fn a_word_that_is_not_there_returns_nothing_rather_than_failing() {
-        let doc = doc_or_skip!();
+        let (doc, _pdfium) = doc_or_skip!();
         let hits = doc
             .find_on_page(
                 0,
@@ -393,7 +346,7 @@ mod tests {
     fn an_empty_needle_finds_nothing() {
         // A cleared search box must stop highlighting, and PDFium's own answer
         // to an empty needle differs between builds.
-        let doc = doc_or_skip!();
+        let (doc, _pdfium) = doc_or_skip!();
         assert!(doc
             .find_on_page(0, "", opts(), RotationQuarter::None)
             .expect("cari")
@@ -402,7 +355,7 @@ mod tests {
 
     #[test]
     fn the_hit_limit_caps_the_result_and_zero_means_no_limit() {
-        let doc = doc_or_skip!();
+        let (doc, _pdfium) = doc_or_skip!();
         let all = doc
             .find_on_page(0, "a", opts(), RotationQuarter::None)
             .expect("cari");
@@ -428,7 +381,7 @@ mod tests {
 
     #[test]
     fn a_page_out_of_range_is_an_error_not_a_silent_empty_list() {
-        let doc = doc_or_skip!();
+        let (doc, _pdfium) = doc_or_skip!();
         assert!(doc
             .find_on_page(9_999, "Bagian", opts(), RotationQuarter::None)
             .is_err());
@@ -440,7 +393,7 @@ mod tests {
         // to coordinate spaces being assumed rather than measured, so this
         // checks the boxes against the page's display size rather than trusting
         // that `to_display` was called.
-        let doc = doc_or_skip!();
+        let (doc, _pdfium) = doc_or_skip!();
         let size = doc.page_display_size(2, RotationQuarter::None).expect("ukuran");
         let hits = doc
             .find_on_page(2, "Bagian", opts(), RotationQuarter::None)
@@ -459,7 +412,7 @@ mod tests {
 
     #[test]
     fn rotating_the_view_moves_the_boxes_but_keeps_the_same_matches() {
-        let doc = doc_or_skip!();
+        let (doc, _pdfium) = doc_or_skip!();
         let upright = doc
             .find_on_page(0, "Bagian", opts(), RotationQuarter::None)
             .expect("cari");
