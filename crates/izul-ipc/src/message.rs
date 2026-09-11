@@ -21,7 +21,7 @@ use izul_model::geom::{PdfRectF, RotationQuarter};
 /// So the worker announces this number the moment it connects, and the
 /// supervisor refuses a worker that does not match. Bump it whenever anything
 /// in [`Request`] or [`Response`] changes shape.
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 3;
 
 /// Identifies one open document within a worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -117,10 +117,25 @@ pub enum Request {
     Outline {
         doc: DocId,
     },
+    /// Matches for `query` on **one** page, with the boxes to highlight them.
+    ///
+    /// Page-scoped for the same reason [`Request::RenderTile`] is: a worker that
+    /// went away to search five hundred pages is a worker that stopped answering
+    /// heartbeats, and the supervisor kills it at six seconds (SPEC 3.4). It is
+    /// also what makes the search cancellable — `generation` lets a query the
+    /// user has already typed past be dropped rather than finished.
+    ///
+    /// Which pages are worth asking about is a question for the FTS5 index,
+    /// which answers it for the whole library at once; this fills in the
+    /// geometry the index cannot know.
     Search {
         doc: DocId,
+        page: u32,
         query: String,
         opts: SearchOptions,
+        /// Display rotation the boxes should come back in, matching the tiles.
+        rotation: RotationQuarter,
+        generation: Generation,
     },
     /// Drop full-resolution page handles for a document whose tab went inactive,
     /// keeping the document itself open (SPEC 10).
@@ -195,6 +210,29 @@ pub enum Response {
     Pong {
         nonce: u64,
     },
+    /// Appended at the end of the enum on purpose: `postcard` identifies a
+    /// variant by its index, so adding one anywhere else renumbers the ones
+    /// after it. Phase 1 shipped a worker binary that read `Ping` as `Shutdown`
+    /// for exactly that reason.
+    SearchReady {
+        doc: DocId,
+        page: u32,
+        hits: Vec<SearchHitWire>,
+        generation: Generation,
+    },
+}
+
+/// One match, with the boxes to draw over it.
+///
+/// `rects` is a list because a match broken across a line has one box per line;
+/// a single box spanning them would paint over everything in between.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SearchHitWire {
+    /// Index of the first matching character in the page's extracted text, so a
+    /// hit can be lined up with a text layer the frontend already holds.
+    pub char_index: u32,
+    pub char_count: u32,
+    pub rects: Vec<PdfRectF>,
 }
 
 /// One outline entry, flattened for the wire.

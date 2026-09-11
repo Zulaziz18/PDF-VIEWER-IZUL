@@ -36,12 +36,12 @@ use std::path::PathBuf;
 
 use izul_ipc::codec::{read_frame, write_frame};
 use izul_ipc::message::{
-    DocId, Envelope, ErrorKind, OutlineEntry, Request, RequestId, Response, SlotRef,
+    DocId, Envelope, ErrorKind, OutlineEntry, Request, RequestId, Response, SearchHitWire, SlotRef,
 };
 use izul_ipc::ring::{TileRing, TILE_EDGE};
 use izul_ipc::{region_bytes, ChannelName, SharedRegion};
 use izul_pdf::render::Quality;
-use izul_pdf::{Engine, PdfError, PdfRectF, TileRequest};
+use izul_pdf::{Engine, FindOptions, PdfError, PdfRectF, TileRequest};
 use session::{classify, quality_of, Session};
 use tokio::io::{AsyncRead, AsyncWrite};
 
@@ -411,17 +411,55 @@ where
             }
         }
 
-        // Search lands in Phase 2, where the FTS5 index it cooperates with is
-        // built. Answering with a clear "not yet" beats answering with nothing.
-        Request::Search { doc, .. } => {
-            fail_kind(
-                channel,
-                id,
-                Some(doc),
-                ErrorKind::BadRequest,
-                "err.not_in_this_phase",
-            )
-            .await
+        Request::Search {
+            doc,
+            page,
+            query,
+            opts,
+            rotation,
+            generation,
+        } => {
+            sess.bump_generation(doc, generation);
+            // Same cancellation point as a tile: a query the user has already
+            // typed past never reaches PDFium. Typing into a search box produces
+            // a new generation per keystroke, so without this the worker would
+            // finish every prefix of the word.
+            if !sess.is_current(doc, generation) {
+                return reply(channel, id, Response::Superseded { doc, generation }).await;
+            }
+            let Some(open) = sess.get(doc) else {
+                return fail_kind(channel, id, Some(doc), ErrorKind::BadRequest, "doc.unknown")
+                    .await;
+            };
+            let find_opts = FindOptions {
+                case_sensitive: opts.case_sensitive,
+                whole_word: opts.whole_word,
+                max_hits: opts.max_hits,
+            };
+            match open.doc.find_on_page(page, &query, find_opts, rotation) {
+                Ok(matches) => {
+                    let hits = matches
+                        .into_iter()
+                        .map(|m| SearchHitWire {
+                            char_index: m.char_index,
+                            char_count: m.char_count,
+                            rects: m.rects,
+                        })
+                        .collect();
+                    reply(
+                        channel,
+                        id,
+                        Response::SearchReady {
+                            doc,
+                            page,
+                            hits,
+                            generation,
+                        },
+                    )
+                    .await
+                }
+                Err(e) => fail(channel, id, Some(doc), &e).await,
+            }
         }
 
         Request::Shutdown => Ok(()),
