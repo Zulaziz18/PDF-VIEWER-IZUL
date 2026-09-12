@@ -257,15 +257,80 @@ ketiga dari ingatan. Yang menyelesaikannya selalu salah satu dari:
 Kalau sebuah dugaan tidak bisa diuji dalam sepuluh menit, itu tanda dugaannya
 belum cukup tajam — bukan tanda harus dicoba di komputer pengguna.
 
+## Keadaan Fase 2 (Multi-Dokumen & Pencarian)
+
+Dikerjakan sekaligus — bagian multi-dokumen dan bagian pencarian — atas
+keputusan pengguna, di branch `claude/pdf-studio-izul-v7-fase-2`.
+
+**Sudah selesai (lapisan Rust, sudah di-push):**
+
+1. `izul-store/sessions.rs` — mengisi tabel `sessions`/`session_tabs` yang
+   dibuat Fase 0 tapi belum pernah dipakai. Satu baris sesi per sekali jalan;
+   susunan tab ditulis ulang di tempat. `latest()` **sengaja melewati sesi
+   kosong**: startup membuat sesi baru sebelum memulihkan yang lama, dan tanpa
+   saringan itu baris kosong yang baru jadi "paling baru" lalu menghapus
+   susunan yang mau dipulihkan.
+2. `izul-store/search.rs` + migrasi `app_002_index_state.sql` — teks halaman ke
+   `doc_text` (pemicu FTS5 sudah ada sejak Fase 0). Tabel `doc_index_state`
+   menjawab dua hal yang tidak bisa dijawab teksnya sendiri: apakah indeks
+   masih cocok dengan berkas di disk, dan sampai halaman berapa pengindeksan
+   sempat berjalan. `APP_SCHEMA_VERSION` naik 1 → 2.
+3. `izul-pdf/find.rs` — membungkus `FPDFText_FindStart`. Kotak sorot
+   dikembalikan sebagai **daftar**, bukan satu kotak: kecocokan yang terpotong
+   ganti baris punya dua kotak, dan satu kotak yang membungkus keduanya akan
+   menimpa seluruh blok di antaranya.
+4. `Request::Search` di pekerja — `PROTOCOL_VERSION` naik 2 → 3.
+
+**Belum dikerjakan:** registry multi-dokumen + perintah Tauri; memecah
+`documentStore.ts` jadi sesi per dokumen + store ruang kerja; tab bar +
+manajemen memori tab tidak aktif; panel pencarian tiga tingkat; recent files,
+drag & drop, asosiasi berkas Windows; benchmark kriteria lulus; pembaruan
+CHANGELOG/version.json.
+
+**Keputusan teknis yang diambil sendiri, beserta alasannya:**
+
+- **Pencarian dibuat per-halaman, bukan per-dokumen.** Pekerja yang pergi
+  mencari di 500 halaman berhenti menjawab heartbeat, dan supervisor
+  membunuhnya di detik keenam (SPEC 3.4). Pembagiannya jadi: indeks FTS5
+  menjawab "halaman mana", pekerja menjawab "di sebelah mana". Ini juga yang
+  membuat pencarian bisa dibatalkan — mengetik menaikkan generasi tiap ketukan.
+- **`Response::SearchReady` ditambahkan di ujung enum, bukan di tengah.**
+  `postcard` mengenali varian lewat indeksnya; menyisipkan di tengah menggeser
+  nomor semua varian sesudahnya. Itu persis bug #4 di atas.
+- **Terjemahan ketikan pengguna ke sintaks FTS5 ditangani serius.** FTS5 punya
+  bahasa kueri sendiri (`AND`, `OR`, `NEAR`, `*`, `^`, `-`, kurung, kutip).
+  Orang yang mencari `size 10" x 8"` memaksudkan karakter itu apa adanya;
+  diteruskan mentah hasilnya galat sintaks, atau lebih buruk, kueri lain yang
+  valid dan diam-diam salah. Tiap token dibungkus kutip dan kutip di dalamnya
+  digandakan. Ada test yang melempar empat belas bentuk ketikan bermasalah dan
+  menuntut tidak satu pun gagal.
+
+**Cacat harness yang ditemukan dan diperbaiki (bukan bug aplikasi):** suite
+test `izul-pdf` mati dengan SIGSEGV begitu test yang memakai PDFium bertambah.
+Dua sebab, keduanya sudah ada sejak Fase 1 dan hanya belum cukup terbebani:
+tiap modul test memegang `OnceLock<Engine>` sendiri — `Engine::load_from`
+menolak panggilan kedua, jadi modul yang kalah start **melewati seluruh
+tesnya tanpa suara** — dan tidak ada yang menjaga aturan satu-thread yang
+dipatuhi produksi (`izul-worker` memakai runtime tokio satu-thread justru
+karena ini, dan `Document` memegang `RefCell` sehingga tidak bisa dibagi
+antar-thread). Diperbaiki dengan `izul-pdf/src/test_support.rs`: satu engine
+untuk seluruh binari test, dan `pdfium_lock()` yang wajib dipegang selama
+sebuah `Document` hidup. **Kalau nanti menambah test yang membuka `Document`
+di crate itu, pakai `engine_and_lock!()` — jangan bikin engine sendiri.**
+
 ## Alur kerja proyek ini
 
-- Branch aktif pengguna: `claude/pdf-studio-izul-v7-fase-1-tki5pi`.
+- Branch aktif: `claude/pdf-studio-izul-v7-fase-2`.
+- Trunk proyek ini **bukan** `main` — tidak ada branch `main`. Trunk-nya
+  `claude/pdf-studio-izul-v7-atlas-r29mdh`, dan Fase 1 sudah di-merge ke sana
+  lewat PR #1.
 - Dokumen rujukan: `SPEC.md` (jangan diubah tanpa dibahas). Progres per fase
   dicatat di `CHANGELOG.md`. Panduan pengguna di `PANDUAN.md`.
 - Setiap akhir fase: laporkan hasil + angka benchmark nyata, tunggu
   persetujuan pengguna sebelum lanjut ke fase berikutnya (lihat SPEC.md
   Bagian 0 dan 18).
-- Total 9 fase (0–8). Fase 0 dan 1 sudah selesai dan disetujui pengguna.
+- Total 9 fase (0–8). Fase 0 dan 1 selesai dan disetujui pengguna; Fase 2
+  sedang berjalan.
 - Panduan menjalankan & menguji aplikasi di Windows (untuk pemula) ada di
   `TESTING.md`, bagian "Menjalankan sendiri di Windows (langkah demi
   langkah)" — termasuk cara memasang alat, mengambil PDFium, menjalankan
