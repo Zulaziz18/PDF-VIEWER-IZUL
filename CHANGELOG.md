@@ -60,13 +60,23 @@ lain), tata letak teks jadi glif berposisi, rotasi jadi satu transform.
 
 - **Golden image:** lima belas baseline, seluruhnya lulus pada ambang < 0,5
   persen piksel berbeda (toleransi 8/255 per kanal).
-- **Kanvas vs PDFium:** sepuluh dari tiga belas jenis di bawah 0,6 persen; tiga
-  yang memuat teks berbeda 1,7–4,2 persen karena bentuk glif browser bukan
-  bentuk glif PDFium — posisinya sama, cakupan tintanya nyaris identik.
+- **Kanvas vs PDFium:** dua belas jenis non-teks di bawah 0,53 persen. Tiga
+  kasus berteks dikecualikan dari angka itu dan alasannya batasan, bukan
+  kelulusan — baseline PDFium memakai font uji Type 3 sementara kanvas
+  menggambar huruf sungguhan. Yang tetap berarti di sana: cakupan tintanya
+  berdempetan (56,5 vs 56,6 persen), artinya teksnya mendarat di tempat sama.
 - **Test:** 338 Rust (dari 254) dan 106 TypeScript (dari 71).
 
 ### Diketahui, dan tidak ditutup-tutupi
 
+- **Baseline teks tidak boleh bergantung pada font mesin.** Versi pertama
+  golden image memakai font sungguhan dan **gagal di CI Windows** — tiga
+  baseline berteks berbeda 1,6–3,0 persen karena PDFium mengambil outline dari
+  font sistem di sana, sementara dua belas lainnya lulus. Diperbaiki dengan
+  memindahkan kedua sisinya ke dalam berkas test: metrik dari `FixedFont`, glif
+  dari font Type 3 yang charproc-nya ditulis di situ. Baselinenya kini berupa
+  blok, dan itu memang tujuannya — blok yang bergeser tetap regresi tata letak,
+  tapi blok tidak bisa berubah bentuk karena mesinnya lain.
 - **Cacat yang ditemukan harness paritas:** anotasi gambar semula berbeda 30,7
   persen karena kanvas menghaluskan gambar yang diperbesar dan PDFium tidak.
   Sudah diperbaiki (0,00 persen sesudahnya), dan itulah gunanya harness ini ada.

@@ -5,13 +5,37 @@ Dua pengukuran, dua berkas:
 - **Golden image** (`cargo test -p izul-pdf --lib golden`): membuktikan bahwa
   backend AP stream merender ke gambar yang diketahui untuk **tiap jenis
   anotasi**, ambang < 0,5 persen piksel berbeda (SPEC 3.3). Lima belas baseline
-  ada di `crates/izul-pdf/golden/`. Ini yang dijalankan CI.
+  ada di `crates/izul-pdf/golden/`. Ini yang dijalankan CI, di Linux **dan**
+  Windows.
 - **Kanvas vs PDFium** (`node tools/canvas-parity/run.mjs`): membuktikan bahwa
   backend kanvas — proksi langsung yang dilihat pengguna saat menyeret —
   menggambar daftar tampilan yang sama menjadi gambar yang sama. Butuh Chromium
   sungguhan, jadi dijalankan tangan, bukan di CI.
 
-## Kenapa ambang keduanya berbeda
+## Kenapa baseline teksnya berupa blok
+
+Versi pertama baseline ini memakai font sungguhan: metrik standard-14 dari
+PDFium, glif Helvetica dan Times digambar PDFium. Lulus di Linux, **gagal di
+Windows** — tiga baseline yang memuat teks berbeda 1,6–3,0 persen, di atas
+ambang 0,5 persen, sementara dua belas lainnya lulus tanpa disentuh. Sebabnya
+bukan kode kita: PDFium tidak membawa satu set outline glif lintas platform, di
+Windows ia mengambil dari font sistem. Baseline teks sungguhan berarti baseline
+atas font yang kebetulan ada di mesin itu.
+
+Itu ketergantungan yang tidak perlu ditanggung test ini. Yang diuji di sini
+adalah **kode kita**: di mana tata letak menaruh tiap glif, apa yang ditulis AP
+stream, apa yang dilakukan warna dan transformnya. Bentuk sebuah huruf itu
+urusan font.
+
+Jadi kedua sisinya dipatok di berkas testnya sendiri: metrik dari `FixedFont`
+(aritmetika yang dikendalikan repositori ini), dan glif dari **font Type 3**
+yang charproc-nya ditulis di sana — blok yang tingginya berubah menurut kode
+karakter. Tiap perender menggambarnya identik karena tidak ada yang perlu
+ditafsirkan. Blok yang bergeser tetap berarti regresi tata letak; blok tidak
+bisa berubah bentuk karena Windows punya Arial yang lain. Font sungguhan yang
+ditanam dengan benar datang di Fase 4.
+
+## Kenapa ambang kedua harness berbeda
 
 Saat objek **diam**, yang tampil di layar *adalah* render PDFium dari AP stream:
 proksi kanvas sudah digantikan (SPEC 3.3). Jadi paritas saat diam bersifat
@@ -19,26 +43,21 @@ struktural, dan golden image itulah penjaganya — di sanalah ambang 0,5 persen
 berlaku.
 
 Proksi kanvas hanya perlu cukup mirip agar pergantiannya tidak terlihat, dan ia
-digambar oleh perasteri yang berbeda: antialias, sambungan garis, dan hinting
-glif milik browser bukan milik PDFium. Menuntut kesamaan piksel di sana sama
-dengan menuntut dua perasteri menjadi satu program.
+digambar oleh perasteri yang berbeda. Karena itu harness kanvas melaporkan
+**dua** angka: **halus** (tiap piksel, termasuk antialias) dan **kasar** (kedua
+gambar diperkecil 4x lebih dulu, jadi yang tersisa perbedaan **bentuk**).
 
-Karena itu harness kanvas melaporkan **dua** angka:
+Tiga kasus berteks dikecualikan dari angka terburuk harness kanvas, dan alasannya
+harus dibaca sebagai batasan, bukan sebagai kelulusan: baseline PDFium sekarang
+memakai font uji Type 3 sementara kanvas menggambar huruf sungguhan, jadi
+membandingkan pikselnya tidak berarti apa-apa. Yang masih berarti di baris itu
+adalah **cakupan tintanya**, yang tetap berdempetan (56,5 vs 56,6 persen pada
+kotak teks) — artinya teksnya mendarat di tempat yang sama.
 
-- **halus** — tiap piksel, termasuk yang memang boleh berbeda.
-- **kasar** — kedua gambar diperkecil 4x lebih dulu, sehingga antialias dan
-  penghalusan gambar terhapus dan yang tersisa adalah perbedaan **bentuk**:
-  kepala panah yang hilang, sumbu y yang terbalik, kurva yang dihaluskan beda.
+## Hasil
 
-## Hasil, dan apa artinya
-
-Sepuluh dari tiga belas jenis berada di bawah 0,6 persen pada kedua ukuran. Tiga
-yang tersisa semuanya memuat teks, dan sebabnya satu: kanvas menggambar glif
-dengan font milik browser, PDFium dengan outline Times/Helvetica miliknya.
-**Posisinya sama** — cakupan tintanya nyaris identik (56,5 vs 56,5 persen pada
-kotak teks) — yang berbeda adalah bentuk hurufnya. Itu persis perbedaan yang
-SPEC 3.3 izinkan selama interaksi, dan hilang begitu render otoritatif
-menggantikan proksi.
+Dua belas jenis non-teks: **semuanya di bawah 0,53 persen** pada ukuran halus
+dan 0,40 persen pada ukuran kasar.
 
 **Satu cacat nyata ditemukan harness ini dan sudah diperbaiki:** anotasi gambar
 mula-mula berbeda 30,7 persen karena kanvas menghaluskan gambar yang diperbesar
@@ -56,8 +75,8 @@ kanvas vs PDFium — piksel berbeda (toleransi 24/255 per kanal)
   jenis                halus    kasar    tinta kanvas / PDFium
   arrow                  0.45 %    0.00 %   2.3 % / 2.4 %
   ellipse                0.53 %    0.40 %   46.1 % / 46.1 %
-  freetext-rotated       4.17 %    5.39 %   57.5 % / 56.9 %
-  freetext               2.61 %    3.04 %   56.5 % / 56.5 %
+  freetext-rotated       6.38 %    7.06 %   57.5 % / 57.0 %   (teks: bentuk glif memang beda)
+  freetext               4.74 %    5.17 %   56.5 % / 56.6 %   (teks: bentuk glif memang beda)
   highlight              0.00 %    0.00 %   19.4 % / 19.4 %
   image                  0.00 %    0.00 %   55.6 % / 55.6 %
   ink                    0.09 %    0.06 %   3.3 % / 3.4 %
@@ -66,11 +85,12 @@ kanvas vs PDFium — piksel berbeda (toleransi 24/255 per kanal)
   polygon                0.04 %    0.00 %   14.3 % / 14.3 %
   rect-rotated           0.06 %    0.04 %   57.5 % / 57.5 %
   rect                   0.00 %    0.00 %   57.3 % / 57.3 %
-  stamp                  1.72 %    2.28 %   10.8 % / 11.3 %
+  stamp                  2.75 %    3.03 %   10.8 % / 12.3 %   (teks: bentuk glif memang beda)
   strikeout              0.00 %    0.00 %   1.9 % / 1.9 %
   underline              0.00 %    0.00 %   1.5 % / 1.5 %
 
-terburuk halus: 4.17 % · terburuk kasar: 5.39 %
+terburuk halus: 0.53 % · terburuk kasar: 0.40 %  (di luar kasus berteks)
 halus = tiap piksel (termasuk antialias dan penghalusan gambar); kasar = keduanya diperkecil 4x lebih dulu, jadi yang tersisa perbedaan bentuk.
-gambar kanvas ada di /tmp/izul-parity-yUvvFa
+Kasus berteks dikecualikan dari angka terburuk: baseline PDFium memakai font uji Type 3 (glifnya blok, supaya deterministik di semua platform) sedangkan kanvas menggambar huruf sungguhan. Yang masih berarti di baris itu adalah cakupan tintanya — posisi teksnya sama.
+gambar kanvas ada di /tmp/izul-parity-RN6nBx
 ```

@@ -112,7 +112,7 @@ async function main() {
       join(workDir, `${name}.png`),
       Buffer.from(String(result.png).split(",")[1] ?? "", "base64"),
     );
-    rows.push({ name, ...result });
+    rows.push({ name, textual: data.textual === true, ...result });
   }
 
   let worst = 0;
@@ -122,20 +122,29 @@ async function main() {
   );
   let worstCoarse = 0;
   for (const row of rows) {
-    worst = Math.max(worst, row.differing);
-    worstCoarse = Math.max(worstCoarse, row.coarse);
+    if (!row.textual) {
+      worst = Math.max(worst, row.differing);
+      worstCoarse = Math.max(worstCoarse, row.coarse);
+    }
     console.log(
       `  ${row.name.padEnd(20)} ${(row.differing * 100).toFixed(2).padStart(6)} % ` +
         `${(row.coarse * 100).toFixed(2).padStart(7)} %   ` +
-        `${(row.inkCanvas * 100).toFixed(1)} % / ${(row.inkPdfium * 100).toFixed(1)} %`,
+        `${(row.inkCanvas * 100).toFixed(1)} % / ${(row.inkPdfium * 100).toFixed(1)} %` +
+        (row.textual ? "   (teks: bentuk glif memang beda)" : ""),
     );
   }
   console.log(
-    `\nterburuk halus: ${(worst * 100).toFixed(2)} % · terburuk kasar: ${(worstCoarse * 100).toFixed(2)} %`,
+    `\nterburuk halus: ${(worst * 100).toFixed(2)} % · terburuk kasar: ${(worstCoarse * 100).toFixed(2)} %` +
+      "  (di luar kasus berteks)",
   );
   console.log(
     "halus = tiap piksel (termasuk antialias dan penghalusan gambar); " +
       "kasar = keduanya diperkecil 4x lebih dulu, jadi yang tersisa perbedaan bentuk.",
+  );
+  console.log(
+    "Kasus berteks dikecualikan dari angka terburuk: baseline PDFium memakai font uji Type 3 " +
+      "(glifnya blok, supaya deterministik di semua platform) sedangkan kanvas menggambar huruf " +
+      "sungguhan. Yang masih berarti di baris itu adalah cakupan tintanya — posisi teksnya sama.",
   );
   console.log(`gambar kanvas ada di ${workDir}`);
 }

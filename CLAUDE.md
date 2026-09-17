@@ -435,6 +435,16 @@ persen karena kanvas menghaluskan gambar yang diperbesar sementara PDFium
 menampilkan pikselnya — pergantian yang terlihat saat proksi digantikan render
 otoritatif. Diperbaiki; sesudahnya 0,00 persen.
 
+**Pelajaran CI yang mahal dan baru:** golden image untuk teks **tidak boleh**
+memakai font sistem. Versi pertama memakai metrik standard-14 dari PDFium dan
+glif Helvetica/Times; lulus di Linux, gagal di Windows pada ketiga baseline
+berteks (1,6–3,0 persen, ambang 0,5) sementara dua belas lainnya lulus tanpa
+disentuh. PDFium tidak membawa satu set outline lintas platform. Diperbaiki
+dengan memindahkan kedua sisinya ke dalam `golden.rs`: metrik `FixedFont` dan
+font **Type 3** yang charproc-nya ditulis di sana. Kalau nanti menambah baseline
+yang memuat teks, jangan kembali ke font sungguhan sebelum Fase 4 menanam font
+ke dalam PDF-nya.
+
 **Jebakan harness yang sempat memakan waktu:** Chromium membatasi
 `--window-size` (jendela 480x240 melaporkan `innerHeight` 153), jadi
 `--screenshot` mengembalikan gambar yang terpotong dan itu **terlihat persis

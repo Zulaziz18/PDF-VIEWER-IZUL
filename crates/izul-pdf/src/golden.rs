@@ -31,15 +31,34 @@
 //! same display lists. The two together are the contract; this file is the one
 //! that can run in CI without a display.
 //!
-//! ## Where the metrics come from
+//! ## Why the text is drawn with a font this file builds
 //!
-//! From PDFium itself (`fonts::StandardFonts`), not from a table written from
-//! memory and not from whatever fonts the machine has installed. PDFium is
-//! pinned to one build in `vendor/`, so its standard-14 widths are as fixed as
-//! anything else in the repository — and using the same metrics the renderer
-//! will draw with is the point: text laid out against one set of widths and
-//! drawn with another drifts across the line, which is the one parity failure a
-//! display list cannot prevent by itself.
+//! The first version of these baselines laid text out with PDFium's own
+//! standard-14 metrics and let PDFium draw Helvetica and Times. It passed here
+//! and **failed on Windows**: the three text-bearing baselines differed by
+//! 1.6–3.0 %, over the 0.5 % threshold, while the other twelve passed
+//! untouched. PDFium does not carry one set of glyph outlines across platforms
+//! — on Windows it reaches the system's own faces — so a baseline of real text
+//! is a baseline of whichever fonts the machine has.
+//!
+//! That is a dependency the test has no business carrying. What is under test
+//! here is *our* code: where the layout puts each glyph, what the appearance
+//! stream writes, what the colours and the transform do. The shape of a letter
+//! belongs to the font.
+//!
+//! So both halves are pinned to this file:
+//!
+//! * **Metrics** come from [`FixedFont`], not from PDFium, so every glyph
+//!   position is arithmetic this repository controls.
+//! * **Glyph shapes** come from a **Type 3 font built below**, whose glyphs are
+//!   content streams written here. Every renderer draws them identically,
+//!   because there is nothing to interpret.
+//!
+//! The baselines therefore show blocks rather than letterforms, and that is the
+//! point: a block that moves is a layout regression, and a block cannot change
+//! shape because Windows has a different Arial. Real fonts, embedded properly,
+//! arrive in Phase 4 — and `fonts::tests` already proves the measured metrics
+//! themselves against a real render, on whatever platform it runs.
 //!
 //! ## Updating a baseline
 //!
@@ -53,7 +72,6 @@
 
 use std::path::PathBuf;
 
-use crate::fonts::{metrics_document, StandardFonts};
 use crate::render::Quality;
 use izul_model::annot::{
     AnnotId, AnnotKind, AnnotObject, AnnotPayload, FontSpec, NoteIcon, ShapeStyle, TextAlign,
@@ -61,6 +79,7 @@ use izul_model::annot::{
 use izul_model::ap::{appearance, Appearance};
 use izul_model::build::display_list;
 use izul_model::display::{ImageRef, Rgba};
+use izul_model::font::FixedFont;
 use izul_model::geom::{PdfPointF, PdfRectF};
 
 /// Page the annotations are drawn on, in points.
@@ -79,6 +98,30 @@ const CHANNEL_TOLERANCE: u8 = 8;
 
 /// SPEC 3.3's threshold: fewer than 0.5 % of pixels may differ.
 const MAX_DIFFERING_FRACTION: f64 = 0.005;
+
+/// Advance width every glyph of the test font has, in 1/1000 em.
+///
+/// One width for all of them: the layout is what is under test, and a
+/// proportional table would be a second thing to keep in step with the font for
+/// no gain. The blocks are wide enough apart to read as separate glyphs.
+const GLYPH_ADVANCE_MILLI: u16 = 550;
+
+/// The glyph a character is drawn as, as a Type 3 charproc.
+///
+/// A filled block whose height varies with the character code, so a run of text
+/// is a distinctive skyline: swapped, dropped or reordered glyphs change the
+/// picture, while nothing about the machine can change the shape.
+fn charproc(ch: char) -> String {
+    let code = u32::from(ch);
+    let height = 320 + (code % 7) * 90;
+    let inset = 60;
+    let right = u32::from(GLYPH_ADVANCE_MILLI) - inset;
+    format!(
+        "{GLYPH_ADVANCE_MILLI} 0 {inset} 0 {right} {height} d1\n\
+         {inset} 0 {} {height} re f\n",
+        right - inset
+    )
+}
 
 /// A 2x2 checker, which makes a wrong image matrix obvious: a flipped or
 /// transposed placement moves the coloured squares. Shared between the PDF the
@@ -244,17 +287,25 @@ fn sample(kind: AnnotKind) -> AnnotObject {
 /// Written by hand rather than through a PDF library on purpose: the point of
 /// the test is what *our* backend emitted, and a library that normalised the
 /// operators on the way in would hide exactly the bugs this is looking for.
-fn page_with(ap: &Appearance, needs_image: bool) -> Vec<u8> {
+fn page_with(ap: &Appearance, needs_image: bool, text: &str) -> Vec<u8> {
+    // Object numbering, decided up front because a PDF refers to objects by
+    // number and the font needs to know where its charprocs will land.
+    //  1 catalog · 2 pages · 3 page · 4 contents · 5 image (when used)
+    //  then: the font, then one object per distinct character.
+    let first_extra = if needs_image { 6 } else { 5 };
+    let font_obj = first_extra;
+    let mut used: Vec<char> = text
+        .chars()
+        .filter(|c| !c.is_control() && *c != ' ')
+        .collect();
+    used.sort_unstable();
+    used.dedup();
+
     let mut resources = String::from("<</ProcSet[/PDF/Text/ImageC]");
     if !ap.resources.fonts.is_empty() {
         resources.push_str("/Font<<");
         for name in ap.resources.fonts.keys() {
-            // Standard-14 Helvetica: Phase 3 proves geometry, and embedding the
-            // user's own font is Phase 4's job. The glyph *positions* come from
-            // the display list either way, which is the part under test.
-            resources.push_str(&format!(
-                "/{name}<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>"
-            ));
+            resources.push_str(&format!("/{name} {font_obj} 0 R"));
         }
         resources.push_str(">>");
     }
@@ -311,6 +362,45 @@ fn page_with(ap: &Appearance, needs_image: bool) -> Vec<u8> {
         objects.push(stream);
     }
 
+    if !ap.resources.fonts.is_empty() {
+        // The Type 3 font. `FontMatrix` is the usual 1/1000, so the charprocs
+        // above are written in the same thousandths the metrics use.
+        let first_char = used.first().copied().unwrap_or('A') as u32;
+        let last_char = used.last().copied().unwrap_or('A') as u32;
+        let mut differences = String::new();
+        let mut widths = String::new();
+        for code in first_char..=last_char {
+            let ch = char::from_u32(code);
+            if ch.is_some_and(|c| used.contains(&c)) {
+                differences.push_str(&format!("{code}/g{code} "));
+            }
+            widths.push_str(&format!("{GLYPH_ADVANCE_MILLI} "));
+        }
+        let mut char_procs = String::new();
+        for (i, ch) in used.iter().enumerate() {
+            char_procs.push_str(&format!("/g{} {} 0 R", u32::from(*ch), font_obj + 1 + i));
+        }
+        objects.push(
+            format!(
+                "<</Type/Font/Subtype/Type3/FontBBox[0 0 {GLYPH_ADVANCE_MILLI} 1000]\
+                 /FontMatrix[0.001 0 0 0.001 0 0]/CharProcs<<{char_procs}>>\
+                 /Encoding<</Type/Encoding/Differences[{differences}]>>\
+                 /FirstChar {first_char}/LastChar {last_char}/Widths[{widths}]/Resources<<>>>>"
+            )
+            .into_bytes(),
+        );
+        for ch in &used {
+            let proc_stream = charproc(*ch);
+            objects.push(
+                format!(
+                    "<</Length {}>>\nstream\n{proc_stream}endstream",
+                    proc_stream.len()
+                )
+                .into_bytes(),
+            );
+        }
+    }
+
     let mut pdf = b"%PDF-1.7\n".to_vec();
     let mut offsets = Vec::new();
     for (i, body) in objects.iter().enumerate() {
@@ -358,6 +448,19 @@ fn render(engine: &'static crate::engine::Engine, pdf: Vec<u8>) -> (u32, u32, Ve
     (w, h, rgba)
 }
 
+/// Every character the list draws, so the test font can carry exactly those.
+fn drawn_text_of(list: &izul_model::DisplayList) -> String {
+    list.ops
+        .iter()
+        .filter_map(|op| match op {
+            izul_model::DisplayOp::DrawText { glyphs, .. } => {
+                Some(glyphs.iter().map(|g| g.unicode).collect::<String>())
+            }
+            _ => None,
+        })
+        .collect()
+}
+
 /// Writes the display list next to its baseline, for the canvas comparison.
 fn dump_display_list(
     kind: AnnotKind,
@@ -379,6 +482,12 @@ fn dump_display_list(
     let payload = serde_json::json!({
         "width": width,
         "height": height,
+        // Whether this case draws text. The canvas harness compares against
+        // PDFium's render of the Type 3 test font, whose glyphs are blocks by
+        // design; a browser draws letters. The *positions* are still worth
+        // comparing, the shapes are not, and the harness says which is which
+        // rather than reporting a number that means nothing.
+        "textual": list.ops.iter().any(|op| matches!(op, izul_model::DisplayOp::DrawText { .. })),
         // Image resources the canvas backend needs; PDFium gets them from the
         // PDF's own XObject table.
         "images": images,
@@ -421,8 +530,10 @@ fn check(kind: AnnotKind, rotated: bool) {
         Some(e) => (e, crate::test_support::pdfium_lock()),
         None => panic!("PDFium belum diambil"),
     };
-    let metrics_doc = metrics_document(engine).expect("dokumen metrik");
-    let fonts = StandardFonts::new(engine, metrics_doc.handle());
+    let fonts = FixedFont {
+        advance_milli: GLYPH_ADVANCE_MILLI,
+        ..Default::default()
+    };
     let list = display_list(&obj, &fonts).expect("display list");
     assert!(list.is_balanced(), "{kind:?}: daftar tidak seimbang");
     let ap = appearance(&list, obj.rect);
@@ -433,7 +544,8 @@ fn check(kind: AnnotKind, rotated: bool) {
     );
 
     let needs_image = !ap.resources.images.is_empty();
-    let (w, h, actual) = render(engine, page_with(&ap, needs_image));
+    let drawn_text = drawn_text_of(&list);
+    let (w, h, actual) = render(engine, page_with(&ap, needs_image, &drawn_text));
 
     // The same list, as JSON, for the canvas-backend comparison in
     // `tools/canvas-parity`. Written beside the baseline so the two halves of
