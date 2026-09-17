@@ -80,8 +80,22 @@ membuat salinan kedua.
 Susunan tab disimpan otomatis dan dipulihkan saat aplikasi dijalankan lagi.
 Berkas yang sudah dipindah atau dihapus dilewati tanpa pesan galat.
 
+### Jendela aplikasi
+
+Jendelanya memakai bilah judul sendiri, bukan milik Windows. Tombol perkecil,
+perbesar, dan **tutup (✕)** ada di ujung kanan bilah judul itu. Bilah judulnya
+juga bisa diseret untuk memindahkan jendela, dan diklik ganda untuk
+memperbesar.
+
+Kalau ada anotasi di dokumen yang terbuka, menutup aplikasi akan bertanya lebih
+dulu — anotasi belum bisa disimpan ke berkas PDF sampai Fase 4, jadi menutup
+berarti kehilangannya.
+
 ### Membuka berkas dengan cara lain
 
+- **Tombol 📂 di toolbar** (paling kiri) atau `Ctrl+O` — bisa memilih beberapa
+  berkas sekaligus, masing-masing jadi satu tab. Tidak perlu menutup aplikasi
+  dulu.
 - **Seret & lepas** berkas PDF ke jendela.
 - **Klik ganda** berkas PDF di Windows Explorer, jika asosiasi berkas dipasang
   saat instalasi. Kalau aplikasi sudah berjalan, berkasnya menjadi tab baru di

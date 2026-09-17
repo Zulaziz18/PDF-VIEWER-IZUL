@@ -42,6 +42,15 @@ export const id = {
   "search.next": "Hasil berikutnya",
 
   "toolbar.sidebar": "Panel samping",
+  "toolbar.open": "Buka berkas lain",
+
+  "window.minimize": "Perkecil",
+  "window.maximize": "Perbesar",
+  "window.restore": "Pulihkan ukuran",
+  "window.close": "Tutup aplikasi",
+  "window.unsavedTitle": "Anotasi belum bisa disimpan",
+  "window.unsavedBody":
+    "Ada anotasi di dokumen yang terbuka. Menyimpan ke berkas PDF baru tersedia di Fase 4, jadi menutup aplikasi sekarang akan menghilangkannya. Tetap tutup?",
 
   "nav.page": "Halaman",
   "nav.previous": "Halaman sebelumnya",

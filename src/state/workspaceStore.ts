@@ -66,6 +66,8 @@ export interface WorkspaceState {
   activate(doc: number): Promise<void>;
   reorder(order: readonly number[]): Promise<void>;
   session(doc: number): DocumentStore | undefined;
+  /** True when any open document has edits that closing would lose. */
+  hasEdits(): boolean;
   activeSession(): DocumentStore;
   restoreSession(): Promise<void>;
   openStartupFiles(): Promise<void>;
@@ -101,6 +103,17 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
 
   session(doc: number) {
     return get().sessions.get(doc);
+  },
+
+  hasEdits() {
+    // `canUndo` is exactly the question: it is true from the first edit and
+    // false again only when everything has been undone. Counting annotations
+    // instead would miss a document edited and then emptied, which still has a
+    // history worth warning about.
+    for (const store of get().sessions.values()) {
+      if (store.getState().canUndo) return true;
+    }
+    return false;
   },
 
   activeSession() {

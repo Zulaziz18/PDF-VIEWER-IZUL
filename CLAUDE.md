@@ -455,6 +455,18 @@ seperti bug rendering**. Harness sekarang membandingkan piksel **di dalam
 halaman** lewat `--dump-dom`, dan butuh `--allow-file-access-from-files` karena
 tanpa itu gambar `file://` mencemari kanvas dan `getImageData` melempar.
 
+**Cacat UI yang dilaporkan pengguna saat menguji Fase 2/3, sudah diperbaiki:**
+jendela `decorations: false` tidak punya tombol perkecil/perbesar/tutup sama
+sekali — bilah judul kita tidak pernah menggambarnya, jadi satu-satunya jalan
+keluar adalah Alt+F4. Dan tombol "Buka Berkas" hanya ada di layar kosong, jadi
+begitu satu dokumen terbuka tidak ada cara terlihat untuk membuka yang kedua
+(hanya `Ctrl+O`, yang tidak seorang pun tahu). Keduanya kelas kesalahan yang
+sama: **fitur yang hanya bisa dicapai lewat pintasan atau tidak bisa dicapai
+sama sekali**. Perintah jendela juga butuh izin eksplisit di
+`capabilities/default.json` (`core:window:allow-minimize`,
+`allow-toggle-maximize`, `allow-close`, `allow-start-dragging`) — tanpa itu
+tombolnya diam saja, persis bug #1 Fase 1.
+
 **Yang belum dikerjakan di Fase 3:** menyimpan ke PDF (itu Fase 4 — anotasi
 masih hidup di memori sampai tab ditutup); penyuntingan teks langsung di atas
 halaman (isinya diketik lewat panel properti); dan **UI-nya belum pernah

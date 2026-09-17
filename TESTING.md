@@ -391,6 +391,11 @@ Hal-hal yang hanya bisa dinilai dengan memakainya, pada Windows sungguhan.
       kelimanya kembali, dan tab yang aktif adalah yang aktif sebelumnya.
 - [ ] Memindahkan salah satu berkasnya ke folder lain sebelum menjalankan ulang:
       berkas itu dilewati tanpa dialog galat, sisanya tetap kembali.
+- [ ] Tombol 📂 di toolbar membuka pemilih berkas, dan memilih dua berkas
+      sekaligus menghasilkan dua tab.
+- [ ] Tombol perkecil, perbesar, dan tutup di ujung kanan bilah judul bekerja;
+      bilah judulnya bisa diseret untuk memindahkan jendela.
+- [ ] Menutup aplikasi saat ada anotasi memunculkan pertanyaan lebih dulu.
 - [ ] Menyeret berkas PDF ke jendela membukanya sebagai tab baru.
 - [ ] Klik ganda berkas PDF di Explorer membukanya (perlu asosiasi berkas dari
       installer).

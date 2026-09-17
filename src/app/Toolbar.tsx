@@ -11,7 +11,9 @@
  */
 
 import type { JSX } from "react";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useDocument, type ZoomMode } from "@/state/documentStore";
+import { useWorkspace } from "@/state/workspaceStore";
 import type { ViewMode } from "@/viewport/layout";
 import { viewport } from "./viewportHandle";
 import { t } from "@/i18n";
@@ -58,6 +60,19 @@ const ZOOM_MODE_LABELS: Record<Exclude<ZoomMode, "custom">, StringKey> = {
   actual: "zoom.actual",
 };
 
+/** Opens a file into a new tab. The dialog is the plugin's, so it is the
+ * platform's own picker rather than something we drew. */
+async function pickAndOpen(): Promise<void> {
+  const chosen = await openDialog({
+    multiple: true,
+    filters: [{ name: "PDF", extensions: ["pdf"] }],
+  });
+  const paths = Array.isArray(chosen) ? chosen : typeof chosen === "string" ? [chosen] : [];
+  for (const path of paths) {
+    await useWorkspace.getState().openFile(path);
+  }
+}
+
 export function Toolbar(): JSX.Element {
   const page = useDocument((s) => s.page);
   const pageCount = useDocument((s) => s.pageCount);
@@ -75,6 +90,13 @@ export function Toolbar(): JSX.Element {
 
   return (
     <div className="h-11 shrink-0 flex items-center gap-1 px-2 border-b border-[var(--izul-border)] bg-[var(--izul-surface)]">
+      {/* The way into a second document. It existed only on the empty state and
+          as Ctrl+O, which meant that once anything was open there was no
+          visible way to open anything else — a reader should not have to know a
+          shortcut to use the tabs the application just grew. */}
+      <Button onClick={() => void pickAndOpen()} label="toolbar.open">
+        📂
+      </Button>
       <Button onClick={() => store().toggleSidebar()} label="toolbar.sidebar" active={sidebarOpen}>
         ☰
       </Button>
