@@ -38,6 +38,18 @@ use izul_ipc::ring::TileRing;
 use izul_ipc::{region_bytes, ChannelName, Listener, SharedRegion};
 use izul_model::geom::{PdfRectF, RotationQuarter};
 
+/// The server end of a worker's command channel.
+///
+/// `Listener::accept` returns a platform type that `izul-ipc` does not export
+/// under a nameable path, so the alias is spelled out here the same way the
+/// crate spells it internally. Naming `UnixStream` unconditionally would be a
+/// build failure on Windows — which is the platform this application ships on,
+/// and the one where a benchmark that does not compile is least useful.
+#[cfg(unix)]
+type WorkerStream = tokio::net::UnixStream;
+#[cfg(windows)]
+type WorkerStream = tokio::net::windows::named_pipe::NamedPipeServer;
+
 const SLOTS: u32 = 16;
 /// Documents open at once, straight from the pass criterion.
 const DOCUMENTS: usize = 50;
@@ -84,9 +96,10 @@ fn pdfium() -> Option<PathBuf> {
 
 /// Resident set of a process in kilobytes.
 ///
-/// `/proc/<pid>/statm` on Linux; on Windows the harness reports nothing rather
-/// than guessing, and the numbers are taken there with Task Manager against a
-/// real run. Reporting a made-up figure would be worse than reporting none.
+/// `/proc/<pid>/statm` on Linux; anywhere else the harness reports nothing
+/// rather than guessing, and says so once at the top of the run. On Windows the
+/// figures are taken with Task Manager against a real session instead —
+/// reporting a made-up number would be worse than reporting none.
 #[cfg(target_os = "linux")]
 fn rss_kb(pid: u32) -> Option<u64> {
     let statm = std::fs::read_to_string(format!("/proc/{pid}/statm")).ok()?;
@@ -101,7 +114,7 @@ fn rss_kb(_pid: u32) -> Option<u64> {
 
 struct Worker {
     child: std::process::Child,
-    stream: tokio::net::UnixStream,
+    stream: WorkerStream,
     _region: SharedRegion,
     _ring: TileRing,
     _listener: Listener,
@@ -250,6 +263,11 @@ async fn main() {
     let mut report = serde_json::Map::new();
     let profile = worker_binary().map(|(_, p)| p).unwrap_or("?");
     println!("izul-worker: profil {profile}");
+    if rss_kb(std::process::id()).is_none() {
+        println!(
+            "PERINGATAN: resident set tidak dapat dibaca di platform ini; angka memori di bawah nol dan tidak berarti apa-apa."
+        );
+    }
     report.insert("worker_profile".into(), profile.into());
 
     // ---- fifty documents open at once ------------------------------------
