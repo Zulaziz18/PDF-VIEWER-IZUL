@@ -31,6 +31,8 @@ import { useDocument } from "@/state/documentStore";
 import { useWorkspace } from "@/state/workspaceStore";
 import { t } from "@/i18n";
 
+let startupDone = false;
+
 export function App(): React.JSX.Element {
   const doc = useDocument((s) => s.doc);
   const error = useWorkspace((s) => s.error);
@@ -39,6 +41,12 @@ export function App(): React.JSX.Element {
   useOpenFilesFromOtherInstance();
 
   useEffect(() => {
+    // Once per run, not once per mount. React's development mode mounts every
+    // component twice on purpose, and the second mount would restore the same
+    // session a second time; the guard lives outside the component because that
+    // is the only place the two mounts share.
+    if (startupDone) return;
+    startupDone = true;
     const workspace = useWorkspace.getState();
     void workspace
       .restoreSession()

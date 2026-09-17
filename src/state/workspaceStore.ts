@@ -130,36 +130,21 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       await get().activate(existing.doc);
       return existing.doc;
     }
-    set({ busy: true, error: null });
+    // A tab only exists once `open_document` has returned, so the check above
+    // cannot see an open that is still in flight. Two calls for the same path
+    // that overlap — session restore racing the startup files, or React's
+    // development double-mount running the startup effect twice — would both
+    // pass it and produce two tabs on one file. The in-flight map is the
+    // missing half of the guard: the second caller waits for the first instead
+    // of starting a second open.
+    const running = opening.get(path);
+    if (running) return await running;
+    const attempt = openUnguarded(path, get, set);
+    opening.set(path, attempt);
     try {
-      const opened = await invoke<OpenedDoc>("open_document", { path });
-      const previous = get().activeSession().getState();
-      const store = createDocumentSession(opened, {
-        width: previous.viewportWidth,
-        height: previous.viewportHeight,
-      });
-      const sessions = new Map(get().sessions);
-      sessions.set(opened.doc, store);
-      const tab: Tab = {
-        doc: opened.doc,
-        path: opened.path,
-        name: opened.path.split(/[\\/]/).pop() ?? opened.path,
-        pageCount: opened.page_count,
-      };
-      set({
-        sessions,
-        tabs: [...get().tabs, tab],
-        activeDoc: opened.doc,
-        recent: [opened.doc, ...get().recent.filter((d) => d !== opened.doc)],
-        busy: false,
-        error: null,
-      });
-      void store.getState().loadOutline();
-      void trimCold(get().recent);
-      return opened.doc;
-    } catch (e) {
-      set({ busy: false, error: String(e) });
-      return null;
+      return await attempt;
+    } finally {
+      opening.delete(path);
     }
   },
 
@@ -278,3 +263,51 @@ function trimCold(recent: readonly number[]): void {
     });
   }
 }
+
+/**
+ * The open itself, with the duplicate guard already applied by `openFile`.
+ *
+ * Separate so the in-flight map holds exactly one promise per path: the guard
+ * has to sit outside the work it guards, or it would be re-entered by its own
+ * awaits.
+ */
+async function openUnguarded(
+  path: string,
+  get: () => WorkspaceState,
+  set: (partial: Partial<WorkspaceState>) => void,
+): Promise<number | null> {
+  set({ busy: true, error: null });
+  try {
+    const opened = await invoke<OpenedDoc>("open_document", { path });
+    const previous = get().activeSession().getState();
+    const store = createDocumentSession(opened, {
+      width: previous.viewportWidth,
+      height: previous.viewportHeight,
+    });
+    const sessions = new Map(get().sessions);
+    sessions.set(opened.doc, store);
+    const tab: Tab = {
+      doc: opened.doc,
+      path: opened.path,
+      name: opened.path.split(/[\\/]/).pop() ?? opened.path,
+      pageCount: opened.page_count,
+    };
+    set({
+      sessions,
+      tabs: [...get().tabs, tab],
+      activeDoc: opened.doc,
+      recent: [opened.doc, ...get().recent.filter((d) => d !== opened.doc)],
+      busy: false,
+      error: null,
+    });
+    void store.getState().loadOutline();
+    void trimCold(get().recent);
+    return opened.doc;
+  } catch (e) {
+    set({ busy: false, error: String(e) });
+    return null;
+  }
+}
+
+/** Opens in flight, by path. See `openFile`. */
+const opening = new Map<string, Promise<number | null>>();
