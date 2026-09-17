@@ -27,11 +27,37 @@
 import { BitmapCache, BITMAP_BUDGET_BYTES } from "./bitmapCache";
 import { Canvas2DSurface } from "./canvas";
 import type { PageMetrics, PdfRect, Rotation, Scale } from "./geometry";
-import { displaySize, pageSizePx, scaleKey, tilesCovering, zoomAbout } from "./geometry";
+import {
+  displaySize,
+  pageSizePx,
+  pixelsPerPoint,
+  scaleKey,
+  tilesCovering,
+  zoomAbout,
+} from "./geometry";
 import type { Layout, ViewMode, ViewRect } from "./layout";
 import { boxOf, dominantPage, layoutDocument, scrollToPage, visiblePages } from "./layout";
 import { prefetchPages, ScrollTracker } from "./prediction";
 import { buildHighlightLayer } from "./highlights";
+import type { PageBox } from "./annotLayer";
+import { pageAt, pageBox, toContentPoint, toPagePoint } from "./annotLayer";
+import { drawDisplayList } from "@/annots/canvas";
+import type { AnnotObject, DisplayListOut, PdfPoint } from "@/annots/types";
+import type { HandleId } from "@/annots/interaction";
+import { HANDLE_SIZE } from "@/annots/interaction";
+import {
+  angleTo,
+  boundsOf,
+  handleAt,
+  handlePoint,
+  normalise,
+  pick,
+  pickInside,
+  RESIZE_HANDLES,
+  resized,
+  scaleBetween,
+  snapAngle,
+} from "@/annots/interaction";
 import type { TextChar } from "./textLayer";
 import { buildTextLayer, fitTextLayer, groupIntoLines } from "./textLayer";
 import type { Priority, TileRef } from "./tileSource";
@@ -78,6 +104,15 @@ export interface RendererState {
   readonly texts: ReadonlyMap<number, readonly TextChar[]>;
   /** Boxes to paint over search matches, per page, in display space. */
   readonly highlights: ReadonlyMap<number, readonly PdfRect[]>;
+  /** Annotation objects per page, for hit-testing and selection chrome. */
+  readonly annots: ReadonlyMap<number, readonly AnnotObject[]>;
+  /** What to draw for them, built in Rust (SPEC 3.2). */
+  readonly annotLists: ReadonlyMap<number, readonly DisplayListOut[]>;
+  readonly selection: readonly number[];
+  /** Pixels for the image annotations, by `ImageRef`. */
+  readonly annotImages: ReadonlyMap<number, CanvasImageSource>;
+  /** The active tool; `null` is the selection arrow. */
+  readonly tool: string | null;
 }
 
 export interface RendererEvents {
@@ -91,6 +126,30 @@ export interface RendererEvents {
   onViewport(width: number, height: number): void;
   /** These pages are on screen and their text has not been fetched yet. */
   onWantText(pages: readonly number[]): void;
+  /** These pages are on screen and their annotations have not been fetched. */
+  onWantAnnots(pages: readonly number[]): void;
+  /** The selection changed through a click or a rubber band. */
+  onSelect(ids: readonly number[]): void;
+  /** A gesture finished and these objects have new geometry — one undo step. */
+  onTransform(objects: readonly AnnotObject[]): void;
+  /** The user drew something with a creation tool. */
+  onDraw(draft: DrawnShape): void;
+}
+
+/**
+ * What a creation tool produced, in page space.
+ *
+ * Deliberately geometry only: the store decides what kind of object to build
+ * from it and with what colours, because that is a matter of the current tool
+ * and the last-used style, not of where the pointer went.
+ */
+export interface DrawnShape {
+  readonly page: number;
+  readonly rect: PdfRect;
+  readonly from: PdfPoint;
+  readonly to: PdfPoint;
+  /** Sampled path, for the ink tool. */
+  readonly points: readonly PdfPoint[];
 }
 
 export interface FrameStats {
@@ -132,6 +191,11 @@ export class ViewportRenderer {
     generation: 0,
     texts: new Map(),
     highlights: new Map(),
+    annots: new Map(),
+    annotLists: new Map(),
+    annotImages: new Map(),
+    selection: [],
+    tool: null,
   };
   #layout: Layout = EMPTY_LAYOUT;
   #dpr = 1;
@@ -140,6 +204,8 @@ export class ViewportRenderer {
   #pending = new Set<string>();
   #textSignatures = new Map<number, string>();
   #highlightSignatures = new Map<number, string>();
+  /** The gesture in progress, if any. */
+  #gesture: Gesture | null = null;
   #reportedPage = -1;
   #stats: FrameStats = {
     lastFrameMs: 0,
@@ -398,6 +464,7 @@ export class ViewportRenderer {
     let drawn = 0;
     let missing = 0;
     const wantText: number[] = [];
+    const wantAnnots: number[] = [];
 
     for (const page of pages) {
       const box = boxOf(this.#layout, page);
@@ -447,8 +514,26 @@ export class ViewportRenderer {
         }
       }
 
+      // 4. Annotations, from the display lists the model built. The canvas
+      //    backend draws them; nothing here works out their geometry.
+      const lists = state.annotLists.get(page);
+      if (lists && lists.length > 0) {
+        const ctx = this.#surface.context();
+        const place = {
+          x: originX,
+          y: originY,
+          scale: pixelsPerPoint(this.#scale()),
+          pageHeight: size.height,
+        };
+        for (const list of lists) {
+          drawDisplayList(ctx, list.ops, place, state.annotImages);
+        }
+      }
+      if (!state.annots.has(page)) wantAnnots.push(page);
+
       if (!state.texts.has(page)) wantText.push(page);
     }
+    this.#drawSelection(view, dpr);
     this.#surface.present();
 
     // 4. Prefetch: previews for where the scroll is going.
@@ -460,6 +545,7 @@ export class ViewportRenderer {
     this.#syncTextLayer(pages);
     this.#syncHighlightLayer(pages);
     if (wantText.length > 0) this.#events.onWantText(wantText);
+    if (wantAnnots.length > 0) this.#events.onWantAnnots(wantAnnots);
 
     const page = dominantPage(this.#layout, view);
     if (page !== this.#reportedPage) {
@@ -603,5 +689,475 @@ export class ViewportRenderer {
       this.#host.textLayer.appendChild(layer);
       this.#highlightSignatures.set(page, signature);
     }
+  }
+
+  // ---- annotation editing ------------------------------------------------
+
+  /**
+   * Draws the selection frame, its handles, and whatever gesture is in flight.
+   *
+   * Chrome, not content: none of it is part of the document, so none of it goes
+   * through the display list. Drawn on the canvas rather than as elements
+   * because it has to move with the object at pointer speed, and a DOM node per
+   * handle would be laid out on every frame of a drag.
+   */
+  #drawSelection(view: ViewRect, dpr: number): void {
+    const state = this.#state;
+    const ctx = this.#surface.context();
+    const selected = this.#selectedObjects();
+    const gesture = this.#gesture;
+
+    if (gesture?.kind === "band" && gesture.current) {
+      const box = this.#boxOfPage(gesture.page);
+      if (box) {
+        const a = toContentPoint(box, gesture.origin);
+        const b = toContentPoint(box, gesture.current);
+        ctx.save();
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.strokeStyle = "rgba(47, 111, 235, 0.9)";
+        ctx.fillStyle = "rgba(47, 111, 235, 0.12)";
+        ctx.lineWidth = 1;
+        const x = Math.min(a.x, b.x) - view.x;
+        const y = Math.min(a.y, b.y) - view.y;
+        const w = Math.abs(a.x - b.x);
+        const h = Math.abs(a.y - b.y);
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeRect(x, y, w, h);
+        ctx.restore();
+      }
+    }
+
+    if (gesture?.kind === "create" && gesture.current) {
+      const box = this.#boxOfPage(gesture.page);
+      if (box) {
+        ctx.save();
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.strokeStyle = "rgba(47, 111, 235, 0.9)";
+        ctx.setLineDash([4, 3]);
+        ctx.lineWidth = 1;
+        if (gesture.points.length > 1) {
+          ctx.beginPath();
+          for (const [i, p] of gesture.points.entries()) {
+            const c = toContentPoint(box, p);
+            if (i === 0) ctx.moveTo(c.x - view.x, c.y - view.y);
+            else ctx.lineTo(c.x - view.x, c.y - view.y);
+          }
+          ctx.stroke();
+        } else {
+          const a = toContentPoint(box, gesture.origin);
+          const b = toContentPoint(box, gesture.current);
+          ctx.strokeRect(
+            Math.min(a.x, b.x) - view.x,
+            Math.min(a.y, b.y) - view.y,
+            Math.abs(a.x - b.x),
+            Math.abs(a.y - b.y),
+          );
+        }
+        ctx.restore();
+      }
+    }
+
+    if (selected.length === 0 || state.tool !== null) return;
+    const page = selected[0]?.page ?? 0;
+    const box = this.#boxOfPage(page);
+    const bounds = boundsOf(selected);
+    if (!box || !bounds) return;
+
+    const topLeft = toContentPoint(box, { x: bounds.left, y: bounds.top });
+    const bottomRight = toContentPoint(box, { x: bounds.right, y: bounds.bottom });
+    ctx.save();
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.strokeStyle = "rgba(47, 111, 235, 0.95)";
+    ctx.lineWidth = 1;
+    ctx.setLineDash([3, 2]);
+    ctx.strokeRect(
+      topLeft.x - view.x,
+      topLeft.y - view.y,
+      bottomRight.x - topLeft.x,
+      bottomRight.y - topLeft.y,
+    );
+    ctx.setLineDash([]);
+
+    // Handles are drawn at a fixed pixel size so they stay usable at any zoom.
+    ctx.fillStyle = "#ffffff";
+    const half = HANDLE_SIZE / 2;
+    const marks: HandleId[] = selected.length === 1 ? [...RESIZE_HANDLES, "rotate"] : [];
+    for (const handle of marks) {
+      const p = toContentPoint(box, handlePoint(bounds, handle));
+      const x = p.x - view.x;
+      const y = p.y - view.y;
+      if (handle === "rotate") {
+        ctx.beginPath();
+        ctx.arc(x, y, half, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(x, y + half);
+        ctx.lineTo(x, toContentPoint(box, { x: 0, y: bounds.top }).y - view.y);
+        ctx.stroke();
+      } else {
+        ctx.fillRect(x - half, y - half, HANDLE_SIZE, HANDLE_SIZE);
+        ctx.strokeRect(x - half, y - half, HANDLE_SIZE, HANDLE_SIZE);
+      }
+    }
+    ctx.restore();
+  }
+
+  #boxOfPage(page: number): PageBox | null {
+    return pageBox(this.#layout, page, this.#state.pageSizes, this.#rotationOf);
+  }
+
+  #selectedObjects(): AnnotObject[] {
+    const ids = new Set(this.#state.selection);
+    const out: AnnotObject[] = [];
+    for (const list of this.#state.annots.values()) {
+      for (const obj of list) {
+        if (ids.has(obj.id)) out.push(obj);
+      }
+    }
+    return out;
+  }
+
+  /** Client coordinates to this scroller's content space. */
+  #contentOf(event: PointerEvent): { x: number; y: number } {
+    const rect = this.#host.scroller.getBoundingClientRect();
+    return {
+      x: event.clientX - rect.left + this.#host.scroller.scrollLeft,
+      y: event.clientY - rect.top + this.#host.scroller.scrollTop,
+    };
+  }
+
+  #pageUnder(point: { x: number; y: number }): PageBox | null {
+    return pageAt(this.#layout, this.#view(), this.#state.pageSizes, this.#rotationOf, point);
+  }
+
+  /**
+   * Starts a gesture.
+   *
+   * Which one depends on what is under the pointer, in the order a user
+   * expects: a handle of the current selection first (it is drawn on top and is
+   * the smallest target), then an object, then empty space.
+   */
+  onAnnotPointerDown(event: PointerEvent): boolean {
+    if (this.#state.doc === null) return false;
+    const content = this.#contentOf(event);
+    const box = this.#pageUnder(content);
+    if (!box) return false;
+    const point = toPagePoint(box, content);
+    const tool = this.#state.tool;
+
+    if (tool !== null) {
+      this.#gesture = {
+        kind: "create",
+        page: box.page,
+        origin: point,
+        current: point,
+        points: [point],
+        handle: null,
+        before: [],
+      };
+      return true;
+    }
+
+    const selected = this.#selectedObjects();
+    const bounds = boundsOf(selected);
+    if (bounds && selected.length === 1) {
+      const handle = handleAt(bounds, point, box.zoom);
+      if (handle) {
+        this.#gesture = {
+          kind: handle === "rotate" ? "rotate" : "resize",
+          page: box.page,
+          origin: point,
+          current: point,
+          points: [],
+          handle,
+          before: selected.map((o) => structuredClone(o)),
+        };
+        return true;
+      }
+    }
+
+    const objects = this.#state.annots.get(box.page) ?? [];
+    const hit = pick(objects, point, 3 / box.zoom + 3);
+    if (hit) {
+      const additive = event.shiftKey || event.ctrlKey || event.metaKey;
+      const ids = additive
+        ? this.#state.selection.includes(hit.id)
+          ? this.#state.selection.filter((id) => id !== hit.id)
+          : [...this.#state.selection, hit.id]
+        : this.#state.selection.includes(hit.id)
+          ? this.#state.selection
+          : [hit.id];
+      this.#events.onSelect(ids);
+      const moving = objects.filter((o) => ids.includes(o.id) && !o.locked);
+      this.#gesture = {
+        kind: "move",
+        page: box.page,
+        origin: point,
+        current: point,
+        points: [],
+        handle: null,
+        before: moving.map((o) => structuredClone(o)),
+      };
+      return true;
+    }
+
+    // Empty space: a rubber band, and the selection is dropped only when the
+    // band turns out to be a click.
+    this.#gesture = {
+      kind: "band",
+      page: box.page,
+      origin: point,
+      current: point,
+      points: [],
+      handle: null,
+      before: [],
+    };
+    return true;
+  }
+
+  onAnnotPointerMove(event: PointerEvent): boolean {
+    const gesture = this.#gesture;
+    if (!gesture) return false;
+    const box = this.#boxOfPage(gesture.page);
+    if (!box) return false;
+    const point = toPagePoint(box, this.#contentOf(event));
+    gesture.current = point;
+    if (gesture.kind === "create") gesture.points.push(point);
+    if (gesture.kind === "move" || gesture.kind === "resize" || gesture.kind === "rotate") {
+      this.#previewTransform(gesture, event.shiftKey);
+    }
+    this.requestFrame();
+    return true;
+  }
+
+  /**
+   * Moves the *local* copies so the drag is drawn at pointer speed.
+   *
+   * The backend is told once, when the pointer goes up: one gesture is one undo
+   * step (SPEC 8), and a round trip per frame would put the network between the
+   * user's hand and the pixels.
+   */
+  #previewTransform(gesture: Gesture, snap: boolean): void {
+    const dx = gesture.current.x - gesture.origin.x;
+    const dy = gesture.current.y - gesture.origin.y;
+    const bounds = boundsOf(gesture.before);
+    if (!bounds) return;
+    const live = this.#state.annots.get(gesture.page);
+    if (!live) return;
+
+    for (const original of gesture.before) {
+      const target = live.find((o) => o.id === original.id);
+      if (!target) continue;
+      const patched = structuredClone(original);
+      if (gesture.kind === "move") {
+        translateObject(patched, dx, dy);
+      } else if (gesture.kind === "resize" && gesture.handle) {
+        const after = resized(bounds, gesture.handle, dx, dy);
+        const { origin, sx, sy } = scaleBetween(bounds, after);
+        scaleObject(patched, origin, sx, sy);
+      } else if (gesture.kind === "rotate") {
+        patched.rotation = snapAngle(angleTo(bounds, gesture.current), snap);
+      }
+      Object.assign(target, patched);
+    }
+  }
+
+  onAnnotPointerUp(event: PointerEvent): boolean {
+    const gesture = this.#gesture;
+    this.#gesture = null;
+    if (!gesture) return false;
+    const box = this.#boxOfPage(gesture.page);
+    if (!box) return false;
+    const point = toPagePoint(box, this.#contentOf(event));
+
+    switch (gesture.kind) {
+      case "create": {
+        const rect = normalise({
+          left: gesture.origin.x,
+          bottom: gesture.origin.y,
+          right: point.x,
+          top: point.y,
+        });
+        this.#events.onDraw({
+          page: gesture.page,
+          rect,
+          from: gesture.origin,
+          to: point,
+          points: gesture.points,
+        });
+        break;
+      }
+      case "band": {
+        const band = {
+          left: gesture.origin.x,
+          bottom: gesture.origin.y,
+          right: point.x,
+          top: point.y,
+        };
+        const objects = this.#state.annots.get(gesture.page) ?? [];
+        const caught = pickInside(objects, band);
+        this.#events.onSelect(caught.map((o) => o.id));
+        break;
+      }
+      case "move":
+      case "resize":
+      case "rotate": {
+        const moved = (this.#state.annots.get(gesture.page) ?? []).filter((o) =>
+          gesture.before.some((b) => b.id === o.id),
+        );
+        // A click that moved nothing is not an edit, and must not cost an undo
+        // step: pressing on an object to select it would otherwise fill the
+        // history with no-ops.
+        const changed = moved.some((o) => {
+          const before = gesture.before.find((b) => b.id === o.id);
+          return before !== undefined && JSON.stringify(before) !== JSON.stringify(o);
+        });
+        if (changed) this.#events.onTransform(moved.map((o) => structuredClone(o)));
+        break;
+      }
+    }
+    this.requestFrame();
+    return true;
+  }
+
+  /**
+   * The quads of the current text selection, in page space.
+   *
+   * This is what a highlight is made of (SPEC 11.2): one quad per line of
+   * selected text, taken from the browser's own selection rectangles rather
+   * than re-derived from character boxes. The browser already knows exactly
+   * which glyphs are selected — asking it is both simpler and more correct than
+   * hit-testing the text layer ourselves.
+   *
+   * `null` when nothing is selected, or when the selection is not inside this
+   * viewport's text layer.
+   */
+  selectionQuads(): { page: number; quads: PdfRect[] } | null {
+    const selection = document.getSelection();
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0) return null;
+    const range = selection.getRangeAt(0);
+    if (!this.#host.textLayer.contains(range.commonAncestorContainer)) return null;
+
+    const scrollerRect = this.#host.scroller.getBoundingClientRect();
+    const toContent = (x: number, y: number): { x: number; y: number } => ({
+      x: x - scrollerRect.left + this.#host.scroller.scrollLeft,
+      y: y - scrollerRect.top + this.#host.scroller.scrollTop,
+    });
+
+    const rects = Array.from(range.getClientRects()).filter((r) => r.width > 0 && r.height > 0);
+    if (rects.length === 0) return null;
+
+    // Every rect is attributed to the page it starts on; a selection dragged
+    // across a page break produces quads on the first page only, which is what
+    // a single annotation can honestly cover.
+    const first = this.#pageUnder(toContent(rects[0]?.left ?? 0, rects[0]?.top ?? 0));
+    if (!first) return null;
+    const quads: PdfRect[] = [];
+    for (const rect of rects) {
+      const topLeft = toPagePoint(first, toContent(rect.left, rect.top));
+      const bottomRight = toPagePoint(first, toContent(rect.right, rect.bottom));
+      quads.push({
+        left: Math.min(topLeft.x, bottomRight.x),
+        bottom: Math.min(topLeft.y, bottomRight.y),
+        right: Math.max(topLeft.x, bottomRight.x),
+        top: Math.max(topLeft.y, bottomRight.y),
+      });
+    }
+    return { page: first.page, quads };
+  }
+
+  /** Abandons a gesture — the pointer left the window, or Escape was pressed. */
+  cancelGesture(): void {
+    this.#gesture = null;
+    this.requestFrame();
+  }
+
+  get gestureActive(): boolean {
+    return this.#gesture !== null;
+  }
+}
+
+/** A gesture in progress. */
+interface Gesture {
+  kind: "move" | "resize" | "rotate" | "band" | "create";
+  page: number;
+  origin: PdfPoint;
+  current: PdfPoint;
+  points: PdfPoint[];
+  handle: HandleId | null;
+  /** Copies taken when the gesture started, for the preview and the undo step. */
+  before: AnnotObject[];
+}
+
+/**
+ * Moves an object's geometry, payload and all.
+ *
+ * A mirror of `AnnotObject::translate` in the model, and the duplication is
+ * deliberate rather than an oversight: this one only ever touches the *preview*
+ * copies during a drag, and the authoritative move is done by the Rust code
+ * when the gesture ends. If the two ever disagree, the object snaps into place
+ * on release — visible, and far better than the frontend's idea of the
+ * geometry ending up in the file.
+ */
+function translateObject(obj: AnnotObject, dx: number, dy: number): void {
+  const shiftRect = (r: { left: number; bottom: number; right: number; top: number }): void => {
+    r.left += dx;
+    r.right += dx;
+    r.bottom += dy;
+    r.top += dy;
+  };
+  const shiftPoint = (p: { x: number; y: number }): void => {
+    p.x += dx;
+    p.y += dy;
+  };
+  shiftRect(obj.rect);
+  const payload = obj.payload;
+  if ("Markup" in payload) payload.Markup.quads.forEach(shiftRect);
+  else if ("Ink" in payload) payload.Ink.strokes.forEach((s) => s.forEach(shiftPoint));
+  else if ("Polygon" in payload) payload.Polygon.points.forEach(shiftPoint);
+  else if ("Line" in payload) {
+    shiftPoint(payload.Line.from);
+    shiftPoint(payload.Line.to);
+  }
+}
+
+/** Scales an object about a pivot; the preview half of `AnnotObject::scale_about`. */
+function scaleObject(obj: AnnotObject, origin: PdfPoint, sx: number, sy: number): void {
+  const s = (Math.abs(sx) + Math.abs(sy)) / 2;
+  const mapPoint = (p: { x: number; y: number }): void => {
+    p.x = origin.x + (p.x - origin.x) * sx;
+    p.y = origin.y + (p.y - origin.y) * sy;
+  };
+  const mapRect = (r: { left: number; bottom: number; right: number; top: number }): void => {
+    const a = { x: r.left, y: r.bottom };
+    const b = { x: r.right, y: r.top };
+    mapPoint(a);
+    mapPoint(b);
+    r.left = Math.min(a.x, b.x);
+    r.right = Math.max(a.x, b.x);
+    r.bottom = Math.min(a.y, b.y);
+    r.top = Math.max(a.y, b.y);
+  };
+  mapRect(obj.rect);
+  const payload = obj.payload;
+  if ("Markup" in payload) payload.Markup.quads.forEach(mapRect);
+  else if ("Ink" in payload) {
+    payload.Ink.strokes.forEach((stroke) => stroke.forEach(mapPoint));
+    payload.Ink.width *= s;
+  } else if ("Polygon" in payload) {
+    payload.Polygon.points.forEach(mapPoint);
+    payload.Polygon.style.stroke_width *= s;
+  } else if ("Line" in payload) {
+    mapPoint(payload.Line.from);
+    mapPoint(payload.Line.to);
+    payload.Line.width *= s;
+    payload.Line.arrow_head *= s;
+  } else if ("Shape" in payload) {
+    payload.Shape.style.stroke_width *= s;
+  } else if ("FreeText" in payload) {
+    payload.FreeText.font.size *= s;
+  } else if ("Stamp" in payload) {
+    payload.Stamp.font.size *= s;
   }
 }

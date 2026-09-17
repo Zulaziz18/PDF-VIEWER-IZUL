@@ -91,13 +91,25 @@ pub type Transaction = Vec<Op>;
 /// here. This is the layer the undo stack works on and the layer the display
 /// list is built from, and keeping it free of everything else is what lets a
 /// parity bug be reproduced in a unit test (SPEC 5).
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct AnnotDoc {
     /// Keyed and ordered by id so iteration is deterministic — the appearance
     /// streams of a page are written in this order, and a `HashMap` would make
     /// the saved file differ between runs for no reason.
     objects: BTreeMap<AnnotId, AnnotObject>,
     next_id: u64,
+}
+
+/// Hand-written rather than derived, and that is not a style choice: a derived
+/// `Default` would start `next_id` at 0, and zero is the sentinel the command
+/// layer uses for "this object has no id yet". A document created through
+/// `Default` would then hand out that sentinel as a real id, and the first
+/// annotation drawn in it would be treated as un-inserted forever. Caught by a
+/// test rather than by a user, but only just.
+impl Default for AnnotDoc {
+    fn default() -> Self {
+        AnnotDoc::new()
+    }
 }
 
 impl AnnotDoc {
@@ -535,6 +547,17 @@ mod tests {
         let b: Vec<AnnotId> = doc.iter().map(|o| o.id).collect();
         assert_eq!(a, b);
         assert!(a.windows(2).all(|w| w[0] < w[1]));
+    }
+
+    /// Zero is the command layer's "no id yet"; a document must never hand it
+    /// out, however it was created.
+    #[test]
+    fn a_default_document_never_hands_out_the_zero_id() {
+        let mut from_new = AnnotDoc::new();
+        let mut from_default = AnnotDoc::default();
+        assert_eq!(from_new.fresh_id(), from_default.fresh_id());
+        assert_ne!(from_default.fresh_id().0, 0);
+        assert_eq!(AnnotDoc::default(), AnnotDoc::new());
     }
 
     #[test]

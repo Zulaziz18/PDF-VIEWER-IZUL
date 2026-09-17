@@ -15,6 +15,7 @@ use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
+use crate::annots::{AnnotState, EditResult};
 use crate::indexing::{IndexProgress, Indexer, Job};
 use crate::render::{DocInfo, RenderService, RenderStats, TileKey, TileKind};
 use crate::supervisor::Pool;
@@ -40,6 +41,8 @@ pub struct AppState {
     /// Paths the process was started with — a double-clicked PDF, on Windows
     /// with the file association installed.
     pub startup_files: Vec<String>,
+    /// Annotations and their undo history, per document (SPEC 8).
+    pub annots: Arc<AnnotState>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -362,6 +365,7 @@ pub async fn close_document(state: tauri::State<'_, AppState>, doc: u64) -> CmdR
         let _ = Pool::ask(&worker, Request::Close { doc: DocId(doc) }).await;
     }
     state.render.forget(doc);
+    state.annots.forget(doc);
     state.workspace.lock().remove(doc);
     state.save_session();
     Ok(())
@@ -879,4 +883,173 @@ pub async fn search_regex_page(
             rects: textsearch::rects_for_range(&chars, start as usize, len as usize),
         })
         .collect())
+}
+
+// ---------------------------------------------------------------------------
+// Annotations (SPEC 8, SPEC 11.2)
+// ---------------------------------------------------------------------------
+
+use izul_model::annot::{AnnotObject, AnnotPayload, FontSpec};
+
+/// One object's display list, as the canvas backend consumes it.
+///
+/// The list is built in Rust, by the same pure function the appearance-stream
+/// backend reads, and handed over as data. The frontend draws it; it never
+/// works out geometry of its own. That is the whole parity mechanism (SPEC 3.2)
+/// and it is why this command exists at all rather than the frontend being told
+/// "here is a rectangle, draw it".
+#[derive(Debug, Serialize)]
+pub struct DisplayListOut {
+    pub id: u64,
+    pub ops: izul_model::DisplayList,
+}
+
+/// The text an object will draw, for the metric pre-fetch.
+fn text_of(obj: &AnnotObject) -> Option<(&FontSpec, &str)> {
+    match &obj.payload {
+        AnnotPayload::FreeText { text, font, .. } => Some((font, text.as_str())),
+        AnnotPayload::Stamp { label, font, .. } => Some((font, label.as_str())),
+        _ => None,
+    }
+}
+
+/// Makes sure the metrics for whatever text these objects draw are cached.
+///
+/// Returns an error naming the characters the face does not have, which is what
+/// SPEC 11.2 asks for instead of drawing empty boxes.
+async fn prepare_fonts(state: &AppState, doc: u64, objects: &[AnnotObject]) -> CmdResult<()> {
+    for obj in objects {
+        let Some((spec, text)) = text_of(obj) else {
+            continue;
+        };
+        if text.is_empty() {
+            continue;
+        }
+        let missing = state
+            .annots
+            .ensure_metrics(&state.pool, doc, spec, text)
+            .await?;
+        if !missing.is_empty() {
+            let chars: String = missing.into_iter().take(8).collect();
+            return Err(format!(
+                "font {} tidak memuat karakter: {chars}",
+                spec.family
+            ));
+        }
+    }
+    Ok(())
+}
+
+#[tauri::command]
+pub fn annot_list(
+    state: tauri::State<'_, AppState>,
+    doc: u64,
+    page: Option<u32>,
+) -> CmdResult<Vec<AnnotObject>> {
+    Ok(state.annots.objects(doc, page))
+}
+
+#[tauri::command]
+pub async fn annot_add(
+    state: tauri::State<'_, AppState>,
+    doc: u64,
+    object: AnnotObject,
+) -> CmdResult<(AnnotObject, EditResult)> {
+    prepare_fonts(&state, doc, std::slice::from_ref(&object)).await?;
+    state.annots.add(doc, object).map_err(|e| e.to_string())
+}
+
+/// Replaces objects as one undo step — every finished gesture, and every
+/// change from the properties panel.
+#[tauri::command]
+pub async fn annot_replace(
+    state: tauri::State<'_, AppState>,
+    doc: u64,
+    objects: Vec<AnnotObject>,
+) -> CmdResult<EditResult> {
+    prepare_fonts(&state, doc, &objects).await?;
+    state
+        .annots
+        .replace(doc, objects)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn annot_delete(
+    state: tauri::State<'_, AppState>,
+    doc: u64,
+    ids: Vec<u64>,
+) -> CmdResult<EditResult> {
+    state.annots.delete(doc, &ids).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn annot_undo(
+    state: tauri::State<'_, AppState>,
+    doc: u64,
+    page: Option<u32>,
+) -> CmdResult<EditResult> {
+    state.annots.undo(doc, page).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn annot_redo(
+    state: tauri::State<'_, AppState>,
+    doc: u64,
+    page: Option<u32>,
+) -> CmdResult<EditResult> {
+    state.annots.redo(doc, page).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn annot_history(state: tauri::State<'_, AppState>, doc: u64) -> CmdResult<(bool, bool)> {
+    Ok(state.annots.history(doc))
+}
+
+/// The display lists for one page.
+///
+/// Async because it may have to ask a worker for font metrics first — the one
+/// thing the UI process cannot answer for itself, because PDFium lives in the
+/// sandbox (SPEC 5).
+#[tauri::command]
+pub async fn annot_display_lists(
+    state: tauri::State<'_, AppState>,
+    doc: u64,
+    page: u32,
+) -> CmdResult<Vec<DisplayListOut>> {
+    let objects = state.annots.objects(doc, Some(page));
+    prepare_fonts(&state, doc, &objects).await.ok();
+    Ok(state
+        .annots
+        .display_lists(doc, page)
+        .into_iter()
+        .map(|(id, ops)| DisplayListOut { id, ops })
+        .collect())
+}
+
+/// Stores an image file and returns the handle an `Image` annotation refers to.
+///
+/// The bytes stay in memory for this run. Writing them into the PDF is Phase 4;
+/// until then an image annotation is as non-destructive as every other edit
+/// (SPEC 8), and the canvas fetches the pixels back through
+/// `izul://image/{doc}/{ref}`.
+#[tauri::command]
+pub fn annot_add_image(
+    state: tauri::State<'_, AppState>,
+    doc: u64,
+    path: String,
+) -> CmdResult<u32> {
+    let bytes = std::fs::read(&path).map_err(|e| format!("tidak dapat membaca {path}: {e}"))?;
+    // A generous cap, and a cap all the same: this is held in memory per
+    // document, and a 400 MB TIFF pasted into a tab should be refused with a
+    // message rather than by the process dying.
+    const MAX_BYTES: usize = 64 * 1024 * 1024;
+    if bytes.len() > MAX_BYTES {
+        return Err(format!(
+            "gambar terlalu besar ({} MB, batas {} MB)",
+            bytes.len() / (1024 * 1024),
+            MAX_BYTES / (1024 * 1024)
+        ));
+    }
+    state.annots.add_image(doc, bytes)
 }

@@ -31,16 +31,15 @@
 //! same display lists. The two together are the contract; this file is the one
 //! that can run in CI without a display.
 //!
-//! ## Why the text in the baselines is unevenly spaced
+//! ## Where the metrics come from
 //!
-//! The layout uses [`FixedFont`], where every glyph is 0.55 em wide, while
-//! PDFium draws the glyphs of real Helvetica — so an `i` sits in a slot as wide
-//! as an `m`. That is deliberate: a baseline whose spacing depended on the
-//! fonts installed on the machine would fail on the next machine for reasons
-//! that have nothing to do with the code. It does not weaken what is under
-//! test, because *both* backends take their positions from the same metrics —
-//! which is the property being proved. Phase 4 embeds the user's font and
-//! supplies its real metrics, and the baselines are regenerated then.
+//! From PDFium itself (`fonts::StandardFonts`), not from a table written from
+//! memory and not from whatever fonts the machine has installed. PDFium is
+//! pinned to one build in `vendor/`, so its standard-14 widths are as fixed as
+//! anything else in the repository — and using the same metrics the renderer
+//! will draw with is the point: text laid out against one set of widths and
+//! drawn with another drifts across the line, which is the one parity failure a
+//! display list cannot prevent by itself.
 //!
 //! ## Updating a baseline
 //!
@@ -54,6 +53,7 @@
 
 use std::path::PathBuf;
 
+use crate::fonts::{metrics_document, StandardFonts};
 use crate::render::Quality;
 use izul_model::annot::{
     AnnotId, AnnotKind, AnnotObject, AnnotPayload, FontSpec, NoteIcon, ShapeStyle, TextAlign,
@@ -61,7 +61,6 @@ use izul_model::annot::{
 use izul_model::ap::{appearance, Appearance};
 use izul_model::build::display_list;
 use izul_model::display::{ImageRef, Rgba};
-use izul_model::font::FixedFont;
 use izul_model::geom::{PdfPointF, PdfRectF};
 
 /// Page the annotations are drawn on, in points.
@@ -80,6 +79,56 @@ const CHANNEL_TOLERANCE: u8 = 8;
 
 /// SPEC 3.3's threshold: fewer than 0.5 % of pixels may differ.
 const MAX_DIFFERING_FRACTION: f64 = 0.005;
+
+/// A 2x2 checker, which makes a wrong image matrix obvious: a flipped or
+/// transposed placement moves the coloured squares. Shared between the PDF the
+/// baseline is rendered from and the data URL the canvas harness draws, so both
+/// halves of the parity check are looking at the same image.
+const CHECKER: [u8; 12] = [
+    220, 40, 40, // red
+    40, 80, 220, // blue
+    250, 210, 40, // yellow
+    30, 150, 90, // green
+];
+
+/// The checker as a PNG data URL, for `tools/canvas-parity`.
+fn checker_data_url() -> String {
+    let mut rgba = Vec::with_capacity(16);
+    for px in CHECKER.chunks_exact(3) {
+        rgba.extend_from_slice(px);
+        rgba.push(255);
+    }
+    let buffer: image::RgbaImage = match image::ImageBuffer::from_raw(2, 2, rgba) {
+        Some(b) => b,
+        None => return String::new(),
+    };
+    let mut out = std::io::Cursor::new(Vec::new());
+    if buffer.write_to(&mut out, image::ImageFormat::Png).is_err() {
+        return String::new();
+    }
+    format!("data:image/png;base64,{}", base64(&out.into_inner()))
+}
+
+/// Minimal base64, to keep a dev-dependency out of the crate for six lines.
+fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::new();
+    for chunk in bytes.chunks(3) {
+        let b0 = chunk.first().copied().unwrap_or(0) as u32;
+        let b1 = chunk.get(1).copied().unwrap_or(0) as u32;
+        let b2 = chunk.get(2).copied().unwrap_or(0) as u32;
+        let n = (b0 << 16) | (b1 << 8) | b2;
+        for (i, shift) in [18, 12, 6, 0].into_iter().enumerate() {
+            if i > chunk.len() {
+                out.push('=');
+            } else {
+                let idx = ((n >> shift) & 63) as usize;
+                out.push(char::from(ALPHABET.get(idx).copied().unwrap_or(b'=')));
+            }
+        }
+    }
+    out
+}
 
 fn golden_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("golden")
@@ -235,14 +284,7 @@ fn page_with(ap: &Appearance, needs_image: bool) -> Vec<u8> {
     }
     resources.push_str(">>");
 
-    // A 2x2 checker, which makes a wrong image matrix obvious: a flipped or
-    // transposed placement moves the coloured squares.
-    let pixels: [u8; 12] = [
-        220, 40, 40, // red
-        40, 80, 220, // blue
-        250, 210, 40, // yellow
-        30, 150, 90, // green
-    ];
+    let pixels = CHECKER;
 
     let mut objects: Vec<Vec<u8>> = vec![
         b"<</Type/Catalog/Pages 2 0 R>>".to_vec(),
@@ -295,11 +337,7 @@ fn page_with(ap: &Appearance, needs_image: bool) -> Vec<u8> {
 }
 
 /// Renders the page and returns tightly packed RGBA.
-fn render(pdf: Vec<u8>) -> (u32, u32, Vec<u8>) {
-    let (engine, _pdfium) = match crate::test_support::engine() {
-        Some(e) => (e, crate::test_support::pdfium_lock()),
-        None => panic!("PDFium belum diambil; jalankan vendor/pdfium/fetch.sh"),
-    };
+fn render(engine: &'static crate::engine::Engine, pdf: Vec<u8>) -> (u32, u32, Vec<u8>) {
     let doc = engine
         .open_bytes(pdf, None::<&str>, None)
         .expect("dokumen terbuka");
@@ -318,6 +356,41 @@ fn render(pdf: Vec<u8>) -> (u32, u32, Vec<u8>) {
         }
     }
     (w, h, rgba)
+}
+
+/// Writes the display list next to its baseline, for the canvas comparison.
+fn dump_display_list(
+    kind: AnnotKind,
+    rotated: bool,
+    list: &izul_model::DisplayList,
+    width: u32,
+    height: u32,
+) {
+    let name = format!(
+        "{}{}.json",
+        format!("{kind:?}").to_lowercase(),
+        if rotated { "-rotated" } else { "" }
+    );
+    let images: serde_json::Value = if matches!(kind, AnnotKind::Image) {
+        serde_json::json!({ "0": checker_data_url() })
+    } else {
+        serde_json::json!({})
+    };
+    let payload = serde_json::json!({
+        "width": width,
+        "height": height,
+        // Image resources the canvas backend needs; PDFium gets them from the
+        // PDF's own XObject table.
+        "images": images,
+        // The page's placement on the canvas, which is all the canvas backend
+        // needs beyond the list itself.
+        "placement": { "x": 0, "y": 0, "scale": SCALE, "pageHeight": PAGE_H },
+        "ops": list,
+    });
+    let path = golden_dir().join(name);
+    if let Ok(text) = serde_json::to_string_pretty(&payload) {
+        let _ = std::fs::write(path, text);
+    }
 }
 
 /// Fraction of pixels that differ by more than the tolerance.
@@ -344,13 +417,12 @@ fn check(kind: AnnotKind, rotated: bool) {
         obj.rotation = 12.0;
         obj.opacity = 0.8;
     }
-    let fonts = FixedFont {
-        // Helvetica's real advance for a lowercase letter is around 0.55 em;
-        // close enough that the baseline looks like text rather than a pile-up,
-        // and fixed so the baseline does not depend on an installed font.
-        advance_milli: 550,
-        ..Default::default()
+    let (engine, _pdfium) = match crate::test_support::engine() {
+        Some(e) => (e, crate::test_support::pdfium_lock()),
+        None => panic!("PDFium belum diambil"),
     };
+    let metrics_doc = metrics_document(engine).expect("dokumen metrik");
+    let fonts = StandardFonts::new(engine, metrics_doc.handle());
     let list = display_list(&obj, &fonts).expect("display list");
     assert!(list.is_balanced(), "{kind:?}: daftar tidak seimbang");
     let ap = appearance(&list, obj.rect);
@@ -361,7 +433,13 @@ fn check(kind: AnnotKind, rotated: bool) {
     );
 
     let needs_image = !ap.resources.images.is_empty();
-    let (w, h, actual) = render(page_with(&ap, needs_image));
+    let (w, h, actual) = render(engine, page_with(&ap, needs_image));
+
+    // The same list, as JSON, for the canvas-backend comparison in
+    // `tools/canvas-parity`. Written beside the baseline so the two halves of
+    // the parity claim are always generated from one run and cannot drift into
+    // describing different objects.
+    dump_display_list(kind, rotated, &list, w, h);
 
     let name = format!(
         "{}{}.png",

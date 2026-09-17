@@ -56,6 +56,17 @@ export function useShortcuts(): void {
             e.preventDefault();
             store.toggleSearch(true);
             return;
+          case "z":
+            e.preventDefault();
+            // Shift+Ctrl+Z is redo everywhere except where Ctrl+Y is, and both
+            // are offered rather than making anyone find out which this is.
+            if (e.shiftKey) void store.redoAnnot();
+            else void store.undoAnnot();
+            return;
+          case "y":
+            e.preventDefault();
+            void store.redoAnnot();
+            return;
           case "Tab": {
             e.preventDefault();
             const workspace = useWorkspace.getState();
@@ -85,7 +96,24 @@ export function useShortcuts(): void {
         }
       }
       if (typing) return;
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (store.selection.length > 0) {
+          e.preventDefault();
+          void store.deleteSelected();
+        }
+        return;
+      }
       if (e.key === "Escape") {
+        // A tool in hand is what Escape puts down first: it is the state a user
+        // is most likely to want out of, and the most invisible to be stuck in.
+        if (store.tool !== null) {
+          store.setTool(null);
+          return;
+        }
+        if (store.selection.length > 0) {
+          store.select([]);
+          return;
+        }
         if (store.search.open) {
           store.toggleSearch(false);
           return;

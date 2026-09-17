@@ -15,6 +15,7 @@
 
 import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
+import { forgetImages } from "@/annots/images";
 import { createDocumentSession, type DocumentStore, type OpenedDoc } from "./documentSession";
 
 /** One tab, as the tab bar draws it. */
@@ -170,6 +171,9 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       recent: get().recent.filter((d) => d !== doc),
       error: null,
     });
+    // The images of a closed document are megabytes the browser would otherwise
+    // hold for the rest of the run.
+    forgetImages(doc);
     try {
       await invoke("close_document", { doc });
     } catch (e) {

@@ -14,7 +14,9 @@
  */
 
 import { useEffect } from "react";
+import { AnnotToolbar } from "./AnnotToolbar";
 import { EmptyState } from "./EmptyState";
+import { PropertiesPanel } from "./PropertiesPanel";
 import { SearchPanel } from "./SearchPanel";
 import { Sidebar } from "./Sidebar";
 import { StatusBar } from "./StatusBar";
@@ -61,9 +63,11 @@ export function App(): React.JSX.Element {
       ) : (
         <>
           <Toolbar />
+          <AnnotToolbar />
           <div className="flex-1 min-h-0 flex">
             <Sidebar />
             <Viewport />
+            <PropertiesPanel />
             <SearchPanel />
           </div>
         </>

@@ -70,6 +70,57 @@ pub enum UriError {
 /// one from asking for a page the size of a stadium.
 const MAX_PPP_MILLI: u64 = 64_000;
 
+/// An `izul://image/{doc}/{ref}` request: the pixels of an inserted image.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ImageUri {
+    pub doc: u64,
+    pub image: u32,
+}
+
+/// Strips whichever of the four spellings of our scheme this webview used.
+///
+/// Shared with [`parse_tile_uri`] rather than repeated, because the `localhost`
+/// authority `wry` leaves behind on Windows was missed once already and cost a
+/// session of blank pages (see the Phase 1 notes in CLAUDE.md).
+fn strip_scheme(uri: &str) -> Result<&str, UriError> {
+    let rest = uri
+        .strip_prefix("http://izul.localhost/")
+        .or_else(|| uri.strip_prefix("izul://"))
+        .or_else(|| uri.strip_prefix("https://izul.localhost/"))
+        .ok_or(UriError::WrongScheme)?;
+    let rest = rest.strip_prefix("localhost/").unwrap_or(rest);
+    Ok(rest.strip_prefix('/').unwrap_or(rest))
+}
+
+pub fn parse_image_uri(uri: &str) -> Result<ImageUri, UriError> {
+    let rest = strip_scheme(uri)?;
+    let path = rest.split('?').next().unwrap_or(rest);
+    let path = path.split('#').next().unwrap_or(path);
+    let mut parts = path.split('/');
+    if parts.next() != Some("image") {
+        return Err(UriError::UnknownKind(
+            path.split('/').next().unwrap_or_default().to_string(),
+        ));
+    }
+    let mut take = || -> Result<u64, UriError> {
+        let raw = parts.next().ok_or(UriError::Incomplete)?;
+        if raw.is_empty() {
+            return Err(UriError::Incomplete);
+        }
+        raw.parse::<u64>()
+            .map_err(|_| UriError::NotANumber(raw.to_string()))
+    };
+    let doc = take()?;
+    let image = take()?;
+    if parts.next().is_some() {
+        return Err(UriError::Incomplete);
+    }
+    Ok(ImageUri {
+        doc,
+        image: u32::try_from(image).map_err(|_| UriError::NotANumber(image.to_string()))?,
+    })
+}
+
 pub fn parse_tile_uri(uri: &str) -> Result<TileUri, UriError> {
     // Four spellings reach this handler for the same request, and which one
     // arrives is decided by the webview, not by us.
@@ -226,6 +277,49 @@ pub fn cors_headers() -> [(&'static str, String); 2] {
 
 #[cfg(test)]
 mod tests {
+
+    /// The Windows spelling, which is the one that actually arrives there: wry
+    /// leaves `localhost` behind as the custom scheme's authority, and reading
+    /// it as the first path segment is what made every tile 400 in Phase 1.
+    #[test]
+    fn an_image_uri_parses_in_every_spelling() {
+        let expected = ImageUri { doc: 3, image: 7 };
+        for uri in [
+            "izul://image/3/7",
+            "izul://localhost/image/3/7",
+            "http://izul.localhost/image/3/7",
+            "https://izul.localhost/image/3/7",
+        ] {
+            assert_eq!(parse_image_uri(uri), Ok(expected), "{uri}");
+        }
+    }
+
+    #[test]
+    fn an_image_uri_is_strict_about_what_it_accepts() {
+        assert!(
+            parse_image_uri("izul://image/3").is_err(),
+            "kurang satu bagian"
+        );
+        assert!(
+            parse_image_uri("izul://image/3/7/8").is_err(),
+            "kelebihan bagian"
+        );
+        assert!(parse_image_uri("izul://image/x/7").is_err(), "bukan angka");
+        assert!(parse_image_uri("izul://tile/3/7").is_err(), "jenis lain");
+        assert!(parse_image_uri("file:///etc/passwd").is_err(), "skema lain");
+    }
+
+    /// The two routes must not answer for each other, or a malformed tile URI
+    /// could be served as an image and vice versa.
+    #[test]
+    fn the_two_routes_do_not_overlap() {
+        let tile = "izul://tile/1/0/0/256/0/0/preview?g=2&p=0";
+        assert!(parse_tile_uri(tile).is_ok());
+        assert!(parse_image_uri(tile).is_err());
+        let image = "izul://image/1/0";
+        assert!(parse_image_uri(image).is_ok());
+        assert!(parse_tile_uri(image).is_err());
+    }
     use super::*;
 
     fn key(uri: &str) -> TileKey {

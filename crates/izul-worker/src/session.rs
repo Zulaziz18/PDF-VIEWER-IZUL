@@ -60,6 +60,10 @@ pub struct Session {
     engine: &'static Engine,
     docs: HashMap<DocId, OpenDoc>,
     epochs: Epochs,
+    /// Metrics for the standard-14 faces, and the empty document PDFium wants
+    /// them hung off. Created on first use: a worker that never draws text
+    /// never pays for it, and one that draws a lot pays once.
+    fonts: Option<(izul_pdf::Document, izul_pdf::StandardFonts)>,
 }
 
 impl std::fmt::Debug for Session {
@@ -76,6 +80,7 @@ impl Session {
             engine,
             docs: HashMap::new(),
             epochs: Epochs::new(),
+            fonts: None,
         }
     }
 
@@ -101,6 +106,22 @@ impl Session {
 
     pub fn open_count(&self) -> usize {
         self.docs.len()
+    }
+
+    /// The standard-14 metrics provider, created on first use.
+    pub fn fonts(&mut self) -> Result<&izul_pdf::StandardFonts, PdfError> {
+        if self.fonts.is_none() {
+            let doc = izul_pdf::metrics_document(self.engine)?;
+            let fonts = izul_pdf::StandardFonts::new(self.engine, doc.handle());
+            // The document is kept beside the provider on purpose: PDFium's
+            // font objects belong to it, and dropping it first would leave them
+            // dangling.
+            self.fonts = Some((doc, fonts));
+        }
+        self.fonts
+            .as_ref()
+            .map(|(_, fonts)| fonts)
+            .ok_or(PdfError::Cancelled)
     }
 
     /// Records a new layout epoch for a document.

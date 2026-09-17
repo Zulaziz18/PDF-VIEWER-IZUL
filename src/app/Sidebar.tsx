@@ -10,6 +10,7 @@
  */
 
 import { useEffect, useRef, useState, type JSX } from "react";
+import { AnnotationList } from "./AnnotationList";
 import { useDocument, type OutlineEntry } from "@/state/documentStore";
 import { paintThumbnail } from "@/viewport/thumbnails";
 import { viewport } from "./viewportHandle";
@@ -208,7 +209,7 @@ export function Sidebar(): JSX.Element | null {
       aria-label={t("sidebar.label")}
     >
       <div className="flex p-1 gap-1 border-b border-[var(--izul-border)]" role="tablist">
-        {(["thumbnails", "outline"] as const).map((which) => (
+        {(["thumbnails", "outline", "annots"] as const).map((which) => (
           <button
             key={which}
             type="button"
@@ -216,19 +217,27 @@ export function Sidebar(): JSX.Element | null {
             aria-selected={tab === which}
             onClick={() => useDocument.getState().setSidebarTab(which)}
             className={[
-              "flex-1 h-8 rounded-[8px] text-[13px]",
+              "flex-1 h-8 rounded-[8px] text-[12px]",
               tab === which
                 ? "bg-[var(--izul-accent)] text-white"
                 : "hover:bg-[var(--izul-surface-raised)]",
             ].join(" ")}
           >
-            {t(which === "thumbnails" ? "sidebar.thumbnails" : "sidebar.outline")}
+            {t(
+              which === "thumbnails"
+                ? "sidebar.thumbnails"
+                : which === "outline"
+                  ? "sidebar.outline"
+                  : "sidebar.annots",
+            )}
           </button>
         ))}
       </div>
 
-      <div className="flex-1 overflow-auto">
-        {tab === "thumbnails" ? (
+      <div className="flex-1 min-h-0 overflow-auto">
+        {tab === "annots" ? (
+          <AnnotationList />
+        ) : tab === "thumbnails" ? (
           <ThumbnailStrip
             doc={doc}
             pageCount={pageCount}

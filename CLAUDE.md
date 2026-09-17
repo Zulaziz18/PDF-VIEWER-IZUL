@@ -378,6 +378,75 @@ di crate itu, pakai `engine_and_lock!()` — jangan bikin engine sendiri.**
 `libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf` (sama seperti CI).
 Tanpa itu `cargo check -p izul-app` gagal di `gdk-sys`, bukan di kode kita.
 
+## Keadaan Fase 3 (Mesin Anotasi & Paritas)
+
+Diminta pengguna langsung setelah Fase 2, dikerjakan **di branch yang sama**
+(`claude/pdf-studio-izul-v7-fase-2`) karena aturan branch sesi ini melarang
+push ke branch lain tanpa izin eksplisit. Akibatnya PR #2 memuat dua fase;
+kalau pengguna lebih suka terpisah, itu perlu branch baru dan izinnya.
+
+**Lapisan model (`izul-model`, murni, tanpa PDFium dan tanpa I/O):**
+
+1. `annot.rs` — tiga belas jenis SPEC 11.2 sebagai satu enum tertutup dengan
+   payload per jenis. Koordinat selalu ruang PDF.
+2. `build.rs` — `display_list(obj, font_ctx)`, murni dan deterministik. **Semua**
+   yang menggoda untuk diserahkan ke backend diputuskan di sini: penghalusan
+   tinta jadi Bézier eksplisit, kepala panah jadi jalur, elips jadi empat kurva,
+   teks jadi glif berposisi, rotasi jadi satu transform.
+3. `font.rs` — `FontCtx` sebagai trait; model tidak boleh menyentuh berkas font.
+4. `ap.rs` — backend AP stream. Byte deterministik (satu formatter angka),
+   state seimbang, dan penulisnya menutup apa pun yang tidak seimbang alih-alih
+   memercayainya.
+5. `ops.rs` — `Op` yang tahu kebalikannya, satu gestur satu transaksi, rollback
+   penuh saat transaksi gagal di tengah, batas 200 langkah.
+
+**Lapisan aplikasi:**
+
+6. `izul-pdf/src/fonts.rs` — metrik standard-14 **diukur dari PDFium**.
+   Asumsinya (kode karakter = indeks glif) diuji dengan render sungguhan di
+   `the_measured_widths_match_what_pdfium_draws`, bukan dipercaya dari ingatan.
+7. `Request::FontMetrics` di pekerja — `PROTOCOL_VERSION` naik 3 → 4. Proses UI
+   tidak boleh menaut PDFium, jadi ia bertanya dan menyimpan jawabannya.
+8. `src-tauri/src/annots.rs` — `AnnotDoc` + `CommandStack` per dokumen, cache
+   metrik font, dan registry gambar. Di proses UI, bukan di pekerja: pekerja
+   bisa dibunuh supervisor kapan saja dan anotasi yang belum disimpan tidak
+   boleh ikut mati.
+9. Rute protokol `izul://image/{doc}/{ref}` untuk piksel gambar.
+
+**Frontend:**
+
+10. `src/annots/canvas.ts` — backend kanvas, konsumen kedua daftar yang sama.
+11. `src/annots/interaction.ts` — uji tembak, pegangan, resize, rotasi, murni.
+12. `src/annots/factory.ts` — gestur jadi objek, murni.
+13. Gestur dan chrome seleksi di `renderer.ts`; toolbar, panel properti, dan
+    daftar anotasi di `src/app/`.
+
+**Kriteria lulus, diukur:**
+
+- Golden image: 15 baseline, semua lulus < 0,5 persen (SPEC 3.3). Di
+  `crates/izul-pdf/golden/`, dijalankan CI.
+- Paritas kanvas: `tools/canvas-parity/run.mjs`, butuh Chromium sungguhan, tidak
+  di CI. Sepuluh dari tiga belas jenis di bawah 0,6 persen; tiga yang memuat
+  teks 1,7–4,2 persen karena bentuk glif browser bukan bentuk glif PDFium
+  (posisinya sama). Angka dan penjelasannya di `bench/results/phase3-parity.txt`.
+
+**Cacat nyata yang ditemukan harness paritas:** anotasi gambar berbeda 30,7
+persen karena kanvas menghaluskan gambar yang diperbesar sementara PDFium
+menampilkan pikselnya — pergantian yang terlihat saat proksi digantikan render
+otoritatif. Diperbaiki; sesudahnya 0,00 persen.
+
+**Jebakan harness yang sempat memakan waktu:** Chromium membatasi
+`--window-size` (jendela 480x240 melaporkan `innerHeight` 153), jadi
+`--screenshot` mengembalikan gambar yang terpotong dan itu **terlihat persis
+seperti bug rendering**. Harness sekarang membandingkan piksel **di dalam
+halaman** lewat `--dump-dom`, dan butuh `--allow-file-access-from-files` karena
+tanpa itu gambar `file://` mencemari kanvas dan `getImageData` melempar.
+
+**Yang belum dikerjakan di Fase 3:** menyimpan ke PDF (itu Fase 4 — anotasi
+masih hidup di memori sampai tab ditutup); penyuntingan teks langsung di atas
+halaman (isinya diketik lewat panel properti); dan **UI-nya belum pernah
+dijalankan di jendela sungguhan** karena kontainer ini tidak punya layar.
+
 ## Alur kerja proyek ini
 
 - Branch aktif: `claude/pdf-studio-izul-v7-fase-2`.
@@ -389,8 +458,8 @@ Tanpa itu `cargo check -p izul-app` gagal di `gdk-sys`, bukan di kode kita.
 - Setiap akhir fase: laporkan hasil + angka benchmark nyata, tunggu
   persetujuan pengguna sebelum lanjut ke fase berikutnya (lihat SPEC.md
   Bagian 0 dan 18).
-- Total 9 fase (0–8). Fase 0 dan 1 selesai dan disetujui pengguna; Fase 2
-  sedang berjalan.
+- Total 9 fase (0–8). Fase 0 dan 1 selesai dan disetujui pengguna; Fase 2 dan
+  Fase 3 selesai dan menunggu persetujuan, keduanya di branch yang sama.
 - Panduan menjalankan & menguji aplikasi di Windows (untuk pemula) ada di
   `TESTING.md`, bagian "Menjalankan sendiri di Windows (langkah demi
   langkah)" — termasuk cara memasang alat, mengambil PDFium, menjalankan

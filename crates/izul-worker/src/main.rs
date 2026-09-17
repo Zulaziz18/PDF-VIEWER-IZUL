@@ -40,6 +40,7 @@ use izul_ipc::message::{
 };
 use izul_ipc::ring::{TileRing, TILE_EDGE};
 use izul_ipc::{region_bytes, ChannelName, SharedRegion};
+use izul_model::font::FontCtx;
 use izul_pdf::render::Quality;
 use izul_pdf::{Engine, FindOptions, PdfError, PdfRectF, TileRequest};
 use session::{classify, quality_of, Session};
@@ -460,6 +461,55 @@ where
                 }
                 Err(e) => fail(channel, id, Some(doc), &e).await,
             }
+        }
+
+        Request::FontMetrics {
+            family,
+            bold,
+            italic,
+            chars,
+        } => {
+            let spec = izul_model::annot::FontSpec {
+                family,
+                size: 12.0,
+                bold,
+                italic,
+            };
+            let fonts = match sess.fonts() {
+                Ok(f) => f,
+                Err(e) => return fail(channel, id, None, &e).await,
+            };
+            let Some(font) = fonts.resolve(&spec) else {
+                return fail_kind(channel, id, None, ErrorKind::BadRequest, "font.unavailable")
+                    .await;
+            };
+            let face = fonts.face(font);
+            let mut advances = Vec::new();
+            let mut missing = Vec::new();
+            // Deduplicated: a page of text asks about the same letters over and
+            // over, and the answer is per character, not per occurrence.
+            let mut seen = std::collections::BTreeSet::new();
+            for ch in chars.chars() {
+                if !seen.insert(ch) {
+                    continue;
+                }
+                match fonts.glyph(font, ch) {
+                    Some(g) => advances.push((ch, g.advance_milli)),
+                    None => missing.push(ch),
+                }
+            }
+            reply(
+                channel,
+                id,
+                Response::FontMetricsReady {
+                    base_font: izul_pdf::fonts::base_font_of(&spec).to_string(),
+                    ascent_milli: face.ascent_milli,
+                    descent_milli: face.descent_milli,
+                    advances,
+                    missing,
+                },
+            )
+            .await
         }
 
         Request::Shutdown => Ok(()),

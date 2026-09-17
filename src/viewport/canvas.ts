@@ -92,6 +92,19 @@ export class Canvas2DSurface implements Surface {
     this.#ctx.fillRect(at.x, at.y, at.w, at.h);
   }
 
+  /**
+   * The raw 2D context, for the annotation layer.
+   *
+   * Everything else here is an allocation-free `drawImage` per tile, which is
+   * what keeps a scroll at refresh rate. Annotations are paths and text and
+   * cannot be expressed that way, so the canvas backend draws them directly —
+   * and it is the only caller allowed to, which is why this is a method with a
+   * comment rather than a public field.
+   */
+  context(): CanvasRenderingContext2D {
+    return this.#ctx;
+  }
+
   present(): void {
     // Canvas 2D presents implicitly at the end of the task. The method exists so
     // the WebGL2 surface can swap buffers here without changing callers.

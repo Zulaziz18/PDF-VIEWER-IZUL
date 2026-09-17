@@ -3,6 +3,86 @@
 Semua perubahan penting per fase. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/);
 versi mengikuti `version.json` sebagai sumber tunggal.
 
+## [7.0.0-alpha.3] — Fase 3: Mesin Anotasi & Paritas
+
+Fase ini membuat anotasi ada, dan membuat paritas antara yang terlihat di layar
+dan yang akan ditulis ke berkas menjadi **struktural**, bukan sesuatu yang
+dikejar lewat laporan bug. Kriteria lulusnya golden image per jenis anotasi, dan
+angkanya ada di `bench/results/phase3-parity.txt`.
+
+### Bagaimana paritas dijamin
+
+Model anotasi tidak menghasilkan piksel dan tidak menghasilkan AP stream. Ia
+menghasilkan **display list** — urutan perintah gambar primitif dalam koordinat
+PDF — dan dua backend membaca daftar yang sama: kanvas menggambar proksi
+langsung saat objek diseret, AP stream menyerialkannya jadi operator PDF saat
+disimpan. Geometri tidak mungkin menyimpang karena sumbernya hanya satu
+(SPEC 3.2).
+
+Yang membuat ini bekerja adalah disiplin di satu tempat: **semua** yang menggoda
+untuk diserahkan ke backend diputuskan di `izul-model/build.rs`. Penghalusan
+tinta jadi kurva Bézier eksplisit (bukan spline milik masing-masing), kepala
+panah jadi jalur (bukan `/LE` yang hanya dimengerti sisi PDF), elips jadi empat
+kurva (PDF tidak punya operator elips dan `ellipse()` kanvas adalah hampiran
+lain), tata letak teks jadi glif berposisi, rotasi jadi satu transform.
+
+### Ditambahkan
+
+- **Tiga belas jenis anotasi SPEC 11.2** sebagai satu enum tertutup dengan
+  payload per jenis, sehingga "semua jenis tertangani" adalah galat kompilasi.
+- **Backend AP stream** dengan byte deterministik dan state seimbang. Stream
+  yang membocorkan `q` merusak gambar anotasi *lain* di halaman yang sama, jadi
+  penulisnya menutup apa pun yang diserahkan padanya alih-alih memercayainya.
+- **Backend kanvas** di frontend, membaca daftar yang sama lewat perintah
+  `annot_display_lists`. Frontend tidak pernah menghitung geometri sendiri.
+- **Undo/redo** berbasis operasi yang tahu kebalikannya: satu gestur satu
+  langkah, transaksi yang gagal di tengah dibatalkan seluruhnya, batas 200
+  langkah (SPEC 8), id tidak pernah dipakai ulang.
+- **Seleksi dan transformasi**: klik, Shift-klik, pita karet, delapan pegangan
+  ubah ukuran, pegangan rotasi dengan snap 15 derajat, kunci objek. Uji tembak
+  mengikuti geometri sebenarnya, bukan kotak pembatas — kotak sebuah garis
+  diagonal sebagian besar ruang kosong.
+- **Panel properti** (warna, opasitas, tebal garis, font, ukuran, teks, kunci,
+  rotasi) dan **panel daftar anotasi** di sidebar, dikelompokkan per halaman,
+  bisa disaring per jenis, klik untuk melompat.
+- **Metrik font diukur dari PDFium**, bukan dari tabel yang ditulis dari ingatan
+  — lewat permintaan IPC baru (`PROTOCOL_VERSION` naik 3 → 4), karena PDFium ada
+  di dalam sandbox dan proses UI tidak boleh menautnya (SPEC 5). Asumsi bahwa
+  kode karakter adalah indeks glif untuk standard-14 **diuji dengan render
+  sungguhan**, bukan dipercaya.
+- **Gambar** disisipkan dari berkas, disimpan di memori proses UI, dan diambil
+  kanvas lewat rute protokol baru `izul://image/{doc}/{ref}`.
+- **Golden image** untuk kelima belas kasus (tiga belas jenis + satu berputar
+  dan tembus pandang), dan **harness paritas kanvas** yang menjalankan Chromium
+  sungguhan.
+
+### Angka
+
+- **Golden image:** lima belas baseline, seluruhnya lulus pada ambang < 0,5
+  persen piksel berbeda (toleransi 8/255 per kanal).
+- **Kanvas vs PDFium:** sepuluh dari tiga belas jenis di bawah 0,6 persen; tiga
+  yang memuat teks berbeda 1,7–4,2 persen karena bentuk glif browser bukan
+  bentuk glif PDFium — posisinya sama, cakupan tintanya nyaris identik.
+- **Test:** 338 Rust (dari 254) dan 106 TypeScript (dari 71).
+
+### Diketahui, dan tidak ditutup-tutupi
+
+- **Cacat yang ditemukan harness paritas:** anotasi gambar semula berbeda 30,7
+  persen karena kanvas menghaluskan gambar yang diperbesar dan PDFium tidak.
+  Sudah diperbaiki (0,00 persen sesudahnya), dan itulah gunanya harness ini ada.
+- **Menyimpan belum ada.** Seluruh anotasi hidup di memori proses UI sampai tab
+  ditutup. Menulisnya ke PDF, autosave, dan pemulihan crash adalah Fase 4 —
+  jangan menganggap pekerjaan di fase ini aman sebelum itu.
+- **Teks disunting lewat panel properti, bukan langsung di halaman.** Kotak teks
+  yang baru dibuat kosong sampai diisi dari panel. Caret di atas halaman perlu
+  penyuntingan teks di tempat dan belum dikerjakan.
+- **Paritas kanvas tidak dijalankan CI.** Ia butuh Chromium dan PDFium
+  sungguhan; test yang diam-diam dilewati di lingkungan yang justru penting
+  lebih buruk daripada test yang harus diminta.
+- **UI Fase 3 belum pernah dijalankan di jendela sungguhan.** Kontainer
+  pengembangan tidak punya layar. Yang terbukti di sini adalah lapisan model,
+  backend, dan paritasnya; interaksinya menunggu pengujian di Windows.
+
 ## [7.0.0-alpha.2] — Fase 2: Multi-Dokumen & Pencarian
 
 Fase ini membuat aplikasi bisa memegang banyak dokumen sekaligus dan mencari di

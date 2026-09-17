@@ -1,0 +1,147 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        background: #ffffff;
+      }
+      canvas {
+        display: block;
+      }
+    </style>
+  </head>
+  <body>
+    <canvas id="c"></canvas>
+    <pre id="out">pending</pre>
+    <!-- IZUL_INJECT -->
+    <script>
+      /*
+       * Draws the display list, loads PDFium's baseline, and compares them in
+       * the page.
+       *
+       * In the page rather than through a screenshot because Chromium clamps
+       * `--window-size` to a minimum (a 480x240 window reports an inner height
+       * of 153), so a screenshot of anything taller comes back cropped — which
+       * looked exactly like a rendering bug for as long as it took to measure
+       * it. Reading the pixels here needs `--allow-file-access-from-files`,
+       * without which a `file://` image taints the canvas and `getImageData`
+       * throws.
+       */
+      const data = window.IZUL_CASE;
+      const canvas = document.getElementById("c");
+      canvas.width = data.width;
+      canvas.height = data.height;
+      const ctx = canvas.getContext("2d", { willReadFrequently: true });
+
+      const report = (text) => {
+        document.getElementById("out").textContent = text;
+      };
+
+      /* Image resources, which PDFium reads from the PDF's XObject table and the
+         canvas backend has to be handed. Without them an image annotation draws
+         nothing at all — which is the honest behaviour, and was how a missing
+         resource table showed up here as a 55 % difference. */
+      const loadImages = async () => {
+        const out = new Map();
+        for (const [ref, url] of Object.entries(data.images ?? {})) {
+          const img = new Image();
+          await new Promise((ok, fail) => {
+            img.onload = ok;
+            img.onerror = fail;
+            img.src = url;
+          });
+          out.set(Number(ref), img);
+        }
+        return out;
+      };
+
+      const baseline = new Image();
+      baseline.onload = () => {
+        try {
+          const ref = document.createElement("canvas");
+          ref.width = data.width;
+          ref.height = data.height;
+          const rctx = ref.getContext("2d", { willReadFrequently: true });
+          rctx.fillStyle = "#ffffff";
+          rctx.fillRect(0, 0, ref.width, ref.height);
+          rctx.drawImage(baseline, 0, 0);
+
+          /*
+           * Two metrics, because they answer two different questions.
+           *
+           * The fine one counts pixels that differ at all, and is dominated by
+           * the things two rasterisers are *entitled* to disagree about:
+           * antialiasing on an edge, glyph hinting, whether a magnified image
+           * is smoothed. The coarse one compares both pictures downsampled 4x,
+           * which averages that away and leaves only differences of *shape* —
+           * a missing arrow head, a mirrored axis, a curve fitted differently.
+           * A geometry bug moves both; a rasteriser difference moves only the
+           * first.
+           */
+          const coarse = (source) => {
+            const c = document.createElement("canvas");
+            c.width = Math.max(1, Math.floor(data.width / 4));
+            c.height = Math.max(1, Math.floor(data.height / 4));
+            const g = c.getContext("2d", { willReadFrequently: true });
+            g.fillStyle = "#ffffff";
+            g.fillRect(0, 0, c.width, c.height);
+            g.drawImage(source, 0, 0, c.width, c.height);
+            return g.getImageData(0, 0, c.width, c.height).data;
+          };
+          const coarseMine = coarse(canvas);
+          const coarseTheirs = coarse(ref);
+          let coarseDiffering = 0;
+          for (let i = 0; i < coarseMine.length; i += 4) {
+            if (
+              Math.abs(coarseMine[i] - coarseTheirs[i]) > data.tolerance ||
+              Math.abs(coarseMine[i + 1] - coarseTheirs[i + 1]) > data.tolerance ||
+              Math.abs(coarseMine[i + 2] - coarseTheirs[i + 2]) > data.tolerance
+            ) {
+              coarseDiffering++;
+            }
+          }
+
+          const mine = ctx.getImageData(0, 0, data.width, data.height).data;
+          const theirs = rctx.getImageData(0, 0, data.width, data.height).data;
+          let differing = 0;
+          let inkMine = 0;
+          let inkTheirs = 0;
+          for (let i = 0; i < mine.length; i += 4) {
+            const dr = Math.abs(mine[i] - theirs[i]);
+            const dg = Math.abs(mine[i + 1] - theirs[i + 1]);
+            const db = Math.abs(mine[i + 2] - theirs[i + 2]);
+            if (dr > data.tolerance || dg > data.tolerance || db > data.tolerance) differing++;
+            if (mine[i] < 250 || mine[i + 1] < 250 || mine[i + 2] < 250) inkMine++;
+            if (theirs[i] < 250 || theirs[i + 1] < 250 || theirs[i + 2] < 250) inkTheirs++;
+          }
+          const total = data.width * data.height;
+          report(
+            JSON.stringify({
+              differing: differing / total,
+              coarse: coarseDiffering / (coarseMine.length / 4),
+              inkCanvas: inkMine / total,
+              inkPdfium: inkTheirs / total,
+              png: canvas.toDataURL("image/png"),
+            }),
+          );
+        } catch (e) {
+          report(JSON.stringify({ error: String(e) }));
+        }
+      };
+      baseline.onerror = () => report(JSON.stringify({ error: "baseline tidak dapat dimuat" }));
+
+      loadImages()
+        .then((images) => {
+          ctx.fillStyle = "#ffffff";
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          window.IZUL_CANVAS.drawDisplayList(ctx, data.ops, data.placement, images);
+          baseline.src = data.baseline;
+        })
+        .catch((e) => report(JSON.stringify({ error: String(e) })));
+    </script>
+  </body>
+</html>

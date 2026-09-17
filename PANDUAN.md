@@ -4,10 +4,11 @@
 > fitur yang belum ada hanya akan menyesatkan, jadi bagian yang belum bisa
 > dipakai sengaja dikosongkan sampai fasenya selesai.
 
-## Status: Fase 2
+## Status: Fase 3
 
-Aplikasi ini sekarang bisa dipakai membaca beberapa dokumen sekaligus, dan
-mencari di dalamnya.
+Aplikasi ini sekarang bisa dipakai membaca beberapa dokumen sekaligus, mencari
+di dalamnya, dan **menganotasi** — dengan satu catatan penting: anotasi belum
+bisa disimpan ke berkas PDF. Itu datang di Fase 4.
 
 ### Membuka dan menggulir
 
@@ -115,8 +116,55 @@ Dua catatan yang jujur soal batasannya:
   dijalankan di sana. Untuk mencari di seluruh pustaka, pakai cakupan
   **Semua dokumen**.
 
-Yang **belum** dapat dilakukan: menganotasi dan menyimpan. Keduanya datang di
-Fase 3 dan Fase 4.
+### Menganotasi
+
+Baris alat di bawah toolbar berisi alat gambar. Pilih satu, lalu seret di atas
+halaman.
+
+| Alat | Cara pakai |
+|---|---|
+| Pena bebas, garis, panah | seret dari titik awal ke titik akhir |
+| Kotak, elips | seret untuk membentuk kotak pembatasnya |
+| Poligon | seret; bentuknya mengikuti jalur yang dilalui |
+| Kotak teks | seret untuk membuat kotaknya, lalu ketik isinya di panel properti |
+| Catatan tempel | klik di tempat catatan ingin ditempelkan |
+| Stempel | seret untuk membentuk badgenya, lalu ubah tulisannya di panel properti |
+| Gambar | tombol gambar membuka pemilih berkas; gambarnya muncul di tengah halaman |
+
+Untuk stabilo, garis bawah, dan coret: **tandai dulu teksnya** dengan menyeret
+kursor di atas halaman, lalu tekan tombolnya. Ketiganya mengikuti teks yang
+ditandai, jadi tombolnya tidak melakukan apa-apa kalau tidak ada yang ditandai.
+
+### Mengubah anotasi yang sudah ada
+
+Dengan alat panah (tombol pertama, atau tekan `Esc`):
+
+- **Pilih**: klik objeknya. Shift+klik menambah ke pilihan. Menyeret di ruang
+  kosong membuat kotak pilihan.
+- **Geser**: seret objeknya.
+- **Ubah ukuran**: seret salah satu dari delapan pegangan di tepi kotaknya.
+- **Putar**: seret pegangan bulat di atas kotaknya. Tahan Shift untuk mengunci
+  ke kelipatan 15 derajat.
+- **Hapus**: tombol `Delete`.
+- **Batalkan / ulangi**: `Ctrl+Z` dan `Ctrl+Y`. Satu geseran adalah satu
+  langkah, bukan seratus langkah kecil. Riwayatnya menyimpan 200 langkah.
+
+Panel di sebelah kanan mengatur warna, opasitas, tebal garis, font, ukuran
+huruf, isi teks, rotasi, dan kunci. Objek yang dikunci tidak ikut terseret dan
+bisa diklik tembus — berguna untuk stempel latar.
+
+Tab **Anotasi** di panel samping mendaftar semua anotasi dokumen, dikelompokkan
+per halaman dan bisa disaring per jenis. Mengkliknya melompat ke tempatnya.
+
+### Yang perlu diketahui soal anotasi di fase ini
+
+**Anotasi belum disimpan ke berkas.** Semuanya hidup di memori aplikasi sampai
+tab ditutup atau aplikasi keluar. Menulisnya ke PDF, menyimpan otomatis, dan
+memulihkannya setelah crash adalah Fase 4. Sampai itu ada, jangan menganggap
+pekerjaan anotasi Anda aman.
+
+Yang **belum** dapat dilakukan selain itu: menyunting teks langsung di atas
+halaman (isinya diketik lewat panel properti), dan menyimpan atau mengekspor.
 
 ## Persyaratan sistem
 

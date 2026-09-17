@@ -1,0 +1,66 @@
+{
+  "height": 240,
+  "images": {
+    "0": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAYAAABytg0kAAAAHUlEQVR4AQESAO3/ANwoKP8oUNz/APrSKP8ellr/UhAJf9ov/R0AAAAASUVORK5CYII="
+  },
+  "ops": {
+    "ops": [
+      {
+        "PushClip": {
+          "path": {
+            "segs": [
+              {
+                "MoveTo": {
+                  "x": 20.0,
+                  "y": 20.0
+                }
+              },
+              {
+                "LineTo": {
+                  "x": 220.0,
+                  "y": 20.0
+                }
+              },
+              {
+                "LineTo": {
+                  "x": 220.0,
+                  "y": 100.0
+                }
+              },
+              {
+                "LineTo": {
+                  "x": 20.0,
+                  "y": 100.0
+                }
+              },
+              "Close"
+            ]
+          },
+          "rule": "NonZero"
+        }
+      },
+      {
+        "DrawImage": {
+          "image": 0,
+          "matrix": {
+            "a": 200.0,
+            "b": 0.0,
+            "c": 0.0,
+            "d": 80.0,
+            "e": 20.0,
+            "f": 20.0
+          },
+          "opacity": 0.8500000238418579
+        }
+      },
+      "PopClip"
+    ]
+  },
+  "placement": {
+    "pageHeight": 120.0,
+    "scale": 2.0,
+    "x": 0,
+    "y": 0
+  },
+  "width": 480
+}

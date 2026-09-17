@@ -21,7 +21,7 @@ use izul_model::geom::{PdfRectF, RotationQuarter};
 /// So the worker announces this number the moment it connects, and the
 /// supervisor refuses a worker that does not match. Bump it whenever anything
 /// in [`Request`] or [`Response`] changes shape.
-pub const PROTOCOL_VERSION: u32 = 3;
+pub const PROTOCOL_VERSION: u32 = 4;
 
 /// Identifies one open document within a worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -147,6 +147,22 @@ pub enum Request {
         doc: DocId,
         generation: Generation,
     },
+    /// Advance widths and face metrics for one of the standard-14 faces.
+    ///
+    /// The annotation model lays text out from these numbers and both backends
+    /// position every glyph from that layout, so they must be the metrics the
+    /// renderer will actually draw with (SPEC 3.2). PDFium is what knows them —
+    /// and PDFium lives here, in the sandbox, not in the UI process. Hence a
+    /// request: the UI asks, caches the answer, and never links a PDF parser
+    /// into the process that owns the window (SPEC 5).
+    FontMetrics {
+        family: String,
+        bold: bool,
+        italic: bool,
+        /// The characters actually needed. Asking for a whole face would be a
+        /// wire message per annotation for glyphs nobody is going to draw.
+        chars: String,
+    },
     Ping {
         nonce: u64,
     },
@@ -219,6 +235,20 @@ pub enum Response {
         page: u32,
         hits: Vec<SearchHitWire>,
         generation: Generation,
+    },
+    /// Metrics for the face that was asked about. Appended at the end of the
+    /// enum, like every variant since Phase 1's `Ping`-read-as-`Shutdown`.
+    FontMetricsReady {
+        /// The standard-14 face the request resolved to, for the log and for
+        /// the cache key.
+        base_font: String,
+        ascent_milli: i16,
+        descent_milli: i16,
+        /// One entry per character asked for that the face actually has.
+        advances: Vec<(char, u16)>,
+        /// Characters the face has no glyph for. The caller refuses the text
+        /// and names them rather than drawing empty boxes (SPEC 11.2).
+        missing: Vec<char>,
     },
 }
 

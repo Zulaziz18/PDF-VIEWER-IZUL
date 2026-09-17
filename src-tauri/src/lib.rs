@@ -35,6 +35,7 @@
     )
 )]
 
+pub mod annots;
 pub mod commands;
 pub mod indexing;
 pub mod logging;
@@ -173,6 +174,7 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
         workspace: parking_lot::Mutex::new(workspace::Workspace::new(session)),
         indexer: Arc::new(indexing::Indexer::new()),
         startup_files: pdf_arguments(std::env::args().skip(1)),
+        annots: Arc::new(annots::AnnotState::new()),
     };
 
     let title = version::title_bar_text(&v);
@@ -200,13 +202,20 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
         }))
         .plugin(tauri_plugin_dialog::init())
         .manage(state)
-        .register_asynchronous_uri_scheme_protocol("izul", move |_ctx, request, responder| {
+        .register_asynchronous_uri_scheme_protocol("izul", move |ctx, request, responder| {
             // Asynchronous on purpose: a tile that is not cached has to wait for
             // a worker, and the synchronous form would block a webview thread
             // for the whole render. The handler returns immediately; the
             // responder is answered from the runtime.
             let service = Arc::clone(&tile_renderer);
             let uri = request.uri().to_string();
+            // Images are answered from memory, so there is nothing to wait for
+            // and no reason to go through the runtime.
+            if protocol::parse_image_uri(&uri).is_ok() {
+                let app = ctx.app_handle().clone();
+                responder.respond(serve_image(&app, &uri));
+                return;
+            }
             handle.spawn(async move {
                 responder.respond(serve_tile(&service, &uri).await);
             });
@@ -261,6 +270,15 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
             commands::search_document,
             commands::search_library,
             commands::search_regex_page,
+            commands::annot_list,
+            commands::annot_add,
+            commands::annot_replace,
+            commands::annot_delete,
+            commands::annot_undo,
+            commands::annot_redo,
+            commands::annot_history,
+            commands::annot_display_lists,
+            commands::annot_add_image,
         ])
         .run(tauri::generate_context!());
 
@@ -400,6 +418,49 @@ impl TileTraffic {
             );
         }
     }
+}
+
+/// Serves `izul://image/{doc}/{ref}`: the bytes of an inserted image.
+///
+/// Separate from the tile route because it answers from memory and carries a
+/// real media type — the webview has to decode it as an image, which it will
+/// only do if told what it is. The CORS headers are the same ones every answer
+/// from this protocol needs; the Phase 1 notes in CLAUDE.md explain what
+/// happens without them, which is a `TypeError` with no status code at all.
+pub fn serve_image(app: &tauri::AppHandle, uri: &str) -> tauri::http::Response<Vec<u8>> {
+    use tauri::http::{Response, StatusCode};
+    use tauri::Manager as _;
+
+    let deny = |code: StatusCode| -> Response<Vec<u8>> {
+        let mut builder = Response::builder().status(code);
+        for (k, val) in protocol::cors_headers() {
+            builder = builder.header(k, val);
+        }
+        builder
+            .body(Vec::new())
+            .unwrap_or_else(|_| Response::new(Vec::new()))
+    };
+
+    let Ok(parsed) = protocol::parse_image_uri(uri) else {
+        return deny(StatusCode::BAD_REQUEST);
+    };
+    let Some(state) = app.try_state::<AppState>() else {
+        return deny(StatusCode::SERVICE_UNAVAILABLE);
+    };
+    let Some(image) = state.annots.image(parsed.doc, parsed.image) else {
+        return deny(StatusCode::NOT_FOUND);
+    };
+    let mut builder = Response::builder()
+        .status(StatusCode::OK)
+        .header("Content-Type", image.media_type)
+        // The bytes never change under a handle, so the webview may keep them.
+        .header("Cache-Control", "private, max-age=3600");
+    for (k, val) in protocol::cors_headers() {
+        builder = builder.header(k, val);
+    }
+    builder
+        .body(image.bytes)
+        .unwrap_or_else(|_| deny(StatusCode::INTERNAL_SERVER_ERROR))
 }
 
 /// Serves `izul://tile/...`: cache hit, or render and then cache.

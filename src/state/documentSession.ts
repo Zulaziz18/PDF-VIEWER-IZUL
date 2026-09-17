@@ -25,6 +25,9 @@ import { clampZoom, displaySize, fitPage, fitWidth, zoomIn, zoomOut } from "@/vi
 import type { ViewMode } from "@/viewport/layout";
 import { parseViewMode } from "@/viewport/layout";
 import type { TextChar } from "@/viewport/textLayer";
+import type { AnnotKind, AnnotObject, DisplayListOut, EditResult } from "@/annots/types";
+import { NEW_OBJECT_ID } from "@/annots/types";
+import { loadImage, referencedImages } from "@/annots/images";
 
 export interface OpenedDoc {
   readonly doc: number;
@@ -108,7 +111,7 @@ export interface SearchState {
 export type ZoomMode = "custom" | "fitWidth" | "fitPage" | "actual";
 
 /** What the sidebar is showing (SPEC 11.1). */
-export type SidebarTab = "thumbnails" | "outline";
+export type SidebarTab = "thumbnails" | "outline" | "annots";
 
 export interface DocumentState {
   doc: number | null;
@@ -137,6 +140,27 @@ export interface DocumentState {
   /** Boxes to paint over matches, per page, in display space. */
   highlights: Map<number, readonly PdfRect[]>;
   search: SearchState;
+
+  /** Annotations of this document, by page (SPEC 8). */
+  annots: Map<number, AnnotObject[]>;
+  /**
+   * What the canvas backend draws, by page.
+   *
+   * Built in Rust by the same pure function the appearance-stream backend
+   * reads, and carried here as data. The frontend never works out an
+   * annotation's geometry itself — that is the whole of SPEC 3.2's guarantee.
+   */
+  annotLists: Map<number, DisplayListOut[]>;
+  /** Pixels for the image annotations on screen, by `ImageRef`. */
+  annotImages: Map<number, CanvasImageSource>;
+  /** Ids of the selected objects. */
+  selection: number[];
+  /** Which tool the pointer is in. `null` is the selection arrow. */
+  tool: AnnotKind | null;
+  canUndo: boolean;
+  canRedo: boolean;
+  /** Set when an edit was refused — a missing font, a locked object. */
+  annotError: string | null;
 
   /** Viewport size in CSS pixels; fit modes are computed from it. */
   viewportWidth: number;
@@ -174,6 +198,17 @@ export interface DocumentState {
   gotoResult(delta: number): void;
   /** Fetches highlight boxes for pages that are on screen. */
   loadHighlights(pages: readonly number[]): Promise<void>;
+
+  setTool(tool: AnnotKind | null): void;
+  select(ids: readonly number[]): void;
+  loadAnnots(pages: readonly number[]): Promise<void>;
+  addAnnot(object: AnnotObject): Promise<AnnotObject | null>;
+  replaceAnnots(objects: readonly AnnotObject[]): Promise<void>;
+  deleteSelected(): Promise<void>;
+  undoAnnot(): Promise<void>;
+  redoAnnot(): Promise<void>;
+  /** The selected objects, in paint order. */
+  selectedObjects(): AnnotObject[];
 }
 
 export type DocumentStore = StoreApi<DocumentState>;
@@ -258,6 +293,15 @@ export function createDocumentSession(
     texts: new Map(),
     highlights: new Map(),
     search: EMPTY_SEARCH,
+
+    annots: new Map(),
+    annotLists: new Map(),
+    annotImages: new Map(),
+    selection: [],
+    tool: null,
+    canUndo: false,
+    canRedo: false,
+    annotError: null,
 
     viewportWidth: viewport.width,
     viewportHeight: viewport.height,
@@ -521,6 +565,146 @@ export function createDocumentSession(
       if (hit && (hit.doc === null || hit.doc === doc)) {
         set({ pendingPage: hit.page });
       }
+    },
+
+    // ---- annotations -----------------------------------------------------
+
+    setTool(tool: AnnotKind | null) {
+      // Picking a tool clears the selection: the handles of the object you were
+      // editing are not the thing you are about to draw.
+      set({ tool, selection: tool === null ? get().selection : [], annotError: null });
+    },
+
+    select(ids: readonly number[]) {
+      set({ selection: [...ids] });
+    },
+
+    selectedObjects() {
+      const { annots, selection } = get();
+      const byId = new Map<number, AnnotObject>();
+      for (const list of annots.values()) {
+        for (const obj of list) byId.set(obj.id, obj);
+      }
+      return selection.flatMap((id) => {
+        const found = byId.get(id);
+        return found ? [found] : [];
+      });
+    },
+
+    async loadAnnots(pages: readonly number[]) {
+      const { doc } = get();
+      if (doc === null) return;
+      for (const page of pages) {
+        try {
+          const [objects, lists] = await Promise.all([
+            invoke<AnnotObject[]>("annot_list", { doc, page }),
+            invoke<DisplayListOut[]>("annot_display_lists", { doc, page }),
+          ]);
+          const nextObjects = new Map(get().annots);
+          const nextLists = new Map(get().annotLists);
+          nextObjects.set(page, objects);
+          nextLists.set(page, lists);
+          set({ annots: nextObjects, annotLists: nextLists });
+
+          // Pixels for whatever the lists refer to. Fetched after the lists are
+          // in place so the shapes draw immediately and the images fill in,
+          // rather than the whole page waiting on one photograph.
+          const wanted = referencedImages(lists).filter((ref) => !get().annotImages.has(ref));
+          for (const ref of wanted) {
+            const image = await loadImage(doc, ref);
+            if (image) {
+              const next = new Map(get().annotImages);
+              next.set(ref, image);
+              set({ annotImages: next });
+            }
+          }
+        } catch (e) {
+          set({ annotError: String(e) });
+        }
+      }
+    },
+
+    async addAnnot(object: AnnotObject) {
+      const { doc } = get();
+      if (doc === null) return null;
+      try {
+        const [created] = await invoke<[AnnotObject, EditResult]>("annot_add", {
+          doc,
+          object: { ...object, id: NEW_OBJECT_ID },
+        });
+        await get().loadAnnots([object.page]);
+        const history = await invoke<[boolean, boolean]>("annot_history", { doc });
+        set({
+          selection: [created.id],
+          tool: null,
+          canUndo: history[0],
+          canRedo: history[1],
+          annotError: null,
+        });
+        return created;
+      } catch (e) {
+        // A refusal the user needs to read — a font without the glyphs they
+        // typed is the one SPEC 11.2 insists on saying out loud.
+        set({ annotError: String(e) });
+        return null;
+      }
+    },
+
+    async replaceAnnots(objects: readonly AnnotObject[]) {
+      const { doc } = get();
+      if (doc === null || objects.length === 0) return;
+      try {
+        const result = await invoke<EditResult>("annot_replace", { doc, objects });
+        set({ canUndo: result.can_undo, canRedo: result.can_redo, annotError: null });
+        await get().loadAnnots([...new Set(objects.map((o) => o.page))]);
+      } catch (e) {
+        set({ annotError: String(e) });
+        // The backend refused, so the frontend's copy is the wrong one: take
+        // the backend's word rather than leaving a ghost on screen.
+        await get().loadAnnots([...new Set(objects.map((o) => o.page))]);
+      }
+    },
+
+    async deleteSelected() {
+      const { doc, selection } = get();
+      if (doc === null || selection.length === 0) return;
+      const pages = [...new Set(get().selectedObjects().map((o) => o.page))];
+      try {
+        const result = await invoke<EditResult>("annot_delete", { doc, ids: selection });
+        set({
+          selection: [],
+          canUndo: result.can_undo,
+          canRedo: result.can_redo,
+          annotError: null,
+        });
+      } catch (e) {
+        set({ annotError: String(e) });
+      }
+      await get().loadAnnots(pages);
+    },
+
+    async undoAnnot() {
+      const { doc } = get();
+      if (doc === null) return;
+      try {
+        const result = await invoke<EditResult>("annot_undo", { doc, page: get().page });
+        set({ canUndo: result.can_undo, canRedo: result.can_redo, selection: [] });
+      } catch (e) {
+        set({ annotError: String(e) });
+      }
+      await get().loadAnnots([...get().annots.keys()]);
+    },
+
+    async redoAnnot() {
+      const { doc } = get();
+      if (doc === null) return;
+      try {
+        const result = await invoke<EditResult>("annot_redo", { doc, page: get().page });
+        set({ canUndo: result.can_undo, canRedo: result.can_redo, selection: [] });
+      } catch (e) {
+        set({ annotError: String(e) });
+      }
+      await get().loadAnnots([...get().annots.keys()]);
     },
 
     async loadHighlights(pages: readonly number[]) {

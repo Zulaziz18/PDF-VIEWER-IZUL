@@ -38,6 +38,42 @@ Test integrasi (`crash_isolation`) membaca PDFium langsung dari
 aplikasi secara otomatis pada setiap `cargo build`. Tidak ada langkah salin
 manual yang diperlukan di kedua kasus — cukup `vendor/pdfium/fetch.sh` di atas.
 
+## Hasil Fase 3
+
+| Suite | Jumlah | Status |
+|---|---|---|
+| `izul-model` (geometri, display list, **objek anotasi**, **AP stream**, **undo**) | 85 | lulus |
+| `izul-ipc` (shm, ring, codec, transport) | 21 | lulus |
+| `izul-store` (skema, identitas, preferensi, sesi, indeks & FTS5) | 46 | lulus |
+| `izul-pdf` (ubin & rotasi, pencarian, Trim, **metrik font**, **golden image**) | 63 | lulus |
+| `izul-render` (cache LRU, prioritas, penggabungan, pembatalan) | 29 | lulus |
+| `izul-worker` (epoch pembatalan, klasifikasi galat) | 7 | lulus |
+| `izul-app` (kolam, protokol, registri tab, regex, **anotasi**, **gambar**) | 91 | lulus |
+| `crash_isolation` + `render_pipeline` + `render_end_to_end` (pekerja nyata) | 26 | lulus |
+| **Total Rust** | **338** | **lulus** |
+| `src/viewport`, `src/state`, **`src/annots`** | 106 | lulus |
+| **Total** | **444** | **lulus** |
+
+Golden image Fase 3 ada di `crates/izul-pdf/golden/` — lima belas berkas, satu
+per jenis anotasi plus satu yang berputar dan tembus pandang. Memperbarui
+baseline:
+
+```bash
+IZUL_UPDATE_GOLDEN=1 cargo test -p izul-pdf --lib golden
+```
+
+Lakukan itu hanya dengan perubahannya di depan mata, lalu **lihat gambarnya**.
+Baseline yang diperbarui tanpa dilihat adalah test yang dimatikan diam-diam.
+
+Paritas kanvas (butuh Chromium sungguhan, tidak dijalankan CI):
+
+```bash
+cargo test -p izul-pdf --lib golden      # menulis ulang daftar tampilan
+node tools/canvas-parity/run.mjs
+```
+
+Hasil dan penjelasan dua ambangnya ada di `bench/results/phase3-parity.txt`.
+
 ## Hasil Fase 2
 
 | Suite | Jumlah | Status |
@@ -376,6 +412,36 @@ Hal-hal yang hanya bisa dinilai dengan memakainya, pada Windows sungguhan.
       menggulir tetap mulus selama pengindeksan berjalan.
 - [ ] Membuka 20 dokumen sekaligus: Task Manager menunjukkan memori yang tidak
       terus menanjak setelah tab-tab lama berhenti dilihat.
+
+### Fase 3
+
+Yang hanya bisa dinilai dengan memakainya, dan yang **belum pernah dijalankan
+di jendela sungguhan** — kontainer pengembangan tidak punya layar.
+
+- [ ] Tiap alat menggambar objeknya: pena, garis, panah, kotak, elips, poligon,
+      kotak teks, catatan tempel, stempel.
+- [ ] Menyeret objek: bergerak mengikuti kursor tanpa tersendat, dan berhenti
+      persis di tempat kursor dilepas.
+- [ ] Delapan pegangan ubah ukuran bekerja, sudut seberangnya tetap diam.
+- [ ] Pegangan rotasi memutar terhadap pusat objek; menahan Shift mengunci ke
+      kelipatan 15 derajat.
+- [ ] Pita karet di ruang kosong memilih objek yang sepenuhnya di dalamnya.
+- [ ] Shift+klik menambah dan mengurangi dari seleksi.
+- [ ] Panel properti mengubah warna, opasitas, tebal garis, dan ukuran font, dan
+      perubahannya langsung terlihat.
+- [ ] Ctrl+Z membatalkan satu gestur utuh — bukan setengah geseran — dan Ctrl+Y
+      mengulanginya.
+- [ ] Menandai teks lalu menekan tombol stabilo menyorot **baris yang dipilih
+      saja**, termasuk saat seleksinya melewati pergantian baris.
+- [ ] Objek yang dikunci tidak bisa diseret dan tidak menghalangi klik ke objek
+      di bawahnya.
+- [ ] Panel daftar anotasi mencantumkan semuanya per halaman, dan mengkliknya
+      melompat ke halaman itu.
+- [ ] Menyisipkan gambar: gambarnya muncul, bisa digeser dan diubah ukuran, dan
+      **tidak berubah ketajamannya** saat dilepas.
+- [ ] Zoom 400 persen: anotasi tetap tajam dan tetap di tempat yang sama
+      relatif terhadap teks halaman.
+- [ ] Memutar halaman: anotasi ikut berputar bersama isinya.
 
 ### Menyusul (fase terkait)
 
