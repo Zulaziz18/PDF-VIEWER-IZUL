@@ -133,7 +133,8 @@ Hasilnya di `bench/results/phase1-linux.txt`, berikut catatan tentang apa yang
 
 ```bash
 cargo build --workspace --release      # pekerjanya yang diukur, jadi rilis
-cargo run --release -p izul-bench --bin multidoc
+cargo run --release -p izul-bench --bin multidoc           # bawaan 30 dokumen
+cargo run --release -p izul-bench --bin multidoc -- --documents=50
 ```
 
 `multidoc` menjawab kriteria lulus Fase 2 langsung: 50 dokumen terbuka dan
@@ -357,6 +358,9 @@ Hal-hal yang hanya bisa dinilai dengan memakainya, pada Windows sungguhan.
 - [ ] Menyeret berkas PDF ke jendela membukanya sebagai tab baru.
 - [ ] Klik ganda berkas PDF di Explorer membukanya (perlu asosiasi berkas dari
       installer).
+- [ ] Klik ganda berkas PDF **kedua** saat aplikasi sudah berjalan: muncul
+      sebagai tab baru di jendela yang sama, jendelanya maju ke depan, dan
+      **tidak** ada jendela kedua di taskbar.
 - [ ] Layar awal menampilkan sampul halaman pertama untuk berkas yang pernah
       dibuka; berkas yang belum pernah dibuka mendapat kartu polos, bukan kotak
       rusak.

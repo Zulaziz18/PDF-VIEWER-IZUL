@@ -6,16 +6,17 @@
 //! Both halves are about memory held across process boundaries, so both are
 //! measured against **real worker processes** — the same binary the application
 //! spawns, over the same command channel and the same shared-memory ring. A
-//! benchmark that opened fifty documents inside one process would measure
+//! benchmark that opened every document inside one process would measure
 //! something the shipped application never does.
 //!
 //! What is reported:
 //!
-//! * **Fifty open.** Fifty documents spread over the pool the way the
-//!   supervisor spreads them, each one rendered once so that its pages are
-//!   actually loaded — an "open" document nobody has rendered holds almost
-//!   nothing, and reporting that number would be flattering and useless. Then
-//!   the resident set of every worker, and what one document costs on average.
+//! * **Many open at once.** `--documents N` of them (default 30) spread over
+//!   the pool the way the supervisor spreads them, each one rendered once so
+//!   that its pages are actually loaded — an "open" document nobody has
+//!   rendered holds almost nothing, and reporting that number would be
+//!   flattering and useless. Then the resident set of every worker, and what
+//!   one document costs on average.
 //! * **Trim.** The same fifty after `Trim`, which is what an inactive tab gets
 //!   (SPEC 10). The difference between the two numbers is the whole of the
 //!   inactive-tab memory rule.
@@ -51,12 +52,43 @@ type WorkerStream = tokio::net::UnixStream;
 type WorkerStream = tokio::net::windows::named_pipe::NamedPipeServer;
 
 const SLOTS: u32 = 16;
-/// Documents open at once, straight from the pass criterion.
-const DOCUMENTS: usize = 50;
+/// Documents open at once, by default.
+///
+/// SPEC 17 words the pass criterion as *50 dokumen terbuka*; the default here
+/// is 30 because that is the number the project owner asked to see measured.
+/// The two are not the same claim, so the run prints which one it did and the
+/// results file keeps the 50-document figure beside it rather than quietly
+/// replacing it. Override with `--documents N`.
+const DOCUMENTS_DEFAULT: usize = 30;
 /// Open/close rounds. The criterion names this number.
 const CYCLES: usize = 200;
 /// Workers, matching what the pool starts on a typical machine.
 const WORKERS: usize = 8;
+
+/// Reads `--documents N` off the command line.
+///
+/// A bad value stops the run rather than silently falling back to the default:
+/// a benchmark that measured something other than what was asked for, and said
+/// nothing, is worse than one that refuses to start.
+fn document_count<I: IntoIterator<Item = String>>(args: I) -> Result<usize, String> {
+    let mut args = args.into_iter();
+    while let Some(arg) = args.next() {
+        let value = match arg.split_once('=') {
+            Some(("--documents", v)) => Some(v.to_string()),
+            _ if arg == "--documents" => args.next(),
+            _ => continue,
+        };
+        let value = value.ok_or_else(|| "--documents perlu angka".to_string())?;
+        let n: usize = value
+            .parse()
+            .map_err(|_| format!("--documents bukan angka: {value}"))?;
+        if n == 0 {
+            return Err("--documents harus lebih dari nol".into());
+        }
+        return Ok(n);
+    }
+    Ok(DOCUMENTS_DEFAULT)
+}
 
 fn repo_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -259,6 +291,13 @@ async fn main() {
         );
         std::process::exit(2);
     }
+    let documents = match document_count(std::env::args().skip(1)) {
+        Ok(n) => n,
+        Err(e) => {
+            eprintln!("{e}");
+            std::process::exit(2);
+        }
+    };
     let session = std::process::id() as u64;
     let mut report = serde_json::Map::new();
     let profile = worker_binary().map(|(_, p)| p).unwrap_or("?");
@@ -270,18 +309,18 @@ async fn main() {
     }
     report.insert("worker_profile".into(), profile.into());
 
-    // ---- fifty documents open at once ------------------------------------
+    // ---- many documents open at once -------------------------------------
     let mut workers = Vec::new();
     for id in 0..WORKERS as u32 {
         workers.push(Worker::spawn(id, session).await);
     }
     let idle: u64 = workers.iter().filter_map(|w| rss_kb(w.pid())).sum();
-    println!("== 50 dokumen terbuka ==");
+    println!("== {documents} dokumen terbuka ==");
     println!("{WORKERS} pekerja diam: {:.1} MB", mb(idle));
 
     let started = Instant::now();
     let mut opened = 0usize;
-    for i in 0..DOCUMENTS {
+    for i in 0..documents {
         // Round-robin, which is what the pool's placement policy comes to when
         // every document is the same size.
         let index = i % WORKERS;
@@ -356,6 +395,7 @@ async fn main() {
     report.insert("trim_read_mb".into(), mb(read).into());
     report.insert("trim_after_mb".into(), mb(trimmed).into());
     report.insert("workers".into(), (WORKERS as u64).into());
+    report.insert("documents_requested".into(), (documents as u64).into());
     report.insert("documents_open".into(), (opened as u64).into());
     report.insert("idle_mb".into(), mb(idle).into());
     report.insert("loaded_mb".into(), mb(loaded).into());
@@ -420,4 +460,34 @@ async fn main() {
         "{}",
         serde_json::to_string_pretty(&serde_json::Value::Object(report)).unwrap_or_default()
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{document_count, DOCUMENTS_DEFAULT};
+
+    fn args(list: &[&str]) -> Vec<String> {
+        list.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn the_default_is_what_the_project_owner_asked_for() {
+        assert_eq!(document_count(args(&[])), Ok(DOCUMENTS_DEFAULT));
+        assert_eq!(DOCUMENTS_DEFAULT, 30);
+    }
+
+    #[test]
+    fn both_spellings_of_the_flag_work() {
+        assert_eq!(document_count(args(&["--documents", "50"])), Ok(50));
+        assert_eq!(document_count(args(&["--documents=50"])), Ok(50));
+    }
+
+    /// Silently falling back to the default would mean reporting a number for
+    /// a run nobody asked for, under a heading that says otherwise.
+    #[test]
+    fn a_bad_value_stops_the_run() {
+        assert!(document_count(args(&["--documents", "banyak"])).is_err());
+        assert!(document_count(args(&["--documents", "0"])).is_err());
+        assert!(document_count(args(&["--documents"])).is_err());
+    }
 }

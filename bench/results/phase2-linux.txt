@@ -1,16 +1,25 @@
 # Fase 2 — memori multi-dokumen
 
-Dihasilkan oleh `cargo run --release -p izul-bench --bin multidoc`.
+Dihasilkan oleh `cargo run --release -p izul-bench --bin multidoc`
+(tambahkan `--documents=50` untuk angka pembanding di bawah).
 Angka mentah ada di `phase2-linux.json`, keluaran apa adanya ada di bagian
 bawah berkas ini.
 
+## Berapa dokumen yang diukur, dan kenapa dua angka
+
+SPEC Bagian 17 menuliskan kriteria lulus Fase 2 sebagai *50 dokumen terbuka*.
+Pemilik proyek meminta angka yang dilaporkan adalah **30 dokumen**, jadi itulah
+bawaan harness sekarang dan itulah angka utama di bawah. Angka 50 tetap
+dijalankan dan dicantumkan di sini, karena menghapusnya berarti berkas ini
+diam-diam berhenti menjawab kriteria yang tertulis di SPEC. Keduanya dari
+mesin, konfigurasi, dan menit yang sama.
+
 ## Yang diukur, dan yang tidak
 
-Kriteria lulus Fase 2 (SPEC 17) berbunyi: *50 dokumen terbuka, RAM terkendali,
-nol kebocoran setelah 200 siklus buka-tutup.* Ketiganya soal memori yang
-dipegang lintas proses, jadi ketiganya diukur terhadap **proses pekerja
-sungguhan** — binari yang sama yang dijalankan aplikasi, lewat kanal perintah
-dan ring memori bersama yang sama.
+Ketiga hal yang ditanyakan kriteria lulus adalah soal memori yang dipegang
+lintas proses, jadi ketiganya diukur terhadap **proses pekerja sungguhan** —
+binari yang sama yang dijalankan aplikasi, lewat kanal perintah dan ring memori
+bersama yang sama.
 
 Yang **tidak** ada di sini: proses UI dan cache ubinnya. Ia butuh webview, yang
 tidak bisa berjalan tanpa layar. Anggarannya sendiri ditentukan dan ditegakkan
@@ -22,18 +31,37 @@ Angka-angka ini dari Linux x64, 8 pekerja, PDFium 151.0.7881.0. Windows adalah
 platform yang dikirim dan angkanya akan berbeda; pengukuran di sana perlu
 dilakukan dengan aplikasi sungguhan.
 
+## Ringkasan
+
+| Yang diukur | 30 dokumen (bawaan) | 50 dokumen (kriteria SPEC) |
+|---|---|---|
+| Waktu buka + render semuanya | 80 ms | 133 ms |
+| Resident set 8 pekerja | 47,4 -> 80,6 MB | 47,2 -> 94,0 MB |
+| Rata-rata per dokumen | 1,10 MB | 0,94 MB |
+| 200 siklus buka-tutup | 1,7 ms/siklus, RSS mendatar | sama |
+
+Rata-rata per dokumen turun saat jumlahnya naik karena ongkos tetap tiap
+pekerja (PDFium yang dimuat, arena alokator) dibagi ke lebih banyak dokumen —
+bukan karena dokumennya jadi lebih murah.
+
+**Catatan pengukuran:** run pertama sesudah build memakan 558 ms untuk 30
+dokumen, karena page cache sistem masih dingin dan berkas fixture baru saja
+ditulis. Angka 80 ms di atas adalah run berikutnya, yaitu keadaan yang lebih
+mewakili aplikasi yang sudah dipakai. Selisih itu dicatat di sini alih-alih
+dibuang diam-diam.
+
 ## Catatan per angka
 
-**50 dokumen terbuka.** Tiap dokumen dibuka *dan dirender satu ubin* sebelum
+**Dokumen terbuka.** Tiap dokumen dibuka *dan dirender satu ubin* sebelum
 diukur. Ini disengaja: `Open` hanya membaca katalog, dan objek halaman — yang
 merupakan sebagian besar memorinya — baru dimuat ketika ada yang meminta
 halaman. Mengukur tanpa render akan melaporkan biaya sebuah dokumen sebagai
 beberapa ratus kilobyte: benar, dan menyesatkan.
 
 **Tab tidak aktif (Trim).** Diukur terpisah, pada satu pekerja dan satu dokumen
-yang **dibaca** 60 halaman, bukan pada kelima puluh di atas — kelima puluh itu
-punya satu halaman termuat masing-masing, jadi `Trim` di sana hanya
-mengembalikan beberapa kilobyte dan angkanya tidak berarti apa-apa.
+yang **dibaca** 60 halaman, bukan pada puluhan dokumen di atas — mereka punya
+satu halaman termuat masing-masing, jadi `Trim` di sana hanya mengembalikan
+beberapa kilobyte dan angkanya tidak berarti apa-apa.
 
 Hasilnya jujur dan tidak seperti yang diharapkan: `Trim` **melepas** seluruh
 pegangan halaman (dibuktikan test `releasing_the_pages_empties_the_page_cache`
@@ -48,84 +76,164 @@ kembali.
 **200 siklus buka-tutup.** Sepuluh putaran pemanasan lebih dulu, lalu RSS
 dicuplik tiap 25 siklus. Bentuk kurvanya yang menjawab pertanyaan kebocoran,
 bukan selisih awal-akhir: kebocoran terus menanjak, arena alokator mendatar.
-Kurva di bawah mendatar setelah ~25 siklus (11,41 MB -> 11,46 MB selama 175
-siklus berikutnya, yaitu 0,3 KB per siklus), jadi pertambahan 1,58 MB yang
+Kurva di bawah mendatar setelah ~25 siklus, jadi pertambahan 1,58 MB yang
 terlihat di selisih awal-akhir seluruhnya terjadi saat pemanasan.
 
-## Keluaran apa adanya
+## Keluaran apa adanya — 30 dokumen (bawaan)
+
+```text
+izul-worker: profil release
+== 30 dokumen terbuka ==
+8 pekerja diam: 47.4 MB
+30 dokumen terbuka + dirender dalam 80 ms
+resident set seluruh pekerja: 80.6 MB (+33.1 MB, rata-rata 1.10 MB/dokumen)
+
+== tab tidak aktif (SPEC 10) ==
+60 halaman dibaca: 5.9 MB -> 13.5 MB (+7.6 MB)
+setelah Trim: 13.5 MB (kembali 0.0 MB)
+
+== 200 siklus buka-tutup ==
+  setelah  25 siklus: 11.79 MB
+  setelah  50 siklus: 11.82 MB
+  setelah  75 siklus: 11.83 MB
+  setelah 100 siklus: 11.84 MB
+  setelah 125 siklus: 11.84 MB
+  setelah 150 siklus: 11.84 MB
+  setelah 175 siklus: 11.84 MB
+  setelah 200 siklus: 11.85 MB
+sebelum 10.3 MB -> sesudah 11.8 MB (selisih +1.58 MB, +8.1 KB per siklus)
+200 siklus dalam 350 ms (1.8 ms/siklus)
+
+{
+  "cycle_after_mb": 11.84765625,
+  "cycle_before_mb": 10.265625,
+  "cycle_curve": [
+    {
+      "cycle": 25,
+      "rss_mb": 11.79296875
+    },
+    {
+      "cycle": 50,
+      "rss_mb": 11.8203125
+    },
+    {
+      "cycle": 75,
+      "rss_mb": 11.828125
+    },
+    {
+      "cycle": 100,
+      "rss_mb": 11.8359375
+    },
+    {
+      "cycle": 125,
+      "rss_mb": 11.8359375
+    },
+    {
+      "cycle": 150,
+      "rss_mb": 11.83984375
+    },
+    {
+      "cycle": 175,
+      "rss_mb": 11.83984375
+    },
+    {
+      "cycle": 200,
+      "rss_mb": 11.84765625
+    }
+  ],
+  "cycle_drift_kb_per_cycle": 8.1,
+  "cycle_ms": 350.43522,
+  "cycles": 200,
+  "documents_open": 30,
+  "documents_requested": 30,
+  "idle_mb": 47.4296875,
+  "loaded_mb": 80.5625,
+  "open_all_ms": 80.158041,
+  "per_document_mb": 1.1044270833333334,
+  "trim_after_mb": 13.5,
+  "trim_base_mb": 5.92578125,
+  "trim_pages_read": 60,
+  "trim_read_mb": 13.5,
+  "worker_profile": "release",
+  "workers": 8
+}
+```
+
+## Keluaran apa adanya — 50 dokumen (kriteria SPEC)
 
 ```text
 izul-worker: profil release
 == 50 dokumen terbuka ==
-8 pekerja diam: 43.6 MB
-50 dokumen terbuka + dirender dalam 149 ms
-resident set seluruh pekerja: 90.7 MB (+47.1 MB, rata-rata 0.94 MB/dokumen)
+8 pekerja diam: 47.2 MB
+50 dokumen terbuka + dirender dalam 133 ms
+resident set seluruh pekerja: 94.0 MB (+46.8 MB, rata-rata 0.94 MB/dokumen)
 
 == tab tidak aktif (SPEC 10) ==
-60 halaman dibaca: 5.6 MB -> 13.2 MB (+7.6 MB)
-setelah Trim: 13.2 MB (kembali 0.0 MB)
+60 halaman dibaca: 5.8 MB -> 13.4 MB (+7.6 MB)
+setelah Trim: 13.4 MB (kembali 0.0 MB)
 
 == 200 siklus buka-tutup ==
-  setelah  25 siklus: 11.41 MB
-  setelah  50 siklus: 11.44 MB
-  setelah  75 siklus: 11.45 MB
-  setelah 100 siklus: 11.45 MB
-  setelah 125 siklus: 11.45 MB
-  setelah 150 siklus: 11.46 MB
-  setelah 175 siklus: 11.46 MB
-  setelah 200 siklus: 11.46 MB
-sebelum 9.9 MB -> sesudah 11.5 MB (selisih +1.58 MB, +8.1 KB per siklus)
-200 siklus dalam 341 ms (1.7 ms/siklus)
+  setelah  25 siklus: 11.95 MB
+  setelah  50 siklus: 11.98 MB
+  setelah  75 siklus: 11.98 MB
+  setelah 100 siklus: 11.99 MB
+  setelah 125 siklus: 11.99 MB
+  setelah 150 siklus: 12.00 MB
+  setelah 175 siklus: 12.00 MB
+  setelah 200 siklus: 12.00 MB
+sebelum 10.4 MB -> sesudah 12.0 MB (selisih +1.58 MB, +8.1 KB per siklus)
+200 siklus dalam 353 ms (1.8 ms/siklus)
 
 {
-  "cycle_after_mb": 11.46484375,
-  "cycle_before_mb": 9.8828125,
+  "cycle_after_mb": 12.00390625,
+  "cycle_before_mb": 10.421875,
   "cycle_curve": [
     {
       "cycle": 25,
-      "rss_mb": 11.41015625
+      "rss_mb": 11.94921875
     },
     {
       "cycle": 50,
-      "rss_mb": 11.4375
+      "rss_mb": 11.9765625
     },
     {
       "cycle": 75,
-      "rss_mb": 11.4453125
+      "rss_mb": 11.984375
     },
     {
       "cycle": 100,
-      "rss_mb": 11.453125
+      "rss_mb": 11.9921875
     },
     {
       "cycle": 125,
-      "rss_mb": 11.453125
+      "rss_mb": 11.9921875
     },
     {
       "cycle": 150,
-      "rss_mb": 11.45703125
+      "rss_mb": 11.99609375
     },
     {
       "cycle": 175,
-      "rss_mb": 11.45703125
+      "rss_mb": 11.99609375
     },
     {
       "cycle": 200,
-      "rss_mb": 11.46484375
+      "rss_mb": 12.00390625
     }
   ],
   "cycle_drift_kb_per_cycle": 8.1,
-  "cycle_ms": 341.303968,
+  "cycle_ms": 352.844795,
   "cycles": 200,
   "documents_open": 50,
-  "idle_mb": 43.625,
-  "loaded_mb": 90.734375,
-  "open_all_ms": 149.016996,
-  "per_document_mb": 0.9421875,
-  "trim_after_mb": 13.19921875,
-  "trim_base_mb": 5.55859375,
+  "documents_requested": 50,
+  "idle_mb": 47.23828125,
+  "loaded_mb": 94.00390625,
+  "open_all_ms": 133.11247300000002,
+  "per_document_mb": 0.9353125,
+  "trim_after_mb": 13.41796875,
+  "trim_base_mb": 5.84375,
   "trim_pages_read": 60,
-  "trim_read_mb": 13.19921875,
+  "trim_read_mb": 13.41796875,
   "worker_profile": "release",
   "workers": 8
 }

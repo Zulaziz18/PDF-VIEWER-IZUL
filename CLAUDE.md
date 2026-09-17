@@ -347,8 +347,20 @@ dibuang dari cache ubin. Kalau nanti ada yang melaporkan "Trim tidak
 menghemat apa-apa", inilah jawabannya — dan angkanya ada di
 `bench/results/phase2-linux.txt`.
 
-**Yang sengaja tidak dikerjakan di fase ini:** single-instance (klik ganda PDF
-kedua membuka jendela kedua, bukan tab baru); dua tab untuk satu berkas
+**Single-instance sudah ada** (diminta pengguna setelah laporan fase):
+`tauri_plugin_single_instance` didaftarkan **paling awal** di builder — ia yang
+memutuskan apakah proses ini adalah aplikasinya sama sekali — dan meneruskan
+argumen ke instance yang sudah jalan lewat event `izul://open-files`;
+`src/app/openFiles.ts` yang mendengarkannya.
+
+**Jumlah dokumen di benchmark:** SPEC Bagian 17 menulis kriterianya *50
+dokumen*, tetapi pengguna meminta angka yang dilaporkan adalah **30**. Harness
+sekarang menerima `--documents N` dengan bawaan 30, dan
+`bench/results/phase2-linux.txt` memuat **keduanya** — menghapus angka 50 berarti
+berkas itu diam-diam berhenti menjawab kriteria yang tertulis di SPEC. Kalau
+kriterianya memang mau diturunkan, itu perubahan SPEC dan perlu dibahas.
+
+**Yang sengaja tidak dikerjakan di fase ini:** dua tab untuk satu berkas
 (menunggu split view di Fase 5); test integrasi Windows (masih `#![cfg(unix)]`,
 sama seperti Fase 1).
 

@@ -61,6 +61,11 @@ yang diharapkan dan dicatat apa adanya.
 - **Asosiasi berkas Windows**: PDF yang diklik ganda diteruskan sebagai argumen
   baris perintah dan dibuka saat jendela siap. Argumen yang bukan `.pdf` yang
   benar-benar ada diabaikan diam-diam.
+- **Satu instance saja.** Klik ganda PDF kedua saat aplikasi sudah berjalan
+  **menambah tab di jendela yang ada**, bukan membuka jendela kedua. Tanpa ini,
+  tiap berkas yang dibuka dari Explorer akan menjalankan satu kolam delapan
+  proses pekerja, satu cache ubin, dan satu baris sesi sendiri — dan strip tab
+  tidak akan pernah terisi.
 - **Pintasan**: Ctrl+F membuka pencarian, F3/Shift+F3 melompat antar hasil,
   Ctrl+Tab berpindah tab, dan Ctrl+W kini menutup **tab**, bukan jendela.
 - **Benchmark Fase 2** (`cargo run --release -p izul-bench --bin multidoc`):
@@ -69,14 +74,25 @@ yang diharapkan dan dicatat apa adanya.
 
 ### Angka
 
-Linux x64, 8 pekerja, pekerja rilis, PDFium 151.0.7881.0:
+Linux x64, 8 pekerja, pekerja rilis, PDFium 151.0.7881.0. Bawaan harness adalah
+**30 dokumen** atas permintaan pemilik proyek; SPEC Bagian 17 menuliskan
+kriterianya sebagai 50 dokumen, jadi angka itu tetap dijalankan dan dicantumkan
+di sebelahnya alih-alih dihapus:
 
-- 50 dokumen terbuka + dirender dalam **149 ms**; resident set seluruh pekerja
-  **43,6 MB -> 90,7 MB**, yaitu **0,94 MB per dokumen**.
+| Yang diukur | 30 dokumen (bawaan) | 50 dokumen (kriteria SPEC) |
+|---|---|---|
+| Buka + render semuanya | 80 ms | 133 ms |
+| Resident set 8 pekerja | 47,4 -> 80,6 MB | 47,2 -> 94,0 MB |
+| Rata-rata per dokumen | 1,10 MB | 0,94 MB |
+
+Rata-rata per dokumen turun saat jumlahnya naik karena ongkos tetap tiap
+pekerja dibagi ke lebih banyak dokumen, bukan karena dokumennya jadi lebih
+murah.
+
 - 200 siklus buka-tutup: **1,7 ms per siklus**; RSS **mendatar** setelah ~25
-  siklus (11,41 MB -> 11,46 MB selama 175 siklus berikutnya, 0,3 KB/siklus).
-  Pertambahan 1,58 MB yang terlihat dari ujung ke ujung seluruhnya terjadi saat
-  pemanasan alokator.
+  siklus (11,93 MB -> 11,99 MB selama 175 siklus berikutnya). Pertambahan
+  1,58 MB yang terlihat dari ujung ke ujung seluruhnya terjadi saat pemanasan
+  alokator.
 
 ### Diketahui, dan tidak ditutup-tutupi
 
@@ -88,8 +104,6 @@ Linux x64, 8 pekerja, pekerja rilis, PDFium 151.0.7881.0:
 - **Satu berkas, satu tab.** Membuka berkas yang sudah terbuka memindahkan fokus
   ke tabnya alih-alih membuat salinan kedua. Dua tab untuk satu berkas menunggu
   split view di Fase 5.
-- **Belum ada single-instance.** Mengklik ganda PDF kedua saat aplikasi sudah
-  berjalan menjalankan proses kedua, bukan menambah tab di jendela yang ada.
 - **Test integrasi masih hanya Unix.** Tiga test ujung-ke-ujung Fase 2 (banyak
   dokumen sekaligus, pencarian dengan kotak sorot, pengindeksan sampai FTS5)
   ikut digerbangi `#![cfg(unix)]` seperti Fase 1, jadi Windows — platform yang

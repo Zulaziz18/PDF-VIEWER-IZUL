@@ -83,8 +83,8 @@ Berkas yang sudah dipindah atau dihapus dilewati tanpa pesan galat.
 
 - **Seret & lepas** berkas PDF ke jendela.
 - **Klik ganda** berkas PDF di Windows Explorer, jika asosiasi berkas dipasang
-  saat instalasi. Perhatikan: aplikasi yang sudah berjalan tidak akan menambah
-  tab — akan terbuka jendela baru. Itu akan diperbaiki di fase penghalusan.
+  saat instalasi. Kalau aplikasi sudah berjalan, berkasnya menjadi tab baru di
+  jendela yang sedang terbuka — bukan jendela kedua.
 - **Daftar berkas terakhir** di layar awal, kini bergambar sampul halaman
   pertama. Sampul hanya ada untuk berkas yang pernah dibuka di aplikasi ini —
   membuatkannya untuk berkas yang belum pernah dibuka berarti membuka semuanya,

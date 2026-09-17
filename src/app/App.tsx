@@ -9,7 +9,8 @@
  * Three things happen once, at startup, and they happen in this order for a
  * reason: files named on the command line are what the user just double-clicked
  * and must win the focus, so the restored session is opened first and the
- * startup files after it.
+ * startup files after it. A *later* double-click reaches the running window
+ * through the single-instance channel instead — see `openFiles.ts`.
  */
 
 import { useEffect } from "react";
@@ -22,6 +23,7 @@ import { TitleBar } from "./TitleBar";
 import { Toolbar } from "./Toolbar";
 import { Viewport } from "./Viewport";
 import { useDropTarget } from "./dropTarget";
+import { useOpenFilesFromOtherInstance } from "./openFiles";
 import { useShortcuts } from "./shortcuts";
 import { useDocument } from "@/state/documentStore";
 import { useWorkspace } from "@/state/workspaceStore";
@@ -32,6 +34,7 @@ export function App(): React.JSX.Element {
   const error = useWorkspace((s) => s.error);
   useShortcuts();
   useDropTarget();
+  useOpenFilesFromOtherInstance();
 
   useEffect(() => {
     const workspace = useWorkspace.getState();

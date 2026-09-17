@@ -179,6 +179,25 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
     let handle = rt.handle().clone();
     let tile_renderer = Arc::clone(&renderer);
     let result = tauri::Builder::default()
+        // First, before every other plugin: this one decides whether this
+        // process is the application at all. A second launch — which is what a
+        // double-clicked PDF produces once the file association is installed —
+        // hands its arguments to the instance already running and exits, so the
+        // file opens as a tab in the window the user is looking at instead of
+        // in a second window with its own worker pool (SPEC 11.3).
+        .plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            let files = pdf_arguments(argv.into_iter().skip(1));
+            if let Some(w) = app.get_webview_window("main") {
+                // Focus first: the user double-clicked something and expects a
+                // window, whether or not the file turns out to be openable.
+                let _ = w.unminimize();
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+            if !files.is_empty() {
+                let _ = app.emit("izul://open-files", files);
+            }
+        }))
         .plugin(tauri_plugin_dialog::init())
         .manage(state)
         .register_asynchronous_uri_scheme_protocol("izul", move |_ctx, request, responder| {
