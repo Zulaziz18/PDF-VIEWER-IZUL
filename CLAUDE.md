@@ -426,9 +426,12 @@ kalau pengguna lebih suka terpisah, itu perlu branch baru dan izinnya.
 - Golden image: 15 baseline, semua lulus < 0,5 persen (SPEC 3.3). Di
   `crates/izul-pdf/golden/`, dijalankan CI.
 - Paritas kanvas: `tools/canvas-parity/run.mjs`, butuh Chromium sungguhan, tidak
-  di CI. Sepuluh dari tiga belas jenis di bawah 0,6 persen; tiga yang memuat
-  teks 1,7–4,2 persen karena bentuk glif browser bukan bentuk glif PDFium
-  (posisinya sama). Angka dan penjelasannya di `bench/results/phase3-parity.txt`.
+  di CI. **Dua belas jenis non-teks di bawah 0,53 persen.** Tiga kasus berteks
+  dikecualikan dari angka itu sejak baseline pindah ke font uji Type 3 — kanvas
+  menggambar huruf sungguhan, baselinenya blok, jadi membandingkan pikselnya
+  tidak berarti; yang masih berarti di sana cakupan tintanya (56,5 vs 56,6
+  persen), artinya posisinya sama. Angka lengkapnya di
+  `bench/results/phase3-parity.txt`.
 
 **Cacat nyata yang ditemukan harness paritas:** anotasi gambar berbeda 30,7
 persen karena kanvas menghaluskan gambar yang diperbesar sementara PDFium
