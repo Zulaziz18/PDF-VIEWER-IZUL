@@ -229,6 +229,15 @@ Yang perlu diingat saat CI merah lagi nanti:
   jalankan `cargo clippy --workspace --all-targets -- -D warnings`. Itu
   memunculkan galat unused-import yang sama persis dengan yang dilaporkan CI
   Windows, tanpa perlu mesin Windows.
+- **Harness dan benchmark ikut dibangun di kedua runner.** `cargo build
+  --workspace` dan `cargo clippy --workspace --all-targets` mencakup `bench/`
+  dan `tests-integration/`, jadi kode yang hanya benar di Unix di sana adalah
+  CI Windows merah — bukan sekadar test yang dilewati. Ini yang menjatuhkan
+  `Rust (windows-latest)` pada push pertama Fase 2: `bench/src/multidoc.rs`
+  menyebut `tokio::net::UnixStream` langsung. Berkas test punya `#![cfg(unix)]`
+  yang menjaganya; binari benchmark tidak, dan tidak bisa punya — sebuah
+  `[[bin]]` tetap dibangun. Pilih tipe per platform (seperti `izul-ipc`
+  melakukannya di dalam `transport.rs`) sejak baris pertama ditulis.
 - **Jalankan `cargo test --workspace --no-fail-fast`** sebelum push. Tanpa itu
   cargo berhenti di binari test pertama yang gagal, dan kegagalan berikutnya
   baru terlihat satu putaran CI kemudian.
