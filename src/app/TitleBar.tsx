@@ -1,8 +1,8 @@
 /**
  * Custom title bar (SPEC 12).
  *
- * The window is undecorated so the title bar and the future tab strip read as
- * one surface. The version comes from `version.json` through the backend, so it
+ * The window is undecorated so the title bar and the tab strip read as one
+ * surface. The version comes from `version.json` through the backend, so it
  * can never disagree with the About box or the installer.
  */
 

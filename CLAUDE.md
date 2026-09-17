@@ -260,63 +260,102 @@ belum cukup tajam — bukan tanda harus dicoba di komputer pengguna.
 ## Keadaan Fase 2 (Multi-Dokumen & Pencarian)
 
 Dikerjakan sekaligus — bagian multi-dokumen dan bagian pencarian — atas
-keputusan pengguna, di branch `claude/pdf-studio-izul-v7-fase-2`.
+keputusan pengguna, di branch `claude/pdf-studio-izul-v7-fase-2`. **Seluruh
+cakupan fase ini selesai**; yang tersisa hanya persetujuan pengguna sebelum
+Fase 3.
 
-**Sudah selesai (lapisan Rust, sudah di-push):**
+**Lapisan Rust (dari putaran pertama):**
 
-1. `izul-store/sessions.rs` — mengisi tabel `sessions`/`session_tabs` yang
-   dibuat Fase 0 tapi belum pernah dipakai. Satu baris sesi per sekali jalan;
-   susunan tab ditulis ulang di tempat. `latest()` **sengaja melewati sesi
-   kosong**: startup membuat sesi baru sebelum memulihkan yang lama, dan tanpa
-   saringan itu baris kosong yang baru jadi "paling baru" lalu menghapus
-   susunan yang mau dipulihkan.
+1. `izul-store/sessions.rs` — mengisi tabel `sessions`/`session_tabs`. Satu
+   baris sesi per sekali jalan; susunan tab ditulis ulang di tempat.
+   `latest()` **sengaja melewati sesi kosong**: startup membuat sesi baru
+   sebelum memulihkan yang lama, dan tanpa saringan itu baris kosong yang baru
+   jadi "paling baru" lalu menghapus susunan yang mau dipulihkan.
 2. `izul-store/search.rs` + migrasi `app_002_index_state.sql` — teks halaman ke
-   `doc_text` (pemicu FTS5 sudah ada sejak Fase 0). Tabel `doc_index_state`
-   menjawab dua hal yang tidak bisa dijawab teksnya sendiri: apakah indeks
-   masih cocok dengan berkas di disk, dan sampai halaman berapa pengindeksan
-   sempat berjalan. `APP_SCHEMA_VERSION` naik 1 → 2.
+   `doc_text`. `doc_index_state` menjawab apakah indeks masih cocok dengan
+   berkas di disk dan sampai halaman berapa pengindeksan sempat berjalan.
 3. `izul-pdf/find.rs` — membungkus `FPDFText_FindStart`. Kotak sorot
-   dikembalikan sebagai **daftar**, bukan satu kotak: kecocokan yang terpotong
-   ganti baris punya dua kotak, dan satu kotak yang membungkus keduanya akan
-   menimpa seluruh blok di antaranya.
+   dikembalikan sebagai **daftar**, bukan satu kotak.
 4. `Request::Search` di pekerja — `PROTOCOL_VERSION` naik 2 → 3.
 
-**Belum dikerjakan:** registry multi-dokumen + perintah Tauri; memecah
-`documentStore.ts` jadi sesi per dokumen + store ruang kerja; tab bar +
-manajemen memori tab tidak aktif; panel pencarian tiga tingkat; recent files,
-drag & drop, asosiasi berkas Windows; benchmark kriteria lulus; pembaruan
-CHANGELOG/version.json.
+**Yang ditambahkan di putaran kedua:**
+
+5. `src-tauri/src/workspace.rs` — registri dokumen terbuka: urutan tab, fokus,
+   dan baris `session_tabs` yang ditulis darinya. Urutan tab **adalah** urutan
+   vektornya; field `order` terpisah akan jadi sumber kebenaran kedua yang
+   melenceng saat close dan reorder berbalapan.
+6. `src-tauri/src/indexing.rs` — pengindeksan latar per halaman, dapat
+   dilanjutkan dan dibatalkan, jeda 15 ms antar halaman, komit tiap 16 halaman.
+7. `src-tauri/src/textsearch.rs` — jalur regex dan geometri sorotan (rentang
+   karakter → kotak per baris). Alasan regex harus jalur terpisah ditulis
+   panjang di kepala berkas itu.
+8. `src-tauri/src/thumbs.rs` — sampul berkas terakhir, PNG di folder data,
+   direkam saat dokumen dibuka. Base64-nya ditulis tangan dan diuji terhadap
+   vektor RFC, bukan terhadap dirinya sendiri.
+9. Perintah Tauri baru: `list_tabs`, `activate_document`, `reorder_tabs`,
+   `set_tab_pinned`, `restore_session`, `startup_files`, `pin_recent`,
+   `index_document`, `index_progress`, `search_page`, `search_document`,
+   `search_library`, `search_regex_page`.
+10. Frontend dipecah: `src/state/documentSession.ts` (satu store per dokumen,
+    dibuat dari balasan `open_document`) + `src/state/workspaceStore.ts`
+    (daftar tab, fokus, kebijakan memori). `documentStore.ts` sekarang tinggal
+    lapisan tipis yang berlangganan ke sesi yang aktif — itulah yang membuat
+    komponen Fase 1 tidak perlu diubah satu per satu.
+11. `TabBar.tsx`, `SearchPanel.tsx`, `dropTarget.tsx`, `EmptyState` bersampul,
+    `src/viewport/highlights.ts` + integrasinya di `renderer.ts`.
+12. `bench/src/multidoc.rs` — kriteria lulus fase ini, diukur.
 
 **Keputusan teknis yang diambil sendiri, beserta alasannya:**
 
-- **Pencarian dibuat per-halaman, bukan per-dokumen.** Pekerja yang pergi
-  mencari di 500 halaman berhenti menjawab heartbeat, dan supervisor
-  membunuhnya di detik keenam (SPEC 3.4). Pembagiannya jadi: indeks FTS5
-  menjawab "halaman mana", pekerja menjawab "di sebelah mana". Ini juga yang
-  membuat pencarian bisa dibatalkan — mengetik menaikkan generasi tiap ketukan.
-- **`Response::SearchReady` ditambahkan di ujung enum, bukan di tengah.**
-  `postcard` mengenali varian lewat indeksnya; menyisipkan di tengah menggeser
-  nomor semua varian sesudahnya. Itu persis bug #4 di atas.
-- **Terjemahan ketikan pengguna ke sintaks FTS5 ditangani serius.** FTS5 punya
-  bahasa kueri sendiri (`AND`, `OR`, `NEAR`, `*`, `^`, `-`, kurung, kutip).
-  Orang yang mencari `size 10" x 8"` memaksudkan karakter itu apa adanya;
-  diteruskan mentah hasilnya galat sintaks, atau lebih buruk, kueri lain yang
-  valid dan diam-diam salah. Tiap token dibungkus kutip dan kutip di dalamnya
-  digandakan. Ada test yang melempar empat belas bentuk ketikan bermasalah dan
-  menuntut tidak satu pun gagal.
+- **Pencarian per-halaman, bukan per-dokumen.** Pekerja yang pergi mencari di
+  500 halaman berhenti menjawab heartbeat dan dibunuh di detik keenam
+  (SPEC 3.4). Indeks FTS5 menjawab "halaman mana", pekerja menjawab "di sebelah
+  mana". Ini juga yang membuat pencarian bisa dibatalkan per ketukan.
+- **`Response::SearchReady` ditambahkan di ujung enum**, karena `postcard`
+  mengenali varian lewat indeksnya (bug #4 di atas).
+- **Terjemahan ketikan pengguna ke sintaks FTS5 ditangani serius.** Tiap token
+  dibungkus kutip, kutip di dalamnya digandakan; ada test yang melempar empat
+  belas bentuk ketikan bermasalah.
+- **Tiga tab tetap "hangat", bukan satu.** Pembaca yang membandingkan dua
+  dokumen membolak-balik keduanya tiap beberapa detik; menyusutkan tiap pindah
+  berarti merender ulang keduanya setiap kali. Aturannya murni (`tabsToTrim`)
+  supaya bisa diuji tanpa menonton grafik memori.
+- **Sesi ditulis tiap kali berubah, bukan saat keluar.** Kasus yang membuat
+  session restore ada justru kasus aplikasi tidak ditutup baik-baik.
+- **Sampul direkam saat dokumen dibuka, bukan saat daftar digambar.** Membuat
+  sampul berarti membuka PDF; daftar dua puluh berkas akan membuka dua puluh
+  dokumen untuk panel yang belum diklik siapa pun.
+- **Seret & lepas lewat kanal Tauri, bukan DOM.** Drag-and-drop webview
+  menyerahkan objek `File` tanpa path, sedangkan pekerja membuka berkas lewat
+  path.
+
+**Temuan pengukuran yang perlu diingat:** `Trim` **melepas** seluruh pegangan
+halaman (dijaga test `releasing_the_pages_empties_the_page_cache`), tetapi
+resident set pekerja **tidak turun** — PDFium menyimpan arena alokatornya. Yang
+dibeli `Trim` di sisi pekerja adalah memori yang dapat dipakai ulang, bukan RAM
+yang kembali ke sistem. Sisi proses UI berbeda: di sana bitmap benar-benar
+dibuang dari cache ubin. Kalau nanti ada yang melaporkan "Trim tidak
+menghemat apa-apa", inilah jawabannya — dan angkanya ada di
+`bench/results/phase2-linux.txt`.
+
+**Yang sengaja tidak dikerjakan di fase ini:** single-instance (klik ganda PDF
+kedua membuka jendela kedua, bukan tab baru); dua tab untuk satu berkas
+(menunggu split view di Fase 5); test integrasi Windows (masih `#![cfg(unix)]`,
+sama seperti Fase 1).
 
 **Cacat harness yang ditemukan dan diperbaiki (bukan bug aplikasi):** suite
 test `izul-pdf` mati dengan SIGSEGV begitu test yang memakai PDFium bertambah.
-Dua sebab, keduanya sudah ada sejak Fase 1 dan hanya belum cukup terbebani:
-tiap modul test memegang `OnceLock<Engine>` sendiri — `Engine::load_from`
+Dua sebab: tiap modul test memegang `OnceLock<Engine>` sendiri — `Engine::load_from`
 menolak panggilan kedua, jadi modul yang kalah start **melewati seluruh
 tesnya tanpa suara** — dan tidak ada yang menjaga aturan satu-thread yang
-dipatuhi produksi (`izul-worker` memakai runtime tokio satu-thread justru
-karena ini, dan `Document` memegang `RefCell` sehingga tidak bisa dibagi
-antar-thread). Diperbaiki dengan `izul-pdf/src/test_support.rs`: satu engine
+dipatuhi produksi. Diperbaiki dengan `izul-pdf/src/test_support.rs`: satu engine
 untuk seluruh binari test, dan `pdfium_lock()` yang wajib dipegang selama
 sebuah `Document` hidup. **Kalau nanti menambah test yang membuka `Document`
 di crate itu, pakai `engine_and_lock!()` — jangan bikin engine sendiri.**
+
+**Catatan lingkungan:** membangun `izul-app` di kontainer Linux butuh
+`libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf` (sama seperti CI).
+Tanpa itu `cargo check -p izul-app` gagal di `gdk-sys`, bukan di kode kita.
 
 ## Alur kerja proyek ini
 

@@ -1,0 +1,52 @@
+{
+  "cycle_after_mb": 11.46484375,
+  "cycle_before_mb": 9.8828125,
+  "cycle_curve": [
+    {
+      "cycle": 25,
+      "rss_mb": 11.41015625
+    },
+    {
+      "cycle": 50,
+      "rss_mb": 11.4375
+    },
+    {
+      "cycle": 75,
+      "rss_mb": 11.4453125
+    },
+    {
+      "cycle": 100,
+      "rss_mb": 11.453125
+    },
+    {
+      "cycle": 125,
+      "rss_mb": 11.453125
+    },
+    {
+      "cycle": 150,
+      "rss_mb": 11.45703125
+    },
+    {
+      "cycle": 175,
+      "rss_mb": 11.45703125
+    },
+    {
+      "cycle": 200,
+      "rss_mb": 11.46484375
+    }
+  ],
+  "cycle_drift_kb_per_cycle": 8.1,
+  "cycle_ms": 341.303968,
+  "cycles": 200,
+  "documents_open": 50,
+  "idle_mb": 43.625,
+  "loaded_mb": 90.734375,
+  "open_all_ms": 149.016996,
+  "per_document_mb": 0.9421875,
+  "trim_after_mb": 13.19921875,
+  "trim_base_mb": 5.55859375,
+  "trim_pages_read": 60,
+  "trim_read_mb": 13.19921875,
+  "worker_profile": "release",
+  "workers": 8
+}

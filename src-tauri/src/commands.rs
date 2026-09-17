@@ -8,15 +8,20 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use izul_ipc::message::{DocId, OutlineEntry, Request, Response};
+use izul_ipc::message::{DocId, OutlineEntry, Request, Response, SearchOptions};
 use izul_model::geom::RotationQuarter;
-use izul_store::files::{self, ReadingState, ViewMode};
+use izul_store::files::{self, FileId, ReadingState, ViewMode};
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
-use crate::render::{DocInfo, RenderService, RenderStats};
+use crate::indexing::{IndexProgress, Indexer, Job};
+use crate::render::{DocInfo, RenderService, RenderStats, TileKey, TileKind};
 use crate::supervisor::Pool;
+use crate::textsearch::{self, HitOut, MAX_HITS_PER_PAGE};
+use crate::thumbs;
 use crate::version::{self, VersionInfo};
+use crate::workspace::{OpenDoc, Workspace};
 
 /// Everything the UI process keeps for the life of the run.
 pub struct AppState {
@@ -24,6 +29,17 @@ pub struct AppState {
     pub render: Arc<RenderService>,
     pub data_dir: PathBuf,
     pub next_doc_id: std::sync::atomic::AtomicU64,
+    /// Which documents are open, in which order, and which one has focus.
+    ///
+    /// A `parking_lot::Mutex` rather than a `tokio` one: nothing held here is
+    /// ever held across an await, and every reader is a command that wants the
+    /// answer immediately. An async lock would add a scheduling hop to
+    /// something that is a hash lookup.
+    pub workspace: Mutex<Workspace>,
+    pub indexer: Arc<Indexer>,
+    /// Paths the process was started with — a double-clicked PDF, on Windows
+    /// with the file association installed.
+    pub startup_files: Vec<String>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -38,6 +54,37 @@ impl AppState {
     fn db(&self) -> Result<rusqlite::Connection, String> {
         izul_store::open(&self.data_dir, izul_store::Which::App)
             .map_err(|e| format!("basis data: {e}"))
+    }
+
+    /// Writes the current tab arrangement over this run's session row.
+    ///
+    /// Called after every change rather than at shutdown, because the one case
+    /// session restore exists for — the application not being closed politely —
+    /// is precisely the case where a shutdown hook never runs. The write is a
+    /// delete and a handful of inserts in one transaction, on an arrangement
+    /// that changes when a human clicks something, so its cost is irrelevant.
+    fn save_session(&self) {
+        let (session, slots) = {
+            let ws = self.workspace.lock();
+            (ws.session(), ws.slots())
+        };
+        let Some(session) = session else { return };
+        let result = self.db().and_then(|conn| {
+            izul_store::sessions::save_tabs(&conn, session, &slots)
+                .map_err(|e| format!("sesi: {e}"))
+        });
+        if let Err(e) = result {
+            tracing::warn!(error = %e, "susunan tab tidak dapat disimpan");
+        }
+    }
+
+    /// The document a command names, or an error the frontend can show.
+    fn open_doc(&self, doc: u64) -> Result<OpenDoc, String> {
+        self.workspace
+            .lock()
+            .get(doc)
+            .cloned()
+            .ok_or_else(|| "dokumen tidak terbuka".to_string())
     }
 }
 
@@ -89,6 +136,11 @@ pub struct RecentFile {
     /// file that moved"), so the list can show it as unavailable instead of
     /// failing when it is clicked.
     pub available: bool,
+    /// A `data:` PNG of the first page, when one was captured while the
+    /// document was open. Absent for a file this application has never
+    /// rendered — making one would mean opening the PDF, which is exactly what
+    /// a list of recent files must not do.
+    pub cover: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -197,12 +249,16 @@ pub async fn open_document(
     // document the user has seen before must come back where they left it
     // (SPEC 11.1), and the row that stores that is the same one that makes it
     // recent.
+    let mut file_id: Option<FileId> = None;
     let restored = match state.db() {
         Ok(conn) => match files::touch(&conn, &file, stamp) {
-            Ok(id) => files::reading_state(&conn, id)
-                .ok()
-                .flatten()
-                .map(SavedView::from),
+            Ok(id) => {
+                file_id = Some(id);
+                files::reading_state(&conn, id)
+                    .ok()
+                    .flatten()
+                    .map(SavedView::from)
+            }
             Err(e) => {
                 tracing::warn!(error = %e, "riwayat berkas tidak dapat ditulis");
                 None
@@ -213,6 +269,36 @@ pub async fn open_document(
             None
         }
     };
+
+    let file_id = file_id.map(|f| f.0).unwrap_or(0);
+    state.workspace.lock().insert(OpenDoc {
+        doc: doc.0,
+        path: path.clone(),
+        file_id,
+        page_count,
+        panel: 0,
+        pinned: false,
+    });
+    state.save_session();
+
+    if file_id > 0 {
+        // Both of these are background work on a document that is now open and
+        // will stay open: neither is allowed to delay the first page appearing,
+        // so neither is awaited here.
+        state.indexer.start(Job {
+            doc: doc.0,
+            file_id,
+            page_count,
+            data_dir: state.data_dir.clone(),
+            pool: Arc::clone(&state.pool),
+        });
+    }
+    capture_cover(
+        Arc::clone(&state.render),
+        state.data_dir.clone(),
+        doc.0,
+        file.clone(),
+    );
 
     Ok(OpenedDoc {
         doc: doc.0,
@@ -225,13 +311,59 @@ pub async fn open_document(
     })
 }
 
+/// Renders a cover for the recent-files list, if there is not one already.
+///
+/// Fire and forget, at prefetch priority: the user is waiting for page one, not
+/// for a 200-pixel thumbnail of it, and the preview tier this uses is the same
+/// bitmap the sidebar is about to ask for anyway — so in practice this is a
+/// cache hit that costs an encode.
+fn capture_cover(render: Arc<RenderService>, data_dir: PathBuf, doc: u64, file: PathBuf) {
+    if thumbs::file_for(&data_dir, &file).is_file() {
+        return;
+    }
+    tokio::spawn(async move {
+        let key = TileKey {
+            doc,
+            page: 0,
+            rotation: 0,
+            ppp_milli: thumbs::COVER_MAX_EDGE,
+            col: 0,
+            row: 0,
+            kind: TileKind::Preview,
+        };
+        let tile = match render
+            .fetch(key, 0, crate::render::Priority::Prefetch)
+            .await
+        {
+            Ok(t) => t,
+            Err(e) => {
+                tracing::debug!(doc, error = %e, "sampul tidak dapat dirender");
+                return;
+            }
+        };
+        match thumbs::encode_png(&tile.bytes, tile.width, tile.height, tile.stride) {
+            Ok(png) => {
+                if let Err(e) = thumbs::store(&data_dir, &file, &png) {
+                    tracing::debug!(doc, error = %e, "sampul tidak dapat disimpan");
+                }
+            }
+            Err(e) => tracing::debug!(doc, error = %e, "sampul tidak dapat dikodekan"),
+        }
+    });
+}
+
 #[tauri::command]
 pub async fn close_document(state: tauri::State<'_, AppState>, doc: u64) -> CmdResult<()> {
+    // The indexer first: it holds a worker handle for this document and would
+    // otherwise keep asking a closed document for pages until it ran out.
+    state.indexer.forget(doc);
     let worker = { state.pool.read().await.worker_for(DocId(doc)) };
     if let Some(worker) = worker {
         let _ = Pool::ask(&worker, Request::Close { doc: DocId(doc) }).await;
     }
     state.render.forget(doc);
+    state.workspace.lock().remove(doc);
+    state.save_session();
     Ok(())
 }
 
@@ -392,10 +524,359 @@ pub async fn recent_files(state: tauri::State<'_, AppState>) -> CmdResult<Vec<Re
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| r.path.clone()),
                 available: path.is_file(),
+                cover: thumbs::load_data_url(&state.data_dir, &path),
                 path: r.path,
                 last_opened: r.last_opened,
                 pinned: r.pinned,
             }
+        })
+        .collect())
+}
+
+// ---------------------------------------------------------------------------
+// Tabs and the session (SPEC 10, SPEC 11.3)
+// ---------------------------------------------------------------------------
+
+/// One open tab, as the tab bar draws it.
+#[derive(Debug, Clone, Serialize)]
+pub struct TabOut {
+    pub doc: u64,
+    pub path: String,
+    pub name: String,
+    pub page_count: u32,
+    pub pinned: bool,
+    pub active: bool,
+}
+
+/// A tab from the last run, waiting to be reopened.
+#[derive(Debug, Clone, Serialize)]
+pub struct RestorableTab {
+    pub path: String,
+    pub name: String,
+    pub pinned: bool,
+    pub active: bool,
+    /// False when the file has moved or been deleted since. Restoring is a
+    /// convenience, so a missing file is dropped quietly by the frontend rather
+    /// than opening with an error dialog the user never asked for.
+    pub available: bool,
+}
+
+fn base_name(path: &str) -> String {
+    PathBuf::from(path)
+        .file_name()
+        .map(|n| n.to_string_lossy().to_string())
+        .unwrap_or_else(|| path.to_string())
+}
+
+#[tauri::command]
+pub fn list_tabs(state: tauri::State<'_, AppState>) -> CmdResult<Vec<TabOut>> {
+    let ws = state.workspace.lock();
+    let active = ws.active();
+    Ok(ws
+        .tabs()
+        .into_iter()
+        .map(|d| TabOut {
+            doc: d.doc,
+            name: base_name(&d.path),
+            path: d.path.clone(),
+            page_count: d.page_count,
+            pinned: d.pinned,
+            active: active == Some(d.doc),
+        })
+        .collect())
+}
+
+/// Gives a tab focus.
+///
+/// Memory for the tabs that lost it is the frontend's call, not this command's:
+/// it knows which tabs the user has been flipping between, and trimming a tab
+/// the user is about to come back to is worse than holding its bitmaps a little
+/// longer. `trim_document` is the lever it pulls.
+#[tauri::command]
+pub fn activate_document(state: tauri::State<'_, AppState>, doc: u64) -> CmdResult<()> {
+    if !state.workspace.lock().set_active(doc) {
+        return Err("dokumen tidak terbuka".into());
+    }
+    state.save_session();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn reorder_tabs(state: tauri::State<'_, AppState>, order: Vec<u64>) -> CmdResult<()> {
+    state.workspace.lock().reorder(&order);
+    state.save_session();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_tab_pinned(state: tauri::State<'_, AppState>, doc: u64, pinned: bool) -> CmdResult<()> {
+    if !state.workspace.lock().set_pinned(doc, pinned) {
+        return Err("dokumen tidak terbuka".into());
+    }
+    state.save_session();
+    Ok(())
+}
+
+/// The tabs that were open when the application last held any (SPEC 11.3).
+///
+/// This does not reopen anything. The frontend decides — it has to, because
+/// reopening is what creates the tabs it draws, and doing it here would mean
+/// the window came up with documents the store knew nothing about.
+#[tauri::command]
+pub fn restore_session(state: tauri::State<'_, AppState>) -> CmdResult<Vec<RestorableTab>> {
+    let conn = state.db()?;
+    let Some((_, tabs)) = izul_store::sessions::latest(&conn).map_err(|e| format!("sesi: {e}"))?
+    else {
+        return Ok(Vec::new());
+    };
+    Ok(tabs
+        .into_iter()
+        .map(|t| {
+            let path = PathBuf::from(&t.path);
+            RestorableTab {
+                name: base_name(&t.path),
+                available: path.is_file(),
+                pinned: t.slot.pinned,
+                active: t.slot.is_active,
+                path: t.path,
+            }
+        })
+        .collect())
+}
+
+/// PDFs named on the command line — a double-clicked file, on Windows with the
+/// association installed (SPEC 11.3).
+#[tauri::command]
+pub fn startup_files(state: tauri::State<'_, AppState>) -> CmdResult<Vec<String>> {
+    Ok(state.startup_files.clone())
+}
+
+#[tauri::command]
+pub fn pin_recent(state: tauri::State<'_, AppState>, path: String, pinned: bool) -> CmdResult<()> {
+    let conn = state.db()?;
+    let file = PathBuf::from(&path);
+    let row = files::find(&conn, &file)
+        .map_err(|e| format!("basis data: {e}"))?
+        .ok_or_else(|| "berkas tidak ada dalam riwayat".to_string())?;
+    files::set_pinned(&conn, row.id, pinned).map_err(|e| format!("basis data: {e}"))
+}
+
+// ---------------------------------------------------------------------------
+// Indexing (SPEC 7)
+// ---------------------------------------------------------------------------
+
+/// Starts, or resumes, building the text index for an open document.
+///
+/// Opening a document already does this; the command exists so the search panel
+/// can nudge an index that stopped — a tab closed halfway through, a worker
+/// that died — without the user having to close and reopen the file.
+#[tauri::command]
+pub fn index_document(state: tauri::State<'_, AppState>, doc: u64) -> CmdResult<bool> {
+    let open = state.open_doc(doc)?;
+    if open.file_id <= 0 {
+        return Err("berkas ini tidak tercatat, indeks tidak dapat dibuat".into());
+    }
+    Ok(state.indexer.start(Job {
+        doc,
+        file_id: open.file_id,
+        page_count: open.page_count,
+        data_dir: state.data_dir.clone(),
+        pool: Arc::clone(&state.pool),
+    }))
+}
+
+/// How far the index for a document has got.
+///
+/// `None` means nothing has been started in this run. That is not the same as
+/// "not indexed": an index built during an earlier run is still on disk and
+/// still answers searches, which is what [`izul_store::search::begin`]'s resume
+/// point is for.
+#[tauri::command]
+pub fn index_progress(
+    state: tauri::State<'_, AppState>,
+    doc: u64,
+) -> CmdResult<Option<IndexProgress>> {
+    Ok(state.indexer.progress(doc))
+}
+
+// ---------------------------------------------------------------------------
+// Search, in three tiers (SPEC 11.1)
+// ---------------------------------------------------------------------------
+
+/// A hit from the index: which page, and what it looks like.
+#[derive(Debug, Clone, Serialize)]
+pub struct IndexHit {
+    pub file_id: i64,
+    pub path: String,
+    pub name: String,
+    pub page: u32,
+    /// The matching text with the match bracketed, straight from FTS5's own
+    /// `snippet()`.
+    pub snippet: String,
+    /// The open document holding this file, when there is one — so clicking a
+    /// library hit jumps in an existing tab instead of opening a second copy.
+    pub doc: Option<u64>,
+}
+
+/// **Tier one** — the page in front of the user.
+///
+/// Answered by the worker holding the document, because this is the only tier
+/// that needs geometry: where on the page each match sits, in the same display
+/// space the tiles are drawn in. `generation` makes it cancellable — typing
+/// raises it per keystroke, and a query the user has already typed past is
+/// dropped rather than finished.
+#[tauri::command]
+#[allow(clippy::too_many_arguments)]
+pub async fn search_page(
+    state: tauri::State<'_, AppState>,
+    doc: u64,
+    page: u32,
+    query: String,
+    case_sensitive: bool,
+    whole_word: bool,
+    rotation: u8,
+    generation: u64,
+) -> CmdResult<Vec<HitOut>> {
+    if query.is_empty() {
+        return Ok(Vec::new());
+    }
+    let worker = { state.pool.read().await.worker_for(DocId(doc)) };
+    let worker = worker.ok_or_else(|| "dokumen tidak terbuka".to_string())?;
+    let req = Request::Search {
+        doc: DocId(doc),
+        page,
+        query,
+        opts: SearchOptions {
+            case_sensitive,
+            whole_word,
+            max_hits: MAX_HITS_PER_PAGE as u32,
+        },
+        rotation: RotationQuarter::from_degrees(i32::from(rotation) * 90),
+        generation: izul_ipc::message::Generation(generation),
+    };
+    match Pool::ask(&worker, req).await {
+        Ok(Response::SearchReady { hits, .. }) => Ok(hits
+            .into_iter()
+            .map(|h| HitOut {
+                char_index: h.char_index,
+                char_count: h.char_count,
+                rects: h.rects.into_iter().map(Into::into).collect(),
+            })
+            .collect()),
+        // A superseded search is the normal outcome of typing, not a failure:
+        // the frontend already has a newer query in flight.
+        Ok(Response::Superseded { .. }) => Ok(Vec::new()),
+        Ok(Response::Error {
+            message_id, detail, ..
+        }) => Err(format!("{message_id}: {detail}")),
+        Ok(other) => Err(format!("balasan tak terduga: {other:?}")),
+        Err(e) => Err(e.to_string()),
+    }
+}
+
+/// **Tier two** — the whole of one document, from its index.
+///
+/// The index is what makes this answerable without walking five hundred pages
+/// through a worker. It returns pages; tier one then fills in where on the page
+/// the match is, once the user goes there.
+#[tauri::command]
+pub fn search_document(
+    state: tauri::State<'_, AppState>,
+    doc: u64,
+    query: String,
+    limit: u32,
+) -> CmdResult<Vec<IndexHit>> {
+    let open = state.open_doc(doc)?;
+    if open.file_id <= 0 {
+        return Ok(Vec::new());
+    }
+    let conn = state.db()?;
+    let hits = izul_store::search::search_file(&conn, FileId(open.file_id), &query, limit)
+        .map_err(|e| format!("pencarian: {e}"))?;
+    Ok(decorate(&state, hits))
+}
+
+/// **Tier three** — every document that has ever been indexed (SPEC 11.1).
+#[tauri::command]
+pub fn search_library(
+    state: tauri::State<'_, AppState>,
+    query: String,
+    limit: u32,
+) -> CmdResult<Vec<IndexHit>> {
+    let conn = state.db()?;
+    let hits = izul_store::search::search_library(&conn, &query, limit)
+        .map_err(|e| format!("pencarian: {e}"))?;
+    Ok(decorate(&state, hits))
+}
+
+/// Attaches the file name and, where there is one, the open tab holding it.
+fn decorate(state: &AppState, hits: Vec<izul_store::Hit>) -> Vec<IndexHit> {
+    let by_path: std::collections::HashMap<String, u64> = state
+        .workspace
+        .lock()
+        .tabs()
+        .into_iter()
+        .map(|d| (d.path.clone(), d.doc))
+        .collect();
+    hits.into_iter()
+        .map(|h| IndexHit {
+            file_id: h.file_id.0,
+            name: base_name(&h.path),
+            doc: by_path.get(&h.path).copied(),
+            page: h.page,
+            snippet: h.snippet,
+            path: h.path,
+        })
+        .collect()
+}
+
+/// Regular-expression search over **one page of an open document**.
+///
+/// Deliberately its own command rather than a flag on the others. SPEC 11.1
+/// allows regex but forbids presenting it as the equal of the indexed tiers,
+/// and the reason is in the shape of the data: FTS5 indexes tokens, so there is
+/// no ordered text there for a pattern to run against. A regex needs extracted
+/// characters, which means a document that is open and one page at a time.
+///
+/// See `textsearch` for the longer version of that argument.
+#[tauri::command]
+pub async fn search_regex_page(
+    state: tauri::State<'_, AppState>,
+    doc: u64,
+    page: u32,
+    pattern: String,
+    case_sensitive: bool,
+    rotation: u8,
+) -> CmdResult<Vec<HitOut>> {
+    if pattern.is_empty() {
+        return Ok(Vec::new());
+    }
+    let re = textsearch::compile(&pattern, case_sensitive)?;
+    let worker = { state.pool.read().await.worker_for(DocId(doc)) };
+    let worker =
+        worker.ok_or_else(|| "regex hanya berlaku untuk dokumen yang terbuka".to_string())?;
+    let req = Request::ExtractText {
+        doc: DocId(doc),
+        page,
+        // With boxes: a regex match is a range of character indices, and the
+        // highlight rectangles have to be built from the characters themselves.
+        with_boxes: true,
+        rotation: RotationQuarter::from_degrees(i32::from(rotation) * 90),
+    };
+    let (text, chars) = match Pool::ask(&worker, req).await {
+        Ok(Response::TextReady { text, chars, .. }) => (text, chars),
+        Ok(Response::Error {
+            message_id, detail, ..
+        }) => return Err(format!("{message_id}: {detail}")),
+        Ok(other) => return Err(format!("balasan tak terduga: {other:?}")),
+        Err(e) => return Err(e.to_string()),
+    };
+    Ok(textsearch::regex_hits(&text, &re, MAX_HITS_PER_PAGE)
+        .into_iter()
+        .map(|(start, len)| HitOut {
+            char_index: start,
+            char_count: len,
+            rects: textsearch::rects_for_range(&chars, start as usize, len as usize),
         })
         .collect())
 }

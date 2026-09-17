@@ -24,6 +24,9 @@ izul-render.workspace = true
 postcard.workspace = true
 izul-store.workspace = true
 rusqlite.workspace = true
+image.workspace = true
+regex = "1"
+
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 serde.workspace = true

@@ -4,9 +4,10 @@
 > fitur yang belum ada hanya akan menyesatkan, jadi bagian yang belum bisa
 > dipakai sengaja dikosongkan sampai fasenya selesai.
 
-## Status: Fase 1
+## Status: Fase 2
 
-Aplikasi ini sekarang bisa dipakai membaca.
+Aplikasi ini sekarang bisa dipakai membaca beberapa dokumen sekaligus, dan
+mencari di dalamnya.
 
 ### Membuka dan menggulir
 
@@ -57,8 +58,65 @@ melompat. **Daftar Isi** menampilkan bookmark bawaan dokumen, bila ada.
 Menutup lalu membuka kembali berkas yang sama akan mengembalikan halaman,
 posisi gulir, perbesaran, rotasi, dan mode tampilan seperti saat ditinggalkan.
 
-Yang **belum** dapat dilakukan: membuka beberapa dokumen sekaligus dalam tab,
-mencari, menganotasi, dan menyimpan. Semua itu datang di Fase 2 sampai Fase 4.
+### Beberapa dokumen sekaligus
+
+Setiap dokumen yang dibuka mendapat tabnya sendiri. Strip tab muncul begitu ada
+dua dokumen — dengan satu dokumen ia hanya akan memakan ruang halaman.
+
+- Berpindah tab: klik, atau `Ctrl+Tab` dan `Ctrl+Shift+Tab`.
+- Menutup tab: tombol `×` pada tabnya, klik tombol tengah tetikus, atau
+  `Ctrl+W`. `Ctrl+W` menutup **tab**, bukan jendela.
+- Mengurutkan ulang: seret tabnya ke tempat lain.
+
+Setiap tab mengingat perbesaran, rotasi, posisi baca, dan hasil pencariannya
+sendiri, jadi berpindah bolak-balik tidak menghilangkan apa pun.
+
+Tab yang lama tidak dilihat melepaskan gambar halamannya untuk menghemat memori,
+dan mengambilnya kembali saat dibuka lagi. Tiga tab terakhir yang dilihat selalu
+siap seketika. Membuka berkas yang sudah terbuka akan berpindah ke tabnya, bukan
+membuat salinan kedua.
+
+Susunan tab disimpan otomatis dan dipulihkan saat aplikasi dijalankan lagi.
+Berkas yang sudah dipindah atau dihapus dilewati tanpa pesan galat.
+
+### Membuka berkas dengan cara lain
+
+- **Seret & lepas** berkas PDF ke jendela.
+- **Klik ganda** berkas PDF di Windows Explorer, jika asosiasi berkas dipasang
+  saat instalasi. Perhatikan: aplikasi yang sudah berjalan tidak akan menambah
+  tab — akan terbuka jendela baru. Itu akan diperbaiki di fase penghalusan.
+- **Daftar berkas terakhir** di layar awal, kini bergambar sampul halaman
+  pertama. Sampul hanya ada untuk berkas yang pernah dibuka di aplikasi ini —
+  membuatkannya untuk berkas yang belum pernah dibuka berarti membuka semuanya,
+  dan itu akan membuat layar awal lambat. Tombol bintang menyematkan berkas ke
+  atas daftar.
+
+### Mencari
+
+Buka panel pencarian dengan `Ctrl+F`. Ada tiga cakupan:
+
+| Cakupan | Mencari di | Hasilnya |
+|---|---|---|
+| **Dokumen ini** | seluruh halaman dokumen yang terbuka | daftar halaman beserta cuplikan kalimatnya |
+| **Semua dokumen** | setiap berkas yang pernah dibuka di aplikasi ini | daftar halaman beserta nama berkasnya; satu klik membukanya |
+| **Regex** | halaman yang sedang dibuka saja | kecocokan disorot langsung di halaman |
+
+`F3` melompat ke hasil berikutnya, `Shift+F3` ke sebelumnya, `Esc` menutup
+panel. Kecocokan pada halaman yang sedang tampak selalu disorot kuning.
+
+Dua catatan yang jujur soal batasannya:
+
+- **Teks dokumen diindeks di latar belakang** saat dokumen dibuka. Untuk
+  dokumen besar ini perlu beberapa detik, dan panel menampilkan kemajuannya.
+  Mencari sebelum selesai akan menemukan halaman yang sudah terindeks saja.
+- **Regex hanya berlaku untuk dokumen yang sedang terbuka, satu halaman pada
+  satu waktu.** Ini bukan kekurangan yang akan ditambal: indeks pencarian
+  menyimpan kata, bukan teks berurutan, sehingga pola tidak punya apa pun untuk
+  dijalankan di sana. Untuk mencari di seluruh pustaka, pakai cakupan
+  **Semua dokumen**.
+
+Yang **belum** dapat dilakukan: menganotasi dan menyimpan. Keduanya datang di
+Fase 3 dan Fase 4.
 
 ## Persyaratan sistem
 

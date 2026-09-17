@@ -36,6 +36,7 @@ export function Viewport(): React.JSX.Element {
   const pageRotation = useDocument((s) => s.pageRotation);
   const generation = useDocument((s) => s.generation);
   const texts = useDocument((s) => s.texts);
+  const highlights = useDocument((s) => s.highlights);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -57,7 +58,13 @@ export function Viewport(): React.JSX.Element {
         },
         onZoom: (next) => store().setZoom(next),
         onViewport: (w, h) => store().setViewport(w, h),
-        onWantText: (pages) => void store().loadText(pages),
+        onWantText: (pages) => {
+          void store().loadText(pages);
+          // The same pages, and the only ones worth asking about: highlights are
+          // fetched per page from the worker, so asking for a page nobody is
+          // looking at would be a round trip for nothing.
+          void store().loadHighlights(pages);
+        },
       },
     );
     rendererRef.current = renderer;
@@ -82,8 +89,21 @@ export function Viewport(): React.JSX.Element {
       pageRotation,
       generation,
       texts,
+      highlights,
     });
-  }, [doc, pageSizes, zoom, viewMode, docRotation, pageRotation, generation, texts]);
+  }, [doc, pageSizes, zoom, viewMode, docRotation, pageRotation, generation, texts, highlights]);
+
+  // A search result asks the viewport to go somewhere. The store cannot scroll
+  // — it has no renderer — so it leaves the page behind and this picks it up.
+  const pendingPage = useDocument((s) => s.pendingPage);
+  useEffect(() => {
+    if (pendingPage === null) return;
+    const page = useDocument.getState().consumePendingPage();
+    if (page !== null) {
+      useDocument.getState().setPage(page);
+      rendererRef.current?.goToPage(page);
+    }
+  }, [pendingPage]);
 
   // A document that has been open before reopens where it was left (SPEC 11.1).
   // Applied after the first layout, so the offset means what it meant then.

@@ -15,6 +15,31 @@ export const id = {
   "empty.recent": "Berkas Terakhir",
   "empty.noRecent": "Belum ada riwayat.",
   "empty.missing": "Berkas tidak ditemukan di lokasi terakhir",
+  "empty.pin": "Sematkan",
+  "empty.unpin": "Lepas sematan",
+
+  "tabs.label": "Dokumen terbuka",
+  "tabs.close": "Tutup tab",
+
+  "search.label": "Pencarian",
+  "search.close": "Tutup pencarian",
+  "search.placeholder": "Cari kata atau frasa…",
+  "search.placeholderRegex": "Pola regex, mis. \\d{3}-\\d{4}",
+  "search.scopeLabel": "Cakupan pencarian",
+  "search.scope.document": "Dokumen ini",
+  "search.scope.library": "Semua dokumen",
+  "search.scope.regex": "Regex",
+  "search.caseSensitive": "Bedakan huruf besar",
+  "search.wholeWord": "Kata utuh",
+  "search.regexNote":
+    "Regex hanya berlaku untuk dokumen yang sedang terbuka, satu halaman pada satu waktu — indeks tidak menyimpan teks berurutan, jadi pola tidak bisa dijalankan ke seluruh pustaka.",
+  "search.regexOnPage": "Kecocokan regex disorot di halaman yang sedang dibuka.",
+  "search.indexing": "Mengindeks teks…",
+  "search.running": "Mencari…",
+  "search.prompt": "Ketik untuk mencari.",
+  "search.noResults": "Tidak ada yang cocok.",
+  "search.previous": "Hasil sebelumnya",
+  "search.next": "Hasil berikutnya",
 
   "toolbar.sidebar": "Panel samping",
 

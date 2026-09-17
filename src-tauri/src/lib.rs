@@ -36,11 +36,15 @@
 )]
 
 pub mod commands;
+pub mod indexing;
 pub mod logging;
 pub mod protocol;
 pub mod render;
 pub mod supervisor;
+pub mod textsearch;
+pub mod thumbs;
 pub mod version;
+pub mod workspace;
 
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -144,11 +148,31 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
         renderer.spawn_dispatcher();
     }
 
+    // One session row per run. It is created before the window so that the
+    // first document opened has somewhere to be recorded, and `latest()` skips
+    // empty sessions so this one cannot shadow the arrangement it is about to
+    // restore.
+    let session = match izul_store::open(&data_dir, izul_store::Which::App)
+        .map_err(|e| format!("{e}"))
+        .and_then(|conn| {
+            izul_store::sessions::prune(&conn, KEEP_SESSIONS).ok();
+            izul_store::sessions::begin(&conn).map_err(|e| format!("{e}"))
+        }) {
+        Ok(id) => Some(id),
+        Err(e) => {
+            tracing::warn!(error = %e, "sesi tidak dapat dibuka; susunan tab tidak akan tersimpan");
+            None
+        }
+    };
+
     let state = AppState {
         pool: Arc::clone(&pool),
         render: Arc::clone(&renderer),
         data_dir,
         next_doc_id: AtomicU64::new(1),
+        workspace: parking_lot::Mutex::new(workspace::Workspace::new(session)),
+        indexer: Arc::new(indexing::Indexer::new()),
+        startup_files: pdf_arguments(std::env::args().skip(1)),
     };
 
     let title = version::title_bar_text(&v);
@@ -205,11 +229,52 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
             commands::save_view_state,
             commands::render_stats,
             commands::recent_files,
+            commands::pin_recent,
+            commands::list_tabs,
+            commands::activate_document,
+            commands::reorder_tabs,
+            commands::set_tab_pinned,
+            commands::restore_session,
+            commands::startup_files,
+            commands::index_document,
+            commands::index_progress,
+            commands::search_page,
+            commands::search_document,
+            commands::search_library,
+            commands::search_regex_page,
         ])
         .run(tauri::generate_context!());
 
     let _ = stop_tx.send(());
     result.map_err(|e| format!("tauri: {e}"))
+}
+
+/// How many past runs of the application keep their tab arrangement.
+///
+/// Only the newest is ever restored; the rest are kept because a user who
+/// restarts twice by accident has not lost the arrangement they wanted, and
+/// pruning stops the table growing forever on a machine that is never shut
+/// down.
+const KEEP_SESSIONS: u32 = 10;
+
+/// The PDFs named on the command line.
+///
+/// Windows hands a double-clicked file to the application as an argument, so
+/// this is the whole of the file-association path on our side once the
+/// installer has registered the type (SPEC 11.3). Everything that is not an
+/// existing `.pdf` is ignored rather than reported: the argument list also
+/// carries switches, and a typo in one must not open an error dialog before the
+/// window is even up.
+fn pdf_arguments<I: IntoIterator<Item = String>>(args: I) -> Vec<String> {
+    args.into_iter()
+        .filter(|a| !a.starts_with('-'))
+        .filter(|a| {
+            std::path::Path::new(a)
+                .extension()
+                .is_some_and(|e| e.eq_ignore_ascii_case("pdf"))
+        })
+        .filter(|a| std::path::Path::new(a).is_file())
+        .collect()
 }
 
 /// What became of one tile request.
@@ -457,6 +522,30 @@ mod tests {
         let before = labels.len();
         labels.dedup();
         assert_eq!(labels.len(), before, "dua hasil memakai kata yang sama");
+    }
+
+    /// The argument list is not a list of files: it carries switches, and on
+    /// Windows it carries whatever the shell felt like passing. Opening a
+    /// dialog about one before the window exists would be the first thing a
+    /// user saw.
+    #[test]
+    fn only_real_pdf_arguments_are_opened_at_startup() {
+        let dir = std::env::temp_dir().join("izul-args-test");
+        std::fs::create_dir_all(&dir).expect("folder sementara");
+        let real = dir.join("Laporan.PDF");
+        std::fs::write(&real, b"%PDF-1.7\n").expect("tulis");
+        let args = vec![
+            "--flag".to_string(),
+            "tidak-ada.pdf".to_string(),
+            dir.join("bukan.txt").display().to_string(),
+            real.display().to_string(),
+        ];
+        assert_eq!(
+            super::pdf_arguments(args),
+            vec![real.display().to_string()],
+            "hanya berkas .pdf yang benar-benar ada"
+        );
+        let _ = std::fs::remove_file(&real);
     }
 
     #[test]

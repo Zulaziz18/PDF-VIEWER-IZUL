@@ -112,12 +112,7 @@ pub fn index_state(conn: &Connection, file_id: FileId) -> Result<Option<IndexSta
 /// throws the old text away and starts at page 0. Answering a search from text
 /// a document no longer contains is worse than not answering it, so the
 /// invalidation is unconditional rather than a heuristic.
-pub fn begin(
-    conn: &Connection,
-    file_id: FileId,
-    stamp: FileStamp,
-    page_count: u32,
-) -> Result<u32> {
+pub fn begin(conn: &Connection, file_id: FileId, stamp: FileStamp, page_count: u32) -> Result<u32> {
     if let Some(state) = index_state(conn, file_id)? {
         if !state.stamp.differs_from(&stamp) && state.page_count == page_count {
             return Ok(state.pages_done.min(page_count));
@@ -137,13 +132,7 @@ pub fn begin(
              page_count = excluded.page_count,
              pages_done = 0,
              updated_at = excluded.updated_at",
-        params![
-            file_id.0,
-            stamp.size as i64,
-            stamp.mtime,
-            page_count,
-            now()
-        ],
+        params![file_id.0, stamp.size as i64, stamp.mtime, page_count, now()],
     )?;
     tx.commit()?;
     Ok(0)
@@ -286,7 +275,9 @@ mod tests {
         assert_eq!(hits.first().map(|h| h.file_id), Some(a));
         assert_eq!(hits.first().map(|h| h.path.as_str()), Some("/a.pdf"));
         assert!(
-            hits.first().map(|h| h.snippet.contains("[fox]")).unwrap_or(false),
+            hits.first()
+                .map(|h| h.snippet.contains("[fox]"))
+                .unwrap_or(false),
             "the snippet must mark the match: {hits:?}"
         );
     }
@@ -314,10 +305,7 @@ mod tests {
         put_pages(
             &c,
             a,
-            &[
-                (0, "alpha beta".into()),
-                (1, "alpha gamma".into()),
-            ],
+            &[(0, "alpha beta".into()), (1, "alpha gamma".into())],
         )
         .expect("put");
 
@@ -410,7 +398,9 @@ mod tests {
         assert_eq!(begin(&c, a, stamp(900, 9), 10).expect("rebegin"), 0);
         assert_eq!(page_text(&c, a, 0).expect("text"), None);
         assert!(
-            search_library(&c, "original", 10).expect("search").is_empty(),
+            search_library(&c, "original", 10)
+                .expect("search")
+                .is_empty(),
             "a stale index must never keep answering searches"
         );
     }

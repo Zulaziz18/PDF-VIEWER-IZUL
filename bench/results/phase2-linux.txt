@@ -1,0 +1,132 @@
+# Fase 2 — memori multi-dokumen
+
+Dihasilkan oleh `cargo run --release -p izul-bench --bin multidoc`.
+Angka mentah ada di `phase2-linux.json`, keluaran apa adanya ada di bagian
+bawah berkas ini.
+
+## Yang diukur, dan yang tidak
+
+Kriteria lulus Fase 2 (SPEC 17) berbunyi: *50 dokumen terbuka, RAM terkendali,
+nol kebocoran setelah 200 siklus buka-tutup.* Ketiganya soal memori yang
+dipegang lintas proses, jadi ketiganya diukur terhadap **proses pekerja
+sungguhan** — binari yang sama yang dijalankan aplikasi, lewat kanal perintah
+dan ring memori bersama yang sama.
+
+Yang **tidak** ada di sini: proses UI dan cache ubinnya. Ia butuh webview, yang
+tidak bisa berjalan tanpa layar. Anggarannya sendiri ditentukan dan ditegakkan
+oleh `izul-render` (bawaan 2 GiB, dapat dikonfigurasi) dan diuji di sana; yang
+dilaporkan di bawah adalah memori pekerja, yaitu bagian yang tumbuh seiring
+jumlah dokumen.
+
+Angka-angka ini dari Linux x64, 8 pekerja, PDFium 151.0.7881.0. Windows adalah
+platform yang dikirim dan angkanya akan berbeda; pengukuran di sana perlu
+dilakukan dengan aplikasi sungguhan.
+
+## Catatan per angka
+
+**50 dokumen terbuka.** Tiap dokumen dibuka *dan dirender satu ubin* sebelum
+diukur. Ini disengaja: `Open` hanya membaca katalog, dan objek halaman — yang
+merupakan sebagian besar memorinya — baru dimuat ketika ada yang meminta
+halaman. Mengukur tanpa render akan melaporkan biaya sebuah dokumen sebagai
+beberapa ratus kilobyte: benar, dan menyesatkan.
+
+**Tab tidak aktif (Trim).** Diukur terpisah, pada satu pekerja dan satu dokumen
+yang **dibaca** 60 halaman, bukan pada kelima puluh di atas — kelima puluh itu
+punya satu halaman termuat masing-masing, jadi `Trim` di sana hanya
+mengembalikan beberapa kilobyte dan angkanya tidak berarti apa-apa.
+
+Hasilnya jujur dan tidak seperti yang diharapkan: `Trim` **melepas** seluruh
+pegangan halaman (dibuktikan test `releasing_the_pages_empties_the_page_cache`
+di `crates/izul-pdf/src/engine.rs`), tetapi resident set pekerja **tidak turun**
+— PDFium mengembalikan memori itu ke alokatornya sendiri, yang menyimpan
+arenanya. Yang dibeli `Trim` karena itu bukan RSS yang mengecil, melainkan
+memori yang **dapat dipakai ulang**: dokumen berikutnya yang dibuka di pekerja
+itu mengambil dari sana alih-alih menumbuhkan proses. Sisi proses UI berbeda —
+di sana `Trim` membuang bitmap dari cache ubin, dan itu megabyte yang benar-benar
+kembali.
+
+**200 siklus buka-tutup.** Sepuluh putaran pemanasan lebih dulu, lalu RSS
+dicuplik tiap 25 siklus. Bentuk kurvanya yang menjawab pertanyaan kebocoran,
+bukan selisih awal-akhir: kebocoran terus menanjak, arena alokator mendatar.
+Kurva di bawah mendatar setelah ~25 siklus (11,41 MB -> 11,46 MB selama 175
+siklus berikutnya, yaitu 0,3 KB per siklus), jadi pertambahan 1,58 MB yang
+terlihat di selisih awal-akhir seluruhnya terjadi saat pemanasan.
+
+## Keluaran apa adanya
+
+```text
+izul-worker: profil release
+== 50 dokumen terbuka ==
+8 pekerja diam: 43.6 MB
+50 dokumen terbuka + dirender dalam 149 ms
+resident set seluruh pekerja: 90.7 MB (+47.1 MB, rata-rata 0.94 MB/dokumen)
+
+== tab tidak aktif (SPEC 10) ==
+60 halaman dibaca: 5.6 MB -> 13.2 MB (+7.6 MB)
+setelah Trim: 13.2 MB (kembali 0.0 MB)
+
+== 200 siklus buka-tutup ==
+  setelah  25 siklus: 11.41 MB
+  setelah  50 siklus: 11.44 MB
+  setelah  75 siklus: 11.45 MB
+  setelah 100 siklus: 11.45 MB
+  setelah 125 siklus: 11.45 MB
+  setelah 150 siklus: 11.46 MB
+  setelah 175 siklus: 11.46 MB
+  setelah 200 siklus: 11.46 MB
+sebelum 9.9 MB -> sesudah 11.5 MB (selisih +1.58 MB, +8.1 KB per siklus)
+200 siklus dalam 341 ms (1.7 ms/siklus)
+
+{
+  "cycle_after_mb": 11.46484375,
+  "cycle_before_mb": 9.8828125,
+  "cycle_curve": [
+    {
+      "cycle": 25,
+      "rss_mb": 11.41015625
+    },
+    {
+      "cycle": 50,
+      "rss_mb": 11.4375
+    },
+    {
+      "cycle": 75,
+      "rss_mb": 11.4453125
+    },
+    {
+      "cycle": 100,
+      "rss_mb": 11.453125
+    },
+    {
+      "cycle": 125,
+      "rss_mb": 11.453125
+    },
+    {
+      "cycle": 150,
+      "rss_mb": 11.45703125
+    },
+    {
+      "cycle": 175,
+      "rss_mb": 11.45703125
+    },
+    {
+      "cycle": 200,
+      "rss_mb": 11.46484375
+    }
+  ],
+  "cycle_drift_kb_per_cycle": 8.1,
+  "cycle_ms": 341.303968,
+  "cycles": 200,
+  "documents_open": 50,
+  "idle_mb": 43.625,
+  "loaded_mb": 90.734375,
+  "open_all_ms": 149.016996,
+  "per_document_mb": 0.9421875,
+  "trim_after_mb": 13.19921875,
+  "trim_base_mb": 5.55859375,
+  "trim_pages_read": 60,
+  "trim_read_mb": 13.19921875,
+  "worker_profile": "release",
+  "workers": 8
+}
+```

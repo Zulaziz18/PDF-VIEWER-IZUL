@@ -1,0 +1,263 @@
+/**
+ * The window: which documents are open, which one is in front, and what the
+ * inactive ones are allowed to keep (SPEC 10).
+ *
+ * One store per document lives in `documentSession`; this one holds the map of
+ * them and the order they sit in. The split matters for memory as much as for
+ * tidiness — a tab's *decisions* (zoom, position, outline) are kilobytes and
+ * are kept for as long as the tab exists, while a tab's *bitmaps* are megabytes
+ * and are given back the moment the tab stops being looked at.
+ *
+ * The backend keeps its own registry of the same tabs, because it is the one
+ * that writes the session row. This store never invents a tab the backend has
+ * not confirmed: every tab here exists because `open_document` returned.
+ */
+
+import { create } from "zustand";
+import { invoke } from "@tauri-apps/api/core";
+import { createDocumentSession, type DocumentStore, type OpenedDoc } from "./documentSession";
+
+/** One tab, as the tab bar draws it. */
+export interface Tab {
+  readonly doc: number;
+  readonly path: string;
+  readonly name: string;
+  readonly pageCount: number;
+}
+
+/**
+ * How many documents keep their full-resolution bitmaps.
+ *
+ * SPEC 10 asks an inactive tab to give its pixels back; it does not say how
+ * many tabs to hold, and the honest answer is that holding exactly one is
+ * wrong. A reader comparing two documents flips between them every few seconds,
+ * and trimming on every flip would re-render both pages every time. Three is
+ * the smallest number that makes a two-document comparison free, with one spare
+ * for the tab the user just came from.
+ */
+export const WARM_TABS = 3;
+
+/** A tab restored from the last run, before it is reopened. */
+export interface RestorableTab {
+  readonly path: string;
+  readonly name: string;
+  readonly pinned: boolean;
+  readonly active: boolean;
+  readonly available: boolean;
+}
+
+export interface WorkspaceState {
+  tabs: Tab[];
+  activeDoc: number | null;
+  sessions: Map<number, DocumentStore>;
+  /**
+   * Documents in the order they were last looked at, newest first. This is what
+   * decides which tabs stay warm, and it is deliberately recency rather than
+   * tab position: the two tabs a user is comparing are rarely neighbours.
+   */
+  recent: number[];
+  busy: boolean;
+  error: string | null;
+
+  openFile(path: string): Promise<number | null>;
+  closeTab(doc: number): Promise<void>;
+  closeAll(): Promise<void>;
+  activate(doc: number): Promise<void>;
+  reorder(order: readonly number[]): Promise<void>;
+  session(doc: number): DocumentStore | undefined;
+  activeSession(): DocumentStore;
+  restoreSession(): Promise<void>;
+  openStartupFiles(): Promise<void>;
+}
+
+/**
+ * The store components read when nothing is open.
+ *
+ * A real session with `doc: null`, not a bag of undefineds: every component
+ * then reads one shape whether or not a document is open, and the empty state
+ * is a state rather than a special case.
+ */
+const PLACEHOLDER: DocumentStore = createDocumentSession(null);
+
+/**
+ * Which documents should give their bitmaps back.
+ *
+ * Pure, and exported, because this is the rule the pass criterion in SPEC 17
+ * is about — fifty documents open with memory under control — and a rule that
+ * can only be observed by watching a memory graph is a rule nobody can check.
+ */
+export function tabsToTrim(recent: readonly number[], warm: number = WARM_TABS): number[] {
+  return recent.slice(warm);
+}
+
+export const useWorkspace = create<WorkspaceState>((set, get) => ({
+  tabs: [],
+  activeDoc: null,
+  sessions: new Map(),
+  recent: [],
+  busy: false,
+  error: null,
+
+  session(doc: number) {
+    return get().sessions.get(doc);
+  },
+
+  activeSession() {
+    const { activeDoc, sessions } = get();
+    return (activeDoc !== null ? sessions.get(activeDoc) : undefined) ?? PLACEHOLDER;
+  },
+
+  async openFile(path: string) {
+    // Already open: focus it rather than opening a second copy. Two tabs on one
+    // file is a Phase 5 feature (split view); doing it by accident here would
+    // only double the memory of a document the user thinks they opened once.
+    const existing = get().tabs.find((t) => t.path === path);
+    if (existing) {
+      await get().activate(existing.doc);
+      return existing.doc;
+    }
+    set({ busy: true, error: null });
+    try {
+      const opened = await invoke<OpenedDoc>("open_document", { path });
+      const previous = get().activeSession().getState();
+      const store = createDocumentSession(opened, {
+        width: previous.viewportWidth,
+        height: previous.viewportHeight,
+      });
+      const sessions = new Map(get().sessions);
+      sessions.set(opened.doc, store);
+      const tab: Tab = {
+        doc: opened.doc,
+        path: opened.path,
+        name: opened.path.split(/[\\/]/).pop() ?? opened.path,
+        pageCount: opened.page_count,
+      };
+      set({
+        sessions,
+        tabs: [...get().tabs, tab],
+        activeDoc: opened.doc,
+        recent: [opened.doc, ...get().recent.filter((d) => d !== opened.doc)],
+        busy: false,
+        error: null,
+      });
+      void store.getState().loadOutline();
+      void trimCold(get().recent);
+      return opened.doc;
+    } catch (e) {
+      set({ busy: false, error: String(e) });
+      return null;
+    }
+  },
+
+  async closeTab(doc: number) {
+    const { tabs, sessions } = get();
+    const index = tabs.findIndex((t) => t.doc === doc);
+    if (index < 0) return;
+    const nextSessions = new Map(sessions);
+    nextSessions.delete(doc);
+    const nextTabs = tabs.filter((t) => t.doc !== doc);
+    // The neighbour that took its place, or the one before it when the last tab
+    // closed — the same rule the backend registry follows, so the two cannot
+    // disagree about which tab is in front.
+    const successor =
+      get().activeDoc === doc
+        ? (nextTabs[index] ?? nextTabs[nextTabs.length - 1])?.doc ?? null
+        : get().activeDoc;
+    set({
+      tabs: nextTabs,
+      sessions: nextSessions,
+      activeDoc: successor,
+      recent: get().recent.filter((d) => d !== doc),
+      error: null,
+    });
+    try {
+      await invoke("close_document", { doc });
+    } catch (e) {
+      // The tab is gone from the window either way; a backend that could not
+      // close it cleanly is a log entry, not a dialog.
+      console.warn("dokumen tidak dapat ditutup", e);
+    }
+  },
+
+  async closeAll() {
+    for (const tab of [...get().tabs]) {
+      await get().closeTab(tab.doc);
+    }
+  },
+
+  async activate(doc: number) {
+    if (!get().sessions.has(doc)) return;
+    const recent = [doc, ...get().recent.filter((d) => d !== doc)];
+    set({ activeDoc: doc, recent });
+    try {
+      await invoke("activate_document", { doc });
+    } catch {
+      // Losing the focus hint costs the session row one wrong `is_active`.
+    }
+    void trimCold(recent);
+  },
+
+  async reorder(order: readonly number[]) {
+    const byId = new Map(get().tabs.map((t) => [t.doc, t]));
+    const tabs = order.flatMap((d) => {
+      const tab = byId.get(d);
+      return tab ? [tab] : [];
+    });
+    for (const tab of get().tabs) {
+      if (!order.includes(tab.doc)) tabs.push(tab);
+    }
+    set({ tabs });
+    try {
+      await invoke("reorder_tabs", { order: tabs.map((t) => t.doc) });
+    } catch {
+      // Order is cosmetic until the next run; a failed write is not worth a
+      // dialog in front of a drag the user just finished.
+    }
+  },
+
+  async restoreSession() {
+    let tabs: RestorableTab[];
+    try {
+      tabs = await invoke<RestorableTab[]>("restore_session");
+    } catch {
+      // No stored arrangement, or a database that will not open: the window
+      // comes up empty, which is what it did before sessions existed.
+      return;
+    }
+    let activePath: string | null = null;
+    for (const tab of tabs) {
+      if (!tab.available) continue;
+      const doc = await get().openFile(tab.path);
+      if (doc !== null && tab.active) activePath = tab.path;
+    }
+    // Focus is applied last: opening each document takes focus as it goes, and
+    // the tab that had it is rarely the one opened last.
+    const wanted = get().tabs.find((t) => t.path === activePath);
+    if (wanted) await get().activate(wanted.doc);
+  },
+
+  async openStartupFiles() {
+    try {
+      const files = await invoke<string[]>("startup_files");
+      for (const file of files) {
+        await get().openFile(file);
+      }
+    } catch {
+      // Nothing on the command line is the normal case.
+    }
+  },
+}));
+
+/**
+ * Asks the backend to drop the bitmaps of every tab that has gone cold.
+ *
+ * Deliberately fire-and-forget: trimming is an optimisation, and making the
+ * user wait for one would be the opposite of the point.
+ */
+function trimCold(recent: readonly number[]): void {
+  for (const doc of tabsToTrim(recent)) {
+    void invoke("trim_document", { doc }).catch(() => {
+      // A tab that could not be trimmed keeps its bitmaps until it is closed.
+    });
+  }
+}

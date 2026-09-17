@@ -726,3 +726,50 @@ impl Document {
         }
     }
 }
+
+/// What an inactive tab gives back (SPEC 10).
+#[cfg(test)]
+mod trim_tests {
+    use crate::{engine_and_lock, viewer_fixture};
+
+    /// `Trim` is the whole of the inactive-tab memory rule, and it is one line
+    /// of code with nothing above it to notice if that line stopped working.
+    /// The page cache is the thing it clears, so the page cache is what this
+    /// counts.
+    ///
+    /// Worth knowing alongside this: releasing the handles does not
+    /// necessarily hand the pages back to the operating system. PDFium frees
+    /// them into its own allocator, which keeps the arenas, so the resident
+    /// set of a worker measured after a `Trim` barely moves — the Phase 2
+    /// benchmark reports exactly that. What `Trim` does buy is that the memory
+    /// is *reusable*: the next document opened in that worker takes it rather
+    /// than growing the process.
+    #[test]
+    fn releasing_the_pages_empties_the_page_cache() {
+        let (engine, _pdfium) = engine_and_lock!();
+        let path = viewer_fixture!();
+        let doc = match engine.open(&path, None) {
+            Ok(d) => d,
+            Err(e) => panic!("buka fixture: {e}"),
+        };
+        assert_eq!(doc.loaded_page_count(), 0, "belum ada halaman dimuat");
+
+        for page in 0..doc.page_count().min(5) {
+            doc.page_size(page).expect("ukuran halaman memuat halaman");
+        }
+        let loaded = doc.loaded_page_count();
+        assert!(
+            loaded >= 5,
+            "lima halaman seharusnya tersimpan, bukan {loaded}"
+        );
+
+        doc.release_all_pages();
+        assert_eq!(doc.loaded_page_count(), 0, "Trim harus melepas semuanya");
+
+        // And the document is still usable afterwards: an inactive tab that had
+        // to be reopened to be read again would not be a trim, it would be a
+        // close.
+        doc.page_size(0).expect("halaman dapat dimuat ulang");
+        assert_eq!(doc.loaded_page_count(), 1);
+    }
+}

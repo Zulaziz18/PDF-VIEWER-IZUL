@@ -163,15 +163,7 @@ mod tests {
     }
 
     fn file(c: &Connection, path: &str) -> FileId {
-        touch(
-            c,
-            &PathBuf::from(path),
-            FileStamp {
-                size: 1,
-                mtime: 1,
-            },
-        )
-        .expect("touch")
+        touch(c, &PathBuf::from(path), FileStamp { size: 1, mtime: 1 }).expect("touch")
     }
 
     fn slot(file_id: FileId, order: u32) -> TabSlot {

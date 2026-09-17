@@ -26,11 +26,12 @@
 
 import { BitmapCache, BITMAP_BUDGET_BYTES } from "./bitmapCache";
 import { Canvas2DSurface } from "./canvas";
-import type { PageMetrics, Rotation, Scale } from "./geometry";
+import type { PageMetrics, PdfRect, Rotation, Scale } from "./geometry";
 import { displaySize, pageSizePx, scaleKey, tilesCovering, zoomAbout } from "./geometry";
 import type { Layout, ViewMode, ViewRect } from "./layout";
 import { boxOf, dominantPage, layoutDocument, scrollToPage, visiblePages } from "./layout";
 import { prefetchPages, ScrollTracker } from "./prediction";
+import { buildHighlightLayer } from "./highlights";
 import type { TextChar } from "./textLayer";
 import { buildTextLayer, fitTextLayer, groupIntoLines } from "./textLayer";
 import type { Priority, TileRef } from "./tileSource";
@@ -75,6 +76,8 @@ export interface RendererState {
   readonly generation: number;
   /** Character boxes per page, filled in as the backend answers. */
   readonly texts: ReadonlyMap<number, readonly TextChar[]>;
+  /** Boxes to paint over search matches, per page, in display space. */
+  readonly highlights: ReadonlyMap<number, readonly PdfRect[]>;
 }
 
 export interface RendererEvents {
@@ -128,6 +131,7 @@ export class ViewportRenderer {
     pageRotation: {},
     generation: 0,
     texts: new Map(),
+    highlights: new Map(),
   };
   #layout: Layout = EMPTY_LAYOUT;
   #dpr = 1;
@@ -135,6 +139,7 @@ export class ViewportRenderer {
   #abort = new AbortController();
   #pending = new Set<string>();
   #textSignatures = new Map<number, string>();
+  #highlightSignatures = new Map<number, string>();
   #reportedPage = -1;
   #stats: FrameStats = {
     lastFrameMs: 0,
@@ -222,6 +227,7 @@ export class ViewportRenderer {
     if (previous.doc !== state.doc) {
       this.#bitmaps.clear();
       this.#textSignatures.clear();
+      this.#highlightSignatures.clear();
       this.#host.textLayer.replaceChildren();
       this.#tracker.reset();
       this.#reportedPage = -1;
@@ -452,6 +458,7 @@ export class ViewportRenderer {
     }
 
     this.#syncTextLayer(pages);
+    this.#syncHighlightLayer(pages);
     if (wantText.length > 0) this.#events.onWantText(wantText);
 
     const page = dominantPage(this.#layout, view);
@@ -557,6 +564,44 @@ export class ViewportRenderer {
       this.#host.textLayer.appendChild(layer);
       fitTextLayer(layer);
       this.#textSignatures.set(page, signature);
+    }
+  }
+
+  /**
+   * Paints the search matches of the visible pages.
+   *
+   * Same shape as the text layer and for the same reasons: one element per
+   * page, rebuilt only when what it shows actually changed. The signature
+   * includes the zoom and the rotation because a highlight is positioned in
+   * display space — a box left over from another zoom is not merely stale, it
+   * is over the wrong words.
+   */
+  #syncHighlightLayer(pages: readonly number[]): void {
+    const wanted = new Set(pages);
+    for (const page of Array.from(this.#highlightSignatures.keys())) {
+      const rects = this.#state.highlights.get(page);
+      if (!wanted.has(page) || !rects || rects.length === 0) {
+        this.#host.textLayer.querySelector(`[data-hl="${page}"]`)?.remove();
+        this.#highlightSignatures.delete(page);
+      }
+    }
+    for (const page of pages) {
+      const rects = this.#state.highlights.get(page);
+      const box = boxOf(this.#layout, page);
+      const size = this.#displaySizeOf(page);
+      if (!rects || rects.length === 0 || !box || !size) continue;
+      const signature = `${rects.length}:${this.#state.zoom}:${this.#rotationOf(page)}`;
+      if (this.#highlightSignatures.get(page) === signature) continue;
+
+      const layer = buildHighlightLayer(
+        rects,
+        { x: box.x, y: box.y, zoom: this.#state.zoom, pageHeight: size.height },
+        document,
+      );
+      layer.dataset["hl"] = String(page);
+      this.#host.textLayer.querySelector(`[data-hl="${page}"]`)?.remove();
+      this.#host.textLayer.appendChild(layer);
+      this.#highlightSignatures.set(page, signature);
     }
   }
 }

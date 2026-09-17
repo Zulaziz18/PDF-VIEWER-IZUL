@@ -1,9 +1,9 @@
 {
   "name": "PDF Studio Izul",
   "codename": "Atlas",
-  "version": "7.0.0-alpha.1",
-  "phase": "1",
-  "phaseName": "Mesin Viewer",
+  "version": "7.0.0-alpha.2",
+  "phase": "2",
+  "phaseName": "Multi-Dokumen & Pencarian",
   "buildChannel": "dev",
   "pdfiumVersion": "151.0.7881.0",
   "minWindows": "10.0.19041",

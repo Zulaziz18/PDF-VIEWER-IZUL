@@ -284,7 +284,10 @@ mod tests {
         let insensitive = doc
             .find_on_page(0, "BAGIAN", opts(), RotationQuarter::None)
             .expect("cari");
-        assert!(!insensitive.is_empty(), "bawaannya abaikan besar-kecil huruf");
+        assert!(
+            !insensitive.is_empty(),
+            "bawaannya abaikan besar-kecil huruf"
+        );
 
         let sensitive = doc
             .find_on_page(
@@ -394,7 +397,9 @@ mod tests {
         // checks the boxes against the page's display size rather than trusting
         // that `to_display` was called.
         let (doc, _pdfium) = doc_or_skip!();
-        let size = doc.page_display_size(2, RotationQuarter::None).expect("ukuran");
+        let size = doc
+            .page_display_size(2, RotationQuarter::None)
+            .expect("ukuran");
         let hits = doc
             .find_on_page(2, "Bagian", opts(), RotationQuarter::None)
             .expect("cari");

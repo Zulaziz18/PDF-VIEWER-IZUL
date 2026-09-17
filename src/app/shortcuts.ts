@@ -14,6 +14,7 @@
 import { useEffect } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useDocument } from "@/state/documentStore";
+import { useWorkspace } from "@/state/workspaceStore";
 import { viewport } from "./viewportHandle";
 
 async function pickFile(): Promise<void> {
@@ -22,7 +23,7 @@ async function pickFile(): Promise<void> {
     filters: [{ name: "PDF", extensions: ["pdf"] }],
   });
   if (typeof chosen === "string") {
-    await useDocument.getState().open(chosen);
+    await useWorkspace.getState().openFile(chosen);
   }
 }
 
@@ -43,10 +44,29 @@ export function useShortcuts(): void {
             e.preventDefault();
             void pickFile();
             return;
-          case "w":
+          case "w": {
             e.preventDefault();
-            void store.close();
+            // Closes the tab, not the window: with tabs, Ctrl+W meaning "quit"
+            // would throw away every other document the user has open.
+            const active = useWorkspace.getState().activeDoc;
+            if (active !== null) void useWorkspace.getState().closeTab(active);
             return;
+          }
+          case "f":
+            e.preventDefault();
+            store.toggleSearch(true);
+            return;
+          case "Tab": {
+            e.preventDefault();
+            const workspace = useWorkspace.getState();
+            const tabs = workspace.tabs;
+            if (tabs.length < 2) return;
+            const at = tabs.findIndex((tab) => tab.doc === workspace.activeDoc);
+            const step = e.shiftKey ? -1 : 1;
+            const next = tabs[(((at + step) % tabs.length) + tabs.length) % tabs.length];
+            if (next) void workspace.activate(next.doc);
+            return;
+          }
           case "0":
             e.preventDefault();
             store.setZoomMode("actual");
@@ -66,7 +86,18 @@ export function useShortcuts(): void {
       }
       if (typing) return;
       if (e.key === "Escape") {
+        if (store.search.open) {
+          store.toggleSearch(false);
+          return;
+        }
         (document.activeElement as HTMLElement | null)?.blur();
+        return;
+      }
+      // F3 is what a Windows reader reaches for to step through matches, and
+      // it works whether or not the search box has focus.
+      if (e.key === "F3") {
+        e.preventDefault();
+        store.gotoResult(e.shiftKey ? -1 : 1);
         return;
       }
       // Page-at-a-time navigation, which is what the page buttons do.

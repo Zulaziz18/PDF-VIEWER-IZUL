@@ -38,6 +38,31 @@ Test integrasi (`crash_isolation`) membaca PDFium langsung dari
 aplikasi secara otomatis pada setiap `cargo build`. Tidak ada langkah salin
 manual yang diperlukan di kedua kasus — cukup `vendor/pdfium/fetch.sh` di atas.
 
+## Hasil Fase 2
+
+| Suite | Jumlah | Status |
+|---|---|---|
+| `izul-model` (geometri, display list) | 19 | lulus |
+| `izul-ipc` (shm, ring, codec, transport) | 21 | lulus |
+| `izul-store` (skema, identitas, preferensi, **sesi**, **indeks & FTS5**) | 46 | lulus |
+| `izul-pdf` (matriks ubin & rotasi, ruang tampilan, **pencarian**, **Trim**) | 29 | lulus |
+| `izul-render` (cache LRU, prioritas, penggabungan, pembatalan) | 29 | lulus |
+| `izul-worker` (epoch pembatalan, klasifikasi galat) | 7 | lulus |
+| `izul-app` (kolam, racun, sandbox, protokol, **registri tab**, **regex**, **sampul**, **indeks**) | 77 | lulus |
+| `crash_isolation` (proses pekerja nyata) | 7 | lulus |
+| `render_pipeline` (proses pekerja nyata) | 11 | lulus |
+| `render_end_to_end` (aplikasi + pekerja nyata, **multi-dokumen & pencarian**) | 8 | lulus |
+| **Total Rust** | **254** | **lulus** |
+| `src/viewport` + `src/state` (geometri, tata letak, prediksi, teks, cache, URI, **sorotan**, **kebijakan memori tab**) | 71 | lulus |
+| **Total** | **325** | **lulus** |
+
+Tiga test ujung-ke-ujung baru menjalankan proses pekerja sungguhan: enam
+dokumen terbuka sekaligus dengan penutupan salah satunya, pencarian yang
+mengembalikan kotak sorot beserta penolakan generasi lama, dan pengindeksan
+sampai kata yang terlihat di halaman benar-benar ditemukan lewat FTS5. Seperti
+Fase 1, ketiganya digerbangi `#![cfg(unix)]` — cakupan Windows masih test unit
+dan checklist manual.
+
 ## Hasil Fase 1
 
 | Suite | Jumlah | Status |
@@ -103,6 +128,23 @@ sungguhan. Ia butuh `test-fixtures/text-500p.pdf` dan `mixed-500p.pdf`.
 Hasilnya di `bench/results/phase1-linux.txt`, berikut catatan tentang apa yang
 **tidak** diukurnya: tanpa webview tidak ada kompositor, jadi klaim SPEC 13
 "mengunci di refresh rate" belum terbukti dan ditulis begitu.
+
+### Fase 2
+
+```bash
+cargo build --workspace --release      # pekerjanya yang diukur, jadi rilis
+cargo run --release -p izul-bench --bin multidoc
+```
+
+`multidoc` menjawab kriteria lulus Fase 2 langsung: 50 dokumen terbuka dan
+dirender pada kolam pekerja sungguhan, biaya per dokumen, efek `Trim`, lalu 200
+siklus buka-tutup dengan RSS dicuplik tiap 25 siklus — karena bentuk kurvanya,
+bukan selisih ujung ke ujung, yang membedakan kebocoran dari alokator yang
+sedang memanas.
+
+Hasilnya di `bench/results/phase2-linux.txt`, berikut catatan tentang satu hasil
+yang tidak seperti harapan: `Trim` melepas seluruh pegangan halaman, tetapi RSS
+pekerja tidak turun karena PDFium menyimpan arena alokatornya.
 
 ## Regresi dari v6.2
 
@@ -294,6 +336,42 @@ satu-satunya cara membuktikan klaim yang benchmark headless tidak bisa sentuh.
 - [ ] Rapi pada skala Windows 100 %, 125 %, 150 %, dan 175 %.
 - [ ] Seluruh viewport bisa dioperasikan tanpa mouse: Tab, panah, Page Up/Down,
       Home/End, Ctrl+0/+/−.
+
+### Fase 2
+
+Hal-hal yang hanya bisa dinilai dengan memakainya, pada Windows sungguhan.
+
+- [ ] Membuka lima dokumen: strip tab muncul saat dokumen kedua dibuka, tiap tab
+      membawa nama berkasnya.
+- [ ] Berpindah tab mengembalikan zoom, rotasi, dan posisi baca masing-masing —
+      bukan keadaan tab yang barusan ditinggalkan.
+- [ ] Menutup tab yang sedang aktif memindahkan fokus ke tab sebelahnya, bukan
+      mengosongkan jendela.
+- [ ] Menyeret tab mengubah urutannya, dan urutan itu bertahan setelah aplikasi
+      dijalankan ulang.
+- [ ] `Ctrl+W` menutup tab, `Ctrl+Tab` berpindah tab.
+- [ ] Menutup aplikasi dengan lima tab terbuka lalu menjalankannya lagi:
+      kelimanya kembali, dan tab yang aktif adalah yang aktif sebelumnya.
+- [ ] Memindahkan salah satu berkasnya ke folder lain sebelum menjalankan ulang:
+      berkas itu dilewati tanpa dialog galat, sisanya tetap kembali.
+- [ ] Menyeret berkas PDF ke jendela membukanya sebagai tab baru.
+- [ ] Klik ganda berkas PDF di Explorer membukanya (perlu asosiasi berkas dari
+      installer).
+- [ ] Layar awal menampilkan sampul halaman pertama untuk berkas yang pernah
+      dibuka; berkas yang belum pernah dibuka mendapat kartu polos, bukan kotak
+      rusak.
+- [ ] `Ctrl+F` membuka panel pencarian; mengetik menampilkan hasil tanpa jeda
+      yang terasa, dan menghapus ketikan menghapus sorotannya.
+- [ ] Kecocokan di halaman yang tampak tersorot **tepat di atas katanya**, juga
+      pada zoom 200 % dan pada halaman yang diputar.
+- [ ] Cakupan "Semua dokumen" menemukan kata dari berkas yang **tidak** sedang
+      terbuka, dan mengkliknya membukanya di tab.
+- [ ] Cakupan "Regex": pola seperti `\d{3}-\d{4}` menyorot di halaman yang
+      dibuka; pola yang belum lengkap (`(abc`) memunculkan pesan, bukan diam.
+- [ ] Pada dokumen 500 halaman: panel menunjukkan kemajuan pengindeksan, dan
+      menggulir tetap mulus selama pengindeksan berjalan.
+- [ ] Membuka 20 dokumen sekaligus: Task Manager menunjukkan memori yang tidak
+      terus menanjak setelah tab-tab lama berhenti dilihat.
 
 ### Menyusul (fase terkait)
 

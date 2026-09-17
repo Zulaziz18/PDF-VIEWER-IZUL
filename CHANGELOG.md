@@ -3,6 +3,98 @@
 Semua perubahan penting per fase. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/);
 versi mengikuti `version.json` sebagai sumber tunggal.
 
+## [7.0.0-alpha.2] — Fase 2: Multi-Dokumen & Pencarian
+
+Fase ini membuat aplikasi bisa memegang banyak dokumen sekaligus dan mencari di
+dalamnya. Kriteria lulusnya soal memori, dan angkanya ada di
+`bench/results/phase2-linux.txt` — termasuk satu hasil yang **tidak** seperti
+yang diharapkan dan dicatat apa adanya.
+
+### Ditambahkan
+
+- **Tab** (SPEC 10). Satu store per dokumen (`src/state/documentSession.ts`)
+  dengan daftar tab di store ruang kerja (`src/state/workspaceStore.ts`), dan
+  registri padanannya di sisi Rust (`src-tauri/src/workspace.rs`). Zoom, rotasi,
+  posisi baca, daftar isi, teks, dan hasil pencarian milik *dokumen*, bukan
+  jendela — jadi berpindah tab mengembalikan persis keadaan yang ditinggalkan.
+  Strip tab menyembunyikan diri saat hanya ada satu dokumen, bisa diseret untuk
+  diurutkan ulang, dan tombol tengah menutup.
+- **Manajemen memori tab tidak aktif.** Tiga tab terbaru menyimpan bitmapnya;
+  selebihnya di-`Trim` — di proses UI cache ubinnya dibuang, di pekerja
+  pegangan halamannya dilepas. Tiga, bukan satu: pembaca yang membandingkan dua
+  dokumen membolak-balik keduanya tiap beberapa detik, dan menyusutkan tiap
+  pindah berarti merender ulang keduanya setiap kali. Aturannya murni dan
+  diuji (`tabsToTrim`).
+- **Session restore** (SPEC 11.3). Susunan tab ditulis ke `sessions`/
+  `session_tabs` tiap kali berubah — bukan saat keluar, karena kasus yang
+  membuat fitur ini ada justru kasus aplikasi tidak ditutup baik-baik. Berkas
+  yang sudah pindah dilewati diam-diam saat dipulihkan.
+- **Pencarian tiga tingkat** (SPEC 11.1):
+  - *Dokumen ini* — indeks FTS5 dokumen yang terbuka, menjawab "halaman mana".
+  - *Semua dokumen* — seluruh berkas yang pernah diindeks; satu klik membuka
+    berkasnya di tab.
+  - *Halaman* — PDFium menjawab "di sebelah mana", dengan kotak sorot yang
+    digambar di atas halaman. Dibatalkan per ketukan lewat generasi, sama
+    seperti ubin.
+- **Regex sebagai jalur terpisah**, ditandai di UI sebagai hanya berlaku untuk
+  dokumen yang sedang terbuka, satu halaman pada satu waktu. Ini bukan
+  keterbatasan implementasi yang bisa ditambal nanti: FTS5 mengindeks token, dan
+  tidak ada teks berurutan di sana untuk dijalankan sebuah pola. SPEC 11.1
+  melarang menjanjikannya setara dengan dua tingkat lainnya, dan panel
+  mengatakannya dengan kalimat yang bisa dibaca pengguna.
+- **Pengindeksan teks latar** (SPEC 7). Berjalan per halaman lewat pekerja
+  (permintaan yang pergi mengekstrak 500 halaman akan dibunuh supervisor di
+  detik keenam), dengan jeda 15 ms antar halaman supaya viewport tetap
+  didahulukan, komit tiap 16 halaman, dapat dilanjutkan dari tempat berhenti,
+  dan dibatalkan saat tabnya ditutup. Kemajuannya terlihat di panel pencarian,
+  karena hasil kosong dari indeks yang baru separuh jadi tidak bisa dibedakan
+  dari dokumen yang memang tidak memuat katanya.
+- **Berkas terakhir bergambar** (SPEC 11.3, SPEC 12). Sampul halaman pertama
+  direkam pada saat dokumen dibuka — satu-satunya saat ia memang sudah terbuka
+  dan sudah dirender — lalu disimpan sebagai PNG di folder data. Berkas yang
+  belum pernah dibuka di aplikasi ini tidak punya sampul dan mendapat kartu
+  polos; membuatkannya berarti membuka tiap berkas di daftar, yang justru biaya
+  yang tidak boleh dimiliki panel ini. Bisa disematkan.
+- **Seret & lepas** berkas ke jendela, lewat kanal drag-drop milik Tauri dan
+  bukan milik webview: DOM menyerahkan objek `File` tanpa path, sedangkan
+  pekerja membuka berkas *lewat path*.
+- **Asosiasi berkas Windows**: PDF yang diklik ganda diteruskan sebagai argumen
+  baris perintah dan dibuka saat jendela siap. Argumen yang bukan `.pdf` yang
+  benar-benar ada diabaikan diam-diam.
+- **Pintasan**: Ctrl+F membuka pencarian, F3/Shift+F3 melompat antar hasil,
+  Ctrl+Tab berpindah tab, dan Ctrl+W kini menutup **tab**, bukan jendela.
+- **Benchmark Fase 2** (`cargo run --release -p izul-bench --bin multidoc`):
+  50 dokumen terbuka, biaya per dokumen, efek `Trim`, dan 200 siklus buka-tutup
+  dengan kurva RSS tiap 25 siklus.
+
+### Angka
+
+Linux x64, 8 pekerja, pekerja rilis, PDFium 151.0.7881.0:
+
+- 50 dokumen terbuka + dirender dalam **149 ms**; resident set seluruh pekerja
+  **43,6 MB -> 90,7 MB**, yaitu **0,94 MB per dokumen**.
+- 200 siklus buka-tutup: **1,7 ms per siklus**; RSS **mendatar** setelah ~25
+  siklus (11,41 MB -> 11,46 MB selama 175 siklus berikutnya, 0,3 KB/siklus).
+  Pertambahan 1,58 MB yang terlihat dari ujung ke ujung seluruhnya terjadi saat
+  pemanasan alokator.
+
+### Diketahui, dan tidak ditutup-tutupi
+
+- **`Trim` tidak menurunkan RSS pekerja.** Ia melepas seluruh pegangan halaman —
+  dibuktikan test, bukan diasumsikan — tetapi PDFium menyimpan arena alokatornya,
+  jadi memori itu menjadi *dapat dipakai ulang*, bukan dikembalikan ke sistem.
+  Di proses UI ceritanya berbeda: di sana `Trim` membuang bitmap dari cache
+  ubin, dan itu megabyte yang benar-benar kembali.
+- **Satu berkas, satu tab.** Membuka berkas yang sudah terbuka memindahkan fokus
+  ke tabnya alih-alih membuat salinan kedua. Dua tab untuk satu berkas menunggu
+  split view di Fase 5.
+- **Belum ada single-instance.** Mengklik ganda PDF kedua saat aplikasi sudah
+  berjalan menjalankan proses kedua, bukan menambah tab di jendela yang ada.
+- **Test integrasi masih hanya Unix.** Tiga test ujung-ke-ujung Fase 2 (banyak
+  dokumen sekaligus, pencarian dengan kotak sorot, pengindeksan sampai FTS5)
+  ikut digerbangi `#![cfg(unix)]` seperti Fase 1, jadi Windows — platform yang
+  dikirim — masih dijaga test unit dan pengujian manual saja.
+
 ## [7.0.0-alpha.1] — Fase 1: Mesin Viewer
 
 Fase ini membuat aplikasi bisa dibaca: pipeline render lengkap, scroll

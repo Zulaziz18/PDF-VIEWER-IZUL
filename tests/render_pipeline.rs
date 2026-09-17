@@ -725,10 +725,7 @@ async fn a_search_comes_back_with_boxes_that_sit_on_the_page() {
             "kotak sorot harus punya luas: {r:?}"
         );
         assert!(
-            r.left >= -1.0
-                && r.bottom >= -1.0
-                && r.right <= page_w + 1.0
-                && r.top <= page_h + 1.0,
+            r.left >= -1.0 && r.bottom >= -1.0 && r.right <= page_w + 1.0 && r.top <= page_h + 1.0,
             "kotak {r:?} keluar dari halaman {page_w}x{page_h} — ruang koordinatnya salah"
         );
     }
