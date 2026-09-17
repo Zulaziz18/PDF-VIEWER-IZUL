@@ -467,6 +467,19 @@ sama sekali**. Perintah jendela juga butuh izin eksplisit di
 `allow-toggle-maximize`, `allow-close`, `allow-start-dragging`) — tanpa itu
 tombolnya diam saja, persis bug #1 Fase 1.
 
+**Tab berganda: tiga berkas jadi enam tab.** Dilaporkan pengguna sesudahnya.
+Penjaga "sudah terbuka" di `openFile` membaca daftar tab, dan sebuah tab baru
+ada di daftar itu **setelah** `open_document` menjawab — jadi dua pemanggil
+yang tumpang tindih sama-sama melihat daftar kosong dan sama-sama membuka.
+Kedua pemanggilnya ternyata satu kode: efek startup di `App.tsx` yang
+dijalankan dua kali oleh mount ganda `StrictMode` React. Diperbaiki dua lapis
+— peta "sedang dibuka" per path di `openFile` (menutup lubangnya untuk semua
+pemanggil, bukan hanya StrictMode) dan penjaga sekali-per-proses di efek
+startup. **Pelajaran:** penjaga "sudah ada" yang membaca state yang baru terisi
+setelah sebuah `await` bukan penjaga; yang menjaga adalah pendaftaran niat
+**sebelum** await-nya. Mount ganda StrictMode adalah alat, bukan gangguan —
+ia yang menjaring ini.
+
 **Yang belum dikerjakan di Fase 3:** menyimpan ke PDF (itu Fase 4 — anotasi
 masih hidup di memori sampai tab ditutup); penyuntingan teks langsung di atas
 halaman (isinya diketik lewat panel properti); dan **UI-nya belum pernah
