@@ -8,7 +8,7 @@
 //!
 //! Pinned against PDFium `chromium/7881`; see `vendor/pdfium/fetch.sh`.
 
-use std::os::raw::c_int;
+use std::os::raw::{c_int, c_ulong};
 
 /// `FPDFBitmap_BGRA` — 4 bytes per pixel, byte order blue, green, red, alpha.
 pub const FPDF_BITMAP_BGRA: c_int = 4;
@@ -26,3 +26,12 @@ pub const FPDF_RENDER_LIMITEDIMAGECACHE: c_int = 0x0200;
 /// `FPDF_RENDER_NO_SMOOTHIMAGE` — skip image smoothing, for the low-resolution
 /// first tier of the two-tier render.
 pub const FPDF_RENDER_NO_SMOOTHIMAGE: c_int = 0x0400;
+
+/// `FPDF_MATCHCASE` — the search must match letter case exactly.
+///
+/// From `public/fpdf_text.h`. `FPDFText_FindStart` takes its flags as
+/// `unsigned long`, so these are typed to match rather than as `c_int`.
+pub const FPDF_MATCHCASE: c_ulong = 0x0001;
+
+/// `FPDF_MATCHWHOLEWORD` — the match must be bounded by non-word characters.
+pub const FPDF_MATCHWHOLEWORD: c_ulong = 0x0002;

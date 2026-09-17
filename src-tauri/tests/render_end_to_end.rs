@@ -49,11 +49,13 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use izul_app::indexing::{Indexer, Job};
 use izul_app::protocol::parse_tile_uri;
 use izul_app::render::{DocInfo, PoolBackend, RenderService};
 use izul_app::supervisor::worker::WorkerPaths;
 use izul_app::supervisor::Pool;
-use izul_ipc::message::{DocId, Request, Response};
+use izul_ipc::message::{DocId, Generation, Request, Response, SearchOptions};
+use izul_model::geom::RotationQuarter;
 use tokio::sync::RwLock;
 
 fn repo_root() -> PathBuf {
@@ -399,4 +401,242 @@ async fn a_superseded_request_is_refused_rather_than_drawn() {
     );
 
     live.shutdown().await;
+}
+
+// ---------------------------------------------------------------------------
+// Phase 2: several documents at once, and search through the same road
+// ---------------------------------------------------------------------------
+
+/// Tabs are not a frontend feature: each one is a document open in a worker,
+/// and the pool has to hold all of them at once and still know which worker has
+/// which. This opens six documents over one pool and renders a page of each,
+/// which is the smallest thing that would break if placement or the doc table
+/// were wrong.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn several_documents_stay_open_at_once() {
+    let Some(live) = Live::start().await else {
+        skip("izul-worker atau PDFium tidak tersedia");
+        return;
+    };
+    let Some(path) = fixture() else { return };
+    let bytes = std::fs::read(&path).expect("baca fixture");
+    let key = izul_store::content_hash(&bytes);
+    drop(bytes);
+
+    let mut docs = vec![live.doc];
+    for id in 2..=6u64 {
+        let opened = {
+            let mut pool = live.pool.write().await;
+            pool.open(DocId(id), &path.to_string_lossy(), key, None)
+                .await
+                .expect("dokumen kedua dan seterusnya terbuka")
+        };
+        let page_sizes = match opened {
+            Response::Opened { page_sizes, .. } => page_sizes,
+            other => panic!("expected Opened, got {other:?}"),
+        };
+        live.service.register(
+            id,
+            DocInfo {
+                path: path.to_string_lossy().into_owned(),
+                page_sizes,
+                generation: 0,
+            },
+        );
+        docs.push(id);
+    }
+
+    for doc in &docs {
+        let uri = format!("http://izul.localhost/tile/{doc}/0/0/256/0/0/preview?g=0&p=2");
+        let tile = live.fetch(&uri).await.expect("setiap dokumen merender");
+        assert!(tile.width > 0 && tile.height > 0, "dokumen {doc} kosong");
+    }
+
+    // Every one of them is still addressable, which is what a tab bar assumes
+    // when the reader clicks back to the first document twenty minutes later.
+    {
+        let pool = live.pool.read().await;
+        for doc in &docs {
+            assert!(
+                pool.worker_for(DocId(*doc)).is_some(),
+                "dokumen {doc} kehilangan pekerjanya"
+            );
+        }
+    }
+
+    // Closing one leaves the others alone: the bug this guards is a close that
+    // takes the worker's whole document table with it.
+    {
+        let worker = live
+            .pool
+            .read()
+            .await
+            .worker_for(DocId(3))
+            .expect("pekerja");
+        let _ = Pool::ask(&worker, Request::Close { doc: DocId(3) }).await;
+    }
+    let survivor = live
+        .fetch("http://izul.localhost/tile/4/0/0/256/0/0/preview?g=0&p=2")
+        .await;
+    assert!(
+        survivor.is_ok(),
+        "menutup satu tab tidak boleh menjatuhkan yang lain"
+    );
+
+    live.shutdown().await;
+}
+
+/// Tier one of SPEC 11.1, through the real worker: the index says which page,
+/// this says where on the page. The boxes are what the highlight is drawn from,
+/// so an empty list here is a search that finds things and shows nothing.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn search_comes_back_with_boxes_to_highlight() {
+    let Some(live) = Live::start().await else {
+        skip("izul-worker atau PDFium tidak tersedia");
+        return;
+    };
+    let worker = live
+        .pool
+        .read()
+        .await
+        .worker_for(DocId(live.doc))
+        .expect("pekerja memegang dokumen");
+
+    let reply = Pool::ask(
+        &worker,
+        Request::Search {
+            doc: DocId(live.doc),
+            page: 0,
+            // Every page of the viewer fixture carries "Bagian N — halaman M".
+            query: "Bagian".to_string(),
+            opts: SearchOptions {
+                case_sensitive: false,
+                whole_word: false,
+                max_hits: 50,
+            },
+            rotation: RotationQuarter::from_degrees(0),
+            generation: Generation(1),
+        },
+    )
+    .await
+    .expect("pekerja menjawab pencarian");
+
+    match reply {
+        Response::SearchReady { hits, page, .. } => {
+            assert_eq!(page, 0);
+            let first = hits.first().expect("kata itu ada di halaman pertama");
+            assert_eq!(first.char_count, 6, "sepanjang kata yang dicari");
+            let rect = first.rects.first().expect("kecocokan punya kotak");
+            assert!(
+                rect.right > rect.left && rect.top > rect.bottom,
+                "kotak sorot harus punya luas: {rect:?}"
+            );
+        }
+        other => panic!("expected SearchReady, got {other:?}"),
+    }
+
+    // A query from an epoch the user has already typed past is dropped rather
+    // than finished — the same rule tiles follow, and what makes typing into
+    // the search box cheap.
+    let stale = Pool::ask(
+        &worker,
+        Request::Search {
+            doc: DocId(live.doc),
+            page: 0,
+            query: "Bagia".to_string(),
+            opts: SearchOptions {
+                case_sensitive: false,
+                whole_word: false,
+                max_hits: 50,
+            },
+            rotation: RotationQuarter::from_degrees(0),
+            generation: Generation(0),
+        },
+    )
+    .await
+    .expect("pekerja menjawab");
+    assert!(
+        matches!(stale, Response::Superseded { .. }),
+        "generasi lama harus ditolak, bukan dikerjakan: {stale:?}"
+    );
+
+    live.shutdown().await;
+}
+
+/// The whole of tiers two and three, end to end: a worker extracts the text, the
+/// indexer writes it, FTS5 answers a query over it.
+///
+/// This is the one path where a mistake is invisible until a user searches for
+/// a word they can see on screen and is told it is not there — the index is
+/// written in the background, and nothing else in the application reads it.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn indexing_makes_a_document_findable_by_its_words() {
+    let Some(live) = Live::start().await else {
+        skip("izul-worker atau PDFium tidak tersedia");
+        return;
+    };
+    let Some(path) = fixture() else { return };
+
+    let data_dir = std::env::temp_dir().join(format!("izul-index-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&data_dir);
+    std::fs::create_dir_all(&data_dir).expect("folder data sementara");
+    let conn = izul_store::open(&data_dir, izul_store::Which::App).expect("basis data");
+    let stamp = izul_store::FileStamp::of(&path).expect("stat fixture");
+    let file_id = izul_store::files::touch(&conn, &path, stamp).expect("catat berkas");
+
+    let indexer = Arc::new(Indexer::new());
+    assert!(
+        indexer.start(Job {
+            doc: live.doc,
+            file_id: file_id.0,
+            page_count: 10,
+            data_dir: data_dir.clone(),
+            pool: Arc::clone(&live.pool),
+        }),
+        "pengindeksan dimulai"
+    );
+    // A second start for the same document must be refused rather than race the
+    // first for `pages_done`.
+    assert!(!indexer.start(Job {
+        doc: live.doc,
+        file_id: file_id.0,
+        page_count: 10,
+        data_dir: data_dir.clone(),
+        pool: Arc::clone(&live.pool),
+    }));
+
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        match indexer.progress(live.doc) {
+            Some(p) if p.complete() => break,
+            Some(p) if !p.running => panic!("pengindeksan berhenti di {p:?}"),
+            _ if Instant::now() > deadline => panic!("pengindeksan tidak selesai tepat waktu"),
+            _ => tokio::time::sleep(Duration::from_millis(50)).await,
+        }
+    }
+
+    let hits = izul_store::search::search_library(&conn, "Bagian", 20).expect("pencarian pustaka");
+    assert!(!hits.is_empty(), "kata dari halaman harus ada di indeks");
+    assert_eq!(hits[0].file_id, file_id);
+    assert!(
+        hits[0].snippet.contains('['),
+        "cuplikan menandai kecocokannya: {:?}",
+        hits[0].snippet
+    );
+
+    // And the same query scoped to the one file, which is tier two.
+    let scoped =
+        izul_store::search::search_file(&conn, file_id, "halaman", 20).expect("pencarian dokumen");
+    assert!(!scoped.is_empty());
+
+    // Punctuation a reader would type is a literal, not FTS5 syntax. This is
+    // the case that turns into a syntax error the moment the escaping is wrong.
+    let odd = izul_store::search::search_file(&conn, file_id, "size 10\" x 8\"", 5);
+    assert!(
+        odd.is_ok(),
+        "ketikan bertanda kutip tidak boleh jadi galat: {odd:?}"
+    );
+
+    live.shutdown().await;
+    let _ = std::fs::remove_dir_all(&data_dir);
 }

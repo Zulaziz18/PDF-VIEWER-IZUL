@@ -21,7 +21,7 @@ use izul_model::geom::{PdfRectF, RotationQuarter};
 /// So the worker announces this number the moment it connects, and the
 /// supervisor refuses a worker that does not match. Bump it whenever anything
 /// in [`Request`] or [`Response`] changes shape.
-pub const PROTOCOL_VERSION: u32 = 2;
+pub const PROTOCOL_VERSION: u32 = 4;
 
 /// Identifies one open document within a worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -117,10 +117,25 @@ pub enum Request {
     Outline {
         doc: DocId,
     },
+    /// Matches for `query` on **one** page, with the boxes to highlight them.
+    ///
+    /// Page-scoped for the same reason [`Request::RenderTile`] is: a worker that
+    /// went away to search five hundred pages is a worker that stopped answering
+    /// heartbeats, and the supervisor kills it at six seconds (SPEC 3.4). It is
+    /// also what makes the search cancellable — `generation` lets a query the
+    /// user has already typed past be dropped rather than finished.
+    ///
+    /// Which pages are worth asking about is a question for the FTS5 index,
+    /// which answers it for the whole library at once; this fills in the
+    /// geometry the index cannot know.
     Search {
         doc: DocId,
+        page: u32,
         query: String,
         opts: SearchOptions,
+        /// Display rotation the boxes should come back in, matching the tiles.
+        rotation: RotationQuarter,
+        generation: Generation,
     },
     /// Drop full-resolution page handles for a document whose tab went inactive,
     /// keeping the document itself open (SPEC 10).
@@ -131,6 +146,22 @@ pub enum Request {
     Cancel {
         doc: DocId,
         generation: Generation,
+    },
+    /// Advance widths and face metrics for one of the standard-14 faces.
+    ///
+    /// The annotation model lays text out from these numbers and both backends
+    /// position every glyph from that layout, so they must be the metrics the
+    /// renderer will actually draw with (SPEC 3.2). PDFium is what knows them —
+    /// and PDFium lives here, in the sandbox, not in the UI process. Hence a
+    /// request: the UI asks, caches the answer, and never links a PDF parser
+    /// into the process that owns the window (SPEC 5).
+    FontMetrics {
+        family: String,
+        bold: bool,
+        italic: bool,
+        /// The characters actually needed. Asking for a whole face would be a
+        /// wire message per annotation for glyphs nobody is going to draw.
+        chars: String,
     },
     Ping {
         nonce: u64,
@@ -195,6 +226,43 @@ pub enum Response {
     Pong {
         nonce: u64,
     },
+    /// Appended at the end of the enum on purpose: `postcard` identifies a
+    /// variant by its index, so adding one anywhere else renumbers the ones
+    /// after it. Phase 1 shipped a worker binary that read `Ping` as `Shutdown`
+    /// for exactly that reason.
+    SearchReady {
+        doc: DocId,
+        page: u32,
+        hits: Vec<SearchHitWire>,
+        generation: Generation,
+    },
+    /// Metrics for the face that was asked about. Appended at the end of the
+    /// enum, like every variant since Phase 1's `Ping`-read-as-`Shutdown`.
+    FontMetricsReady {
+        /// The standard-14 face the request resolved to, for the log and for
+        /// the cache key.
+        base_font: String,
+        ascent_milli: i16,
+        descent_milli: i16,
+        /// One entry per character asked for that the face actually has.
+        advances: Vec<(char, u16)>,
+        /// Characters the face has no glyph for. The caller refuses the text
+        /// and names them rather than drawing empty boxes (SPEC 11.2).
+        missing: Vec<char>,
+    },
+}
+
+/// One match, with the boxes to draw over it.
+///
+/// `rects` is a list because a match broken across a line has one box per line;
+/// a single box spanning them would paint over everything in between.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SearchHitWire {
+    /// Index of the first matching character in the page's extracted text, so a
+    /// hit can be lined up with a text layer the frontend already holds.
+    pub char_index: u32,
+    pub char_count: u32,
+    pub rects: Vec<PdfRectF>,
 }
 
 /// One outline entry, flattened for the wire.

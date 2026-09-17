@@ -28,7 +28,8 @@ use std::time::Duration;
 
 use izul_ipc::codec::{read_frame, write_frame};
 use izul_ipc::message::{
-    DocId, Envelope, Generation, RenderQuality, Request, RequestId, Response, SlotRef,
+    DocId, Envelope, Generation, RenderQuality, Request, RequestId, Response, SearchOptions,
+    SlotRef,
 };
 use izul_ipc::ring::TileRing;
 use izul_ipc::{region_bytes, ChannelName, Listener, SharedRegion};
@@ -672,6 +673,103 @@ async fn a_zoomed_tile_of_the_top_left_corner_is_never_blank() {
             }
             other => panic!("zoom {ppp}x: {other:?}"),
         }
+    }
+    h.kill();
+}
+
+#[tokio::test]
+async fn a_search_comes_back_with_boxes_that_sit_on_the_page() {
+    // The FTS5 index can say which page holds a word; only the worker can say
+    // where on the page it is. This proves the second half survives the wire,
+    // in the display space the tiles are drawn in.
+    let Some(fixture) = viewer_fixture() else {
+        return skip("test-fixtures/viewer-10p.pdf");
+    };
+    let Some(mut h) = spawn_worker(31, 0xC2).await else {
+        return skip("izul-worker atau PDFium tidak ada");
+    };
+    let doc = DocId(1);
+    let (_, sizes) = h.open(doc, &fixture).await;
+    let (page_w, page_h) = sizes.first().copied().unwrap_or((612.0, 792.0));
+
+    // `bench/make_fixtures.py viewer` heads every page with "Bagian N — halaman M".
+    let hits = match h
+        .call(Request::Search {
+            doc,
+            page: 0,
+            query: "Bagian".into(),
+            opts: SearchOptions {
+                case_sensitive: false,
+                whole_word: false,
+                max_hits: 0,
+            },
+            rotation: RotationQuarter::None,
+            generation: Generation(1),
+        })
+        .await
+    {
+        Response::SearchReady { hits, .. } => hits,
+        other => panic!("expected SearchReady, got {other:?}"),
+    };
+
+    assert!(!hits.is_empty(), "judul halaman memuat kata itu");
+    let first = hits.first().expect("ada");
+    assert_eq!(first.char_count, 6, "sepanjang kata yang dicari");
+    assert!(
+        !first.rects.is_empty(),
+        "kecocokan tanpa kotak tidak bisa disorot"
+    );
+    for r in &first.rects {
+        assert!(
+            r.right > r.left && r.top > r.bottom,
+            "kotak sorot harus punya luas: {r:?}"
+        );
+        assert!(
+            r.left >= -1.0 && r.bottom >= -1.0 && r.right <= page_w + 1.0 && r.top <= page_h + 1.0,
+            "kotak {r:?} keluar dari halaman {page_w}x{page_h} — ruang koordinatnya salah"
+        );
+    }
+    h.kill();
+}
+
+#[tokio::test]
+async fn a_search_from_a_superseded_generation_is_dropped_rather_than_run() {
+    // Typing into a search box raises the generation once per keystroke. Without
+    // this gate the worker would finish every prefix of the word before showing
+    // the answer to the whole one.
+    let Some(fixture) = viewer_fixture() else {
+        return skip("test-fixtures/viewer-10p.pdf");
+    };
+    let Some(mut h) = spawn_worker(32, 0xC3).await else {
+        return skip("izul-worker atau PDFium tidak ada");
+    };
+    let doc = DocId(1);
+    h.open(doc, &fixture).await;
+
+    // Move the document to generation 5, then ask for work from generation 2.
+    h.call(Request::Cancel {
+        doc,
+        generation: Generation(5),
+    })
+    .await;
+
+    let reply = h
+        .call(Request::Search {
+            doc,
+            page: 0,
+            query: "Bagian".into(),
+            opts: SearchOptions {
+                case_sensitive: false,
+                whole_word: false,
+                max_hits: 0,
+            },
+            rotation: RotationQuarter::None,
+            generation: Generation(2),
+        })
+        .await;
+    match reply {
+        Response::Superseded { generation, .. } => assert_eq!(generation, Generation(2)),
+        other => panic!("pencarian usang harus dibuang, bukan dijalankan: {other:?}"),
     }
     h.kill();
 }

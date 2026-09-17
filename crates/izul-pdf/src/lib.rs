@@ -30,14 +30,22 @@
 pub mod engine;
 pub mod error;
 mod ffi_guard;
+pub mod find;
+pub mod fonts;
 pub mod geom;
+#[cfg(test)]
+mod golden;
 pub mod outline;
 pub mod render;
 pub mod sys;
+#[cfg(test)]
+pub mod test_support;
 pub mod text;
 
 pub use engine::{Document, Engine, PageGeometry};
 pub use error::{PdfError, Result};
+pub use find::{FindOptions, Match};
+pub use fonts::{metrics_document, StandardFonts};
 pub use geom::{Matrix, PageSize, PdfPointF, PdfRectF, RotationQuarter};
 pub use outline::OutlineNode;
 pub use render::{PixelFormat, Quality, TileGeometry, TileRequest, BYTES_PER_PIXEL, MAX_TILE_DIM};

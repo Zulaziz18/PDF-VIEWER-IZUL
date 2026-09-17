@@ -3,6 +3,202 @@
 Semua perubahan penting per fase. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/);
 versi mengikuti `version.json` sebagai sumber tunggal.
 
+## [7.0.0-alpha.3] — Fase 3: Mesin Anotasi & Paritas
+
+Fase ini membuat anotasi ada, dan membuat paritas antara yang terlihat di layar
+dan yang akan ditulis ke berkas menjadi **struktural**, bukan sesuatu yang
+dikejar lewat laporan bug. Kriteria lulusnya golden image per jenis anotasi, dan
+angkanya ada di `bench/results/phase3-parity.txt`.
+
+### Bagaimana paritas dijamin
+
+Model anotasi tidak menghasilkan piksel dan tidak menghasilkan AP stream. Ia
+menghasilkan **display list** — urutan perintah gambar primitif dalam koordinat
+PDF — dan dua backend membaca daftar yang sama: kanvas menggambar proksi
+langsung saat objek diseret, AP stream menyerialkannya jadi operator PDF saat
+disimpan. Geometri tidak mungkin menyimpang karena sumbernya hanya satu
+(SPEC 3.2).
+
+Yang membuat ini bekerja adalah disiplin di satu tempat: **semua** yang menggoda
+untuk diserahkan ke backend diputuskan di `izul-model/build.rs`. Penghalusan
+tinta jadi kurva Bézier eksplisit (bukan spline milik masing-masing), kepala
+panah jadi jalur (bukan `/LE` yang hanya dimengerti sisi PDF), elips jadi empat
+kurva (PDF tidak punya operator elips dan `ellipse()` kanvas adalah hampiran
+lain), tata letak teks jadi glif berposisi, rotasi jadi satu transform.
+
+### Ditambahkan
+
+- **Tiga belas jenis anotasi SPEC 11.2** sebagai satu enum tertutup dengan
+  payload per jenis, sehingga "semua jenis tertangani" adalah galat kompilasi.
+- **Backend AP stream** dengan byte deterministik dan state seimbang. Stream
+  yang membocorkan `q` merusak gambar anotasi *lain* di halaman yang sama, jadi
+  penulisnya menutup apa pun yang diserahkan padanya alih-alih memercayainya.
+- **Backend kanvas** di frontend, membaca daftar yang sama lewat perintah
+  `annot_display_lists`. Frontend tidak pernah menghitung geometri sendiri.
+- **Undo/redo** berbasis operasi yang tahu kebalikannya: satu gestur satu
+  langkah, transaksi yang gagal di tengah dibatalkan seluruhnya, batas 200
+  langkah (SPEC 8), id tidak pernah dipakai ulang.
+- **Seleksi dan transformasi**: klik, Shift-klik, pita karet, delapan pegangan
+  ubah ukuran, pegangan rotasi dengan snap 15 derajat, kunci objek. Uji tembak
+  mengikuti geometri sebenarnya, bukan kotak pembatas — kotak sebuah garis
+  diagonal sebagian besar ruang kosong.
+- **Panel properti** (warna, opasitas, tebal garis, font, ukuran, teks, kunci,
+  rotasi) dan **panel daftar anotasi** di sidebar, dikelompokkan per halaman,
+  bisa disaring per jenis, klik untuk melompat.
+- **Metrik font diukur dari PDFium**, bukan dari tabel yang ditulis dari ingatan
+  — lewat permintaan IPC baru (`PROTOCOL_VERSION` naik 3 → 4), karena PDFium ada
+  di dalam sandbox dan proses UI tidak boleh menautnya (SPEC 5). Asumsi bahwa
+  kode karakter adalah indeks glif untuk standard-14 **diuji dengan render
+  sungguhan**, bukan dipercaya.
+- **Gambar** disisipkan dari berkas, disimpan di memori proses UI, dan diambil
+  kanvas lewat rute protokol baru `izul://image/{doc}/{ref}`.
+- **Golden image** untuk kelima belas kasus (tiga belas jenis + satu berputar
+  dan tembus pandang), dan **harness paritas kanvas** yang menjalankan Chromium
+  sungguhan.
+
+### Angka
+
+- **Golden image:** lima belas baseline, seluruhnya lulus pada ambang < 0,5
+  persen piksel berbeda (toleransi 8/255 per kanal).
+- **Kanvas vs PDFium:** dua belas jenis non-teks di bawah 0,53 persen. Tiga
+  kasus berteks dikecualikan dari angka itu dan alasannya batasan, bukan
+  kelulusan — baseline PDFium memakai font uji Type 3 sementara kanvas
+  menggambar huruf sungguhan. Yang tetap berarti di sana: cakupan tintanya
+  berdempetan (56,5 vs 56,6 persen), artinya teksnya mendarat di tempat sama.
+- **Test:** 338 Rust (dari 254) dan 106 TypeScript (dari 71).
+
+### Diketahui, dan tidak ditutup-tutupi
+
+- **Baseline teks tidak boleh bergantung pada font mesin.** Versi pertama
+  golden image memakai font sungguhan dan **gagal di CI Windows** — tiga
+  baseline berteks berbeda 1,6–3,0 persen karena PDFium mengambil outline dari
+  font sistem di sana, sementara dua belas lainnya lulus. Diperbaiki dengan
+  memindahkan kedua sisinya ke dalam berkas test: metrik dari `FixedFont`, glif
+  dari font Type 3 yang charproc-nya ditulis di situ. Baselinenya kini berupa
+  blok, dan itu memang tujuannya — blok yang bergeser tetap regresi tata letak,
+  tapi blok tidak bisa berubah bentuk karena mesinnya lain.
+- **Cacat yang ditemukan harness paritas:** anotasi gambar semula berbeda 30,7
+  persen karena kanvas menghaluskan gambar yang diperbesar dan PDFium tidak.
+  Sudah diperbaiki (0,00 persen sesudahnya), dan itulah gunanya harness ini ada.
+- **Menyimpan belum ada.** Seluruh anotasi hidup di memori proses UI sampai tab
+  ditutup. Menulisnya ke PDF, autosave, dan pemulihan crash adalah Fase 4 —
+  jangan menganggap pekerjaan di fase ini aman sebelum itu.
+- **Teks disunting lewat panel properti, bukan langsung di halaman.** Kotak teks
+  yang baru dibuat kosong sampai diisi dari panel. Caret di atas halaman perlu
+  penyuntingan teks di tempat dan belum dikerjakan.
+- **Paritas kanvas tidak dijalankan CI.** Ia butuh Chromium dan PDFium
+  sungguhan; test yang diam-diam dilewati di lingkungan yang justru penting
+  lebih buruk daripada test yang harus diminta.
+- **UI Fase 3 belum pernah dijalankan di jendela sungguhan.** Kontainer
+  pengembangan tidak punya layar. Yang terbukti di sini adalah lapisan model,
+  backend, dan paritasnya; interaksinya menunggu pengujian di Windows.
+
+## [7.0.0-alpha.2] — Fase 2: Multi-Dokumen & Pencarian
+
+Fase ini membuat aplikasi bisa memegang banyak dokumen sekaligus dan mencari di
+dalamnya. Kriteria lulusnya soal memori, dan angkanya ada di
+`bench/results/phase2-linux.txt` — termasuk satu hasil yang **tidak** seperti
+yang diharapkan dan dicatat apa adanya.
+
+### Ditambahkan
+
+- **Tab** (SPEC 10). Satu store per dokumen (`src/state/documentSession.ts`)
+  dengan daftar tab di store ruang kerja (`src/state/workspaceStore.ts`), dan
+  registri padanannya di sisi Rust (`src-tauri/src/workspace.rs`). Zoom, rotasi,
+  posisi baca, daftar isi, teks, dan hasil pencarian milik *dokumen*, bukan
+  jendela — jadi berpindah tab mengembalikan persis keadaan yang ditinggalkan.
+  Strip tab menyembunyikan diri saat hanya ada satu dokumen, bisa diseret untuk
+  diurutkan ulang, dan tombol tengah menutup.
+- **Manajemen memori tab tidak aktif.** Tiga tab terbaru menyimpan bitmapnya;
+  selebihnya di-`Trim` — di proses UI cache ubinnya dibuang, di pekerja
+  pegangan halamannya dilepas. Tiga, bukan satu: pembaca yang membandingkan dua
+  dokumen membolak-balik keduanya tiap beberapa detik, dan menyusutkan tiap
+  pindah berarti merender ulang keduanya setiap kali. Aturannya murni dan
+  diuji (`tabsToTrim`).
+- **Session restore** (SPEC 11.3). Susunan tab ditulis ke `sessions`/
+  `session_tabs` tiap kali berubah — bukan saat keluar, karena kasus yang
+  membuat fitur ini ada justru kasus aplikasi tidak ditutup baik-baik. Berkas
+  yang sudah pindah dilewati diam-diam saat dipulihkan.
+- **Pencarian tiga tingkat** (SPEC 11.1):
+  - *Dokumen ini* — indeks FTS5 dokumen yang terbuka, menjawab "halaman mana".
+  - *Semua dokumen* — seluruh berkas yang pernah diindeks; satu klik membuka
+    berkasnya di tab.
+  - *Halaman* — PDFium menjawab "di sebelah mana", dengan kotak sorot yang
+    digambar di atas halaman. Dibatalkan per ketukan lewat generasi, sama
+    seperti ubin.
+- **Regex sebagai jalur terpisah**, ditandai di UI sebagai hanya berlaku untuk
+  dokumen yang sedang terbuka, satu halaman pada satu waktu. Ini bukan
+  keterbatasan implementasi yang bisa ditambal nanti: FTS5 mengindeks token, dan
+  tidak ada teks berurutan di sana untuk dijalankan sebuah pola. SPEC 11.1
+  melarang menjanjikannya setara dengan dua tingkat lainnya, dan panel
+  mengatakannya dengan kalimat yang bisa dibaca pengguna.
+- **Pengindeksan teks latar** (SPEC 7). Berjalan per halaman lewat pekerja
+  (permintaan yang pergi mengekstrak 500 halaman akan dibunuh supervisor di
+  detik keenam), dengan jeda 15 ms antar halaman supaya viewport tetap
+  didahulukan, komit tiap 16 halaman, dapat dilanjutkan dari tempat berhenti,
+  dan dibatalkan saat tabnya ditutup. Kemajuannya terlihat di panel pencarian,
+  karena hasil kosong dari indeks yang baru separuh jadi tidak bisa dibedakan
+  dari dokumen yang memang tidak memuat katanya.
+- **Berkas terakhir bergambar** (SPEC 11.3, SPEC 12). Sampul halaman pertama
+  direkam pada saat dokumen dibuka — satu-satunya saat ia memang sudah terbuka
+  dan sudah dirender — lalu disimpan sebagai PNG di folder data. Berkas yang
+  belum pernah dibuka di aplikasi ini tidak punya sampul dan mendapat kartu
+  polos; membuatkannya berarti membuka tiap berkas di daftar, yang justru biaya
+  yang tidak boleh dimiliki panel ini. Bisa disematkan.
+- **Seret & lepas** berkas ke jendela, lewat kanal drag-drop milik Tauri dan
+  bukan milik webview: DOM menyerahkan objek `File` tanpa path, sedangkan
+  pekerja membuka berkas *lewat path*.
+- **Asosiasi berkas Windows**: PDF yang diklik ganda diteruskan sebagai argumen
+  baris perintah dan dibuka saat jendela siap. Argumen yang bukan `.pdf` yang
+  benar-benar ada diabaikan diam-diam.
+- **Satu instance saja.** Klik ganda PDF kedua saat aplikasi sudah berjalan
+  **menambah tab di jendela yang ada**, bukan membuka jendela kedua. Tanpa ini,
+  tiap berkas yang dibuka dari Explorer akan menjalankan satu kolam delapan
+  proses pekerja, satu cache ubin, dan satu baris sesi sendiri — dan strip tab
+  tidak akan pernah terisi.
+- **Pintasan**: Ctrl+F membuka pencarian, F3/Shift+F3 melompat antar hasil,
+  Ctrl+Tab berpindah tab, dan Ctrl+W kini menutup **tab**, bukan jendela.
+- **Benchmark Fase 2** (`cargo run --release -p izul-bench --bin multidoc`):
+  50 dokumen terbuka, biaya per dokumen, efek `Trim`, dan 200 siklus buka-tutup
+  dengan kurva RSS tiap 25 siklus.
+
+### Angka
+
+Linux x64, 8 pekerja, pekerja rilis, PDFium 151.0.7881.0. Bawaan harness adalah
+**30 dokumen** atas permintaan pemilik proyek; SPEC Bagian 17 menuliskan
+kriterianya sebagai 50 dokumen, jadi angka itu tetap dijalankan dan dicantumkan
+di sebelahnya alih-alih dihapus:
+
+| Yang diukur | 30 dokumen (bawaan) | 50 dokumen (kriteria SPEC) |
+|---|---|---|
+| Buka + render semuanya | 80 ms | 133 ms |
+| Resident set 8 pekerja | 47,4 -> 80,6 MB | 47,2 -> 94,0 MB |
+| Rata-rata per dokumen | 1,10 MB | 0,94 MB |
+
+Rata-rata per dokumen turun saat jumlahnya naik karena ongkos tetap tiap
+pekerja dibagi ke lebih banyak dokumen, bukan karena dokumennya jadi lebih
+murah.
+
+- 200 siklus buka-tutup: **1,7 ms per siklus**; RSS **mendatar** setelah ~25
+  siklus (11,93 MB -> 11,99 MB selama 175 siklus berikutnya). Pertambahan
+  1,58 MB yang terlihat dari ujung ke ujung seluruhnya terjadi saat pemanasan
+  alokator.
+
+### Diketahui, dan tidak ditutup-tutupi
+
+- **`Trim` tidak menurunkan RSS pekerja.** Ia melepas seluruh pegangan halaman —
+  dibuktikan test, bukan diasumsikan — tetapi PDFium menyimpan arena alokatornya,
+  jadi memori itu menjadi *dapat dipakai ulang*, bukan dikembalikan ke sistem.
+  Di proses UI ceritanya berbeda: di sana `Trim` membuang bitmap dari cache
+  ubin, dan itu megabyte yang benar-benar kembali.
+- **Satu berkas, satu tab.** Membuka berkas yang sudah terbuka memindahkan fokus
+  ke tabnya alih-alih membuat salinan kedua. Dua tab untuk satu berkas menunggu
+  split view di Fase 5.
+- **Test integrasi masih hanya Unix.** Tiga test ujung-ke-ujung Fase 2 (banyak
+  dokumen sekaligus, pencarian dengan kotak sorot, pengindeksan sampai FTS5)
+  ikut digerbangi `#![cfg(unix)]` seperti Fase 1, jadi Windows — platform yang
+  dikirim — masih dijaga test unit dan pengujian manual saja.
+
 ## [7.0.0-alpha.1] — Fase 1: Mesin Viewer
 
 Fase ini membuat aplikasi bisa dibaca: pipeline render lengkap, scroll

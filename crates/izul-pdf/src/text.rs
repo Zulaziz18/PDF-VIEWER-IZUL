@@ -28,7 +28,7 @@ pub struct PageText {
 }
 
 /// Owns one `FPDF_TEXTPAGE`, closing it on drop.
-struct TextPage<'d> {
+pub(crate) struct TextPage<'d> {
     raw: FPDF_TEXTPAGE,
     doc: &'d Document,
 }
@@ -42,7 +42,17 @@ impl Drop for TextPage<'_> {
 }
 
 impl<'d> TextPage<'d> {
-    fn load(doc: &'d Document, page: FPDF_PAGE) -> Result<Self> {
+    /// The raw handle, for the sibling modules that call text APIs this type
+    /// does not wrap.
+    pub(crate) fn raw(&self) -> FPDF_TEXTPAGE {
+        self.raw
+    }
+
+    pub(crate) fn bindings(&self) -> &dyn pdfium_render::prelude::PdfiumLibraryBindings {
+        self.doc.engine().bindings()
+    }
+
+    pub(crate) fn load(doc: &'d Document, page: FPDF_PAGE) -> Result<Self> {
         // SAFETY: `page` is a live page handle from the document's page cache.
         let raw = unsafe { doc.engine().bindings().FPDFText_LoadPage(page) };
         if raw.is_null() {
@@ -53,7 +63,7 @@ impl<'d> TextPage<'d> {
         Ok(Self { raw, doc })
     }
 
-    fn count(&self) -> i32 {
+    pub(crate) fn count(&self) -> i32 {
         // SAFETY: `raw` is a live text page handle owned by `self`.
         unsafe { self.doc.engine().bindings().FPDFText_CountChars(self.raw) }
     }

@@ -14,6 +14,7 @@
 import { useEffect } from "react";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useDocument } from "@/state/documentStore";
+import { useWorkspace } from "@/state/workspaceStore";
 import { viewport } from "./viewportHandle";
 
 async function pickFile(): Promise<void> {
@@ -22,7 +23,7 @@ async function pickFile(): Promise<void> {
     filters: [{ name: "PDF", extensions: ["pdf"] }],
   });
   if (typeof chosen === "string") {
-    await useDocument.getState().open(chosen);
+    await useWorkspace.getState().openFile(chosen);
   }
 }
 
@@ -43,10 +44,40 @@ export function useShortcuts(): void {
             e.preventDefault();
             void pickFile();
             return;
-          case "w":
+          case "w": {
             e.preventDefault();
-            void store.close();
+            // Closes the tab, not the window: with tabs, Ctrl+W meaning "quit"
+            // would throw away every other document the user has open.
+            const active = useWorkspace.getState().activeDoc;
+            if (active !== null) void useWorkspace.getState().closeTab(active);
             return;
+          }
+          case "f":
+            e.preventDefault();
+            store.toggleSearch(true);
+            return;
+          case "z":
+            e.preventDefault();
+            // Shift+Ctrl+Z is redo everywhere except where Ctrl+Y is, and both
+            // are offered rather than making anyone find out which this is.
+            if (e.shiftKey) void store.redoAnnot();
+            else void store.undoAnnot();
+            return;
+          case "y":
+            e.preventDefault();
+            void store.redoAnnot();
+            return;
+          case "Tab": {
+            e.preventDefault();
+            const workspace = useWorkspace.getState();
+            const tabs = workspace.tabs;
+            if (tabs.length < 2) return;
+            const at = tabs.findIndex((tab) => tab.doc === workspace.activeDoc);
+            const step = e.shiftKey ? -1 : 1;
+            const next = tabs[(((at + step) % tabs.length) + tabs.length) % tabs.length];
+            if (next) void workspace.activate(next.doc);
+            return;
+          }
           case "0":
             e.preventDefault();
             store.setZoomMode("actual");
@@ -65,8 +96,36 @@ export function useShortcuts(): void {
         }
       }
       if (typing) return;
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (store.selection.length > 0) {
+          e.preventDefault();
+          void store.deleteSelected();
+        }
+        return;
+      }
       if (e.key === "Escape") {
+        // A tool in hand is what Escape puts down first: it is the state a user
+        // is most likely to want out of, and the most invisible to be stuck in.
+        if (store.tool !== null) {
+          store.setTool(null);
+          return;
+        }
+        if (store.selection.length > 0) {
+          store.select([]);
+          return;
+        }
+        if (store.search.open) {
+          store.toggleSearch(false);
+          return;
+        }
         (document.activeElement as HTMLElement | null)?.blur();
+        return;
+      }
+      // F3 is what a Windows reader reaches for to step through matches, and
+      // it works whether or not the search box has focus.
+      if (e.key === "F3") {
+        e.preventDefault();
+        store.gotoResult(e.shiftKey ? -1 : 1);
         return;
       }
       // Page-at-a-time navigation, which is what the page buttons do.

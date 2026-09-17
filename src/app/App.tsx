@@ -1,30 +1,66 @@
 /**
  * Application shell.
  *
- * Phase 1's window: title bar, reading toolbar, sidebar, viewport, status bar.
- * Tabs and split panes arrive in Phase 2 and the command palette in Phase 8;
- * this file is their eventual home, which is why the layout is already a set of
- * independent regions rather than one block.
+ * Phase 2's window: title bar, tab strip, reading toolbar, sidebar, viewport,
+ * search panel, status bar. The regions were already independent in Phase 1
+ * precisely so that tabs and the search panel could be dropped in beside them
+ * rather than through them.
+ *
+ * Three things happen once, at startup, and they happen in this order for a
+ * reason: files named on the command line are what the user just double-clicked
+ * and must win the focus, so the restored session is opened first and the
+ * startup files after it. A *later* double-click reaches the running window
+ * through the single-instance channel instead — see `openFiles.ts`.
  */
 
+import { useEffect } from "react";
+import { AnnotToolbar } from "./AnnotToolbar";
 import { EmptyState } from "./EmptyState";
+import { PropertiesPanel } from "./PropertiesPanel";
+import { SearchPanel } from "./SearchPanel";
 import { Sidebar } from "./Sidebar";
 import { StatusBar } from "./StatusBar";
+import { TabBar } from "./TabBar";
 import { TitleBar } from "./TitleBar";
 import { Toolbar } from "./Toolbar";
 import { Viewport } from "./Viewport";
+import { useDropTarget } from "./dropTarget";
+import { useOpenFilesFromOtherInstance } from "./openFiles";
 import { useShortcuts } from "./shortcuts";
 import { useDocument } from "@/state/documentStore";
+import { useWorkspace } from "@/state/workspaceStore";
 import { t } from "@/i18n";
+
+let startupDone = false;
 
 export function App(): React.JSX.Element {
   const doc = useDocument((s) => s.doc);
-  const error = useDocument((s) => s.error);
+  const error = useWorkspace((s) => s.error);
   useShortcuts();
+  useDropTarget();
+  useOpenFilesFromOtherInstance();
+
+  useEffect(() => {
+    // Once per run, not once per mount. React's development mode mounts every
+    // component twice on purpose, and the second mount would restore the same
+    // session a second time; the guard lives outside the component because that
+    // is the only place the two mounts share.
+    if (startupDone) return;
+    startupDone = true;
+    const workspace = useWorkspace.getState();
+    void workspace
+      .restoreSession()
+      .then(() => workspace.openStartupFiles())
+      .catch(() => {
+        // Neither is something the user asked for in this moment; a failure to
+        // restore must not be the first thing they see.
+      });
+  }, []);
 
   return (
     <div className="h-full flex flex-col bg-[var(--izul-canvas)]">
       <TitleBar />
+      <TabBar />
       {error !== null && (
         <div role="alert" className="px-3 py-2 bg-[var(--izul-danger)] text-white text-[13px]">
           {t("err.open")}: {error}
@@ -35,9 +71,12 @@ export function App(): React.JSX.Element {
       ) : (
         <>
           <Toolbar />
+          <AnnotToolbar />
           <div className="flex-1 min-h-0 flex">
             <Sidebar />
             <Viewport />
+            <PropertiesPanel />
+            <SearchPanel />
           </div>
         </>
       )}

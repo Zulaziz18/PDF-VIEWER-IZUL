@@ -14,6 +14,13 @@ path = "src/spike.rs"
 name = "viewport"
 path = "src/viewport.rs"
 
+# Phase 2's pass criteria: fifty documents open, and no drift after two hundred
+# open/close cycles. Unix-only, because it reads the resident set from /proc;
+# on Windows the numbers come from a real run instead.
+[[bin]]
+name = "multidoc"
+path = "src/multidoc.rs"
+
 [dependencies]
 izul-pdf.workspace = true
 izul-ipc.workspace = true

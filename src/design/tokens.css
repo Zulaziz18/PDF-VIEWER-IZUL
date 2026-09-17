@@ -109,6 +109,22 @@ body {
   color: transparent;
 }
 
+/* Search matches.
+ *
+ * Under the text layer in the stacking order and pointer-transparent, so a
+ * highlighted word can still be selected and copied like any other. Amber
+ * rather than the accent colour: the accent means "the thing you are pointing
+ * at", and every match at once is not that. */
+.izul-highlight-page {
+  pointer-events: none;
+}
+
+.izul-highlight {
+  background: color-mix(in srgb, #f5a524 45%, transparent);
+  border-radius: 2px;
+  mix-blend-mode: multiply;
+}
+
 .izul-text-page div {
   transform-origin: 0 0;
   /* A line box that stretched would move the highlight off the glyphs. */

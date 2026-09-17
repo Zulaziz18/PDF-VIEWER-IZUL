@@ -4,9 +4,11 @@
 > fitur yang belum ada hanya akan menyesatkan, jadi bagian yang belum bisa
 > dipakai sengaja dikosongkan sampai fasenya selesai.
 
-## Status: Fase 1
+## Status: Fase 3
 
-Aplikasi ini sekarang bisa dipakai membaca.
+Aplikasi ini sekarang bisa dipakai membaca beberapa dokumen sekaligus, mencari
+di dalamnya, dan **menganotasi** — dengan satu catatan penting: anotasi belum
+bisa disimpan ke berkas PDF. Itu datang di Fase 4.
 
 ### Membuka dan menggulir
 
@@ -57,8 +59,126 @@ melompat. **Daftar Isi** menampilkan bookmark bawaan dokumen, bila ada.
 Menutup lalu membuka kembali berkas yang sama akan mengembalikan halaman,
 posisi gulir, perbesaran, rotasi, dan mode tampilan seperti saat ditinggalkan.
 
-Yang **belum** dapat dilakukan: membuka beberapa dokumen sekaligus dalam tab,
-mencari, menganotasi, dan menyimpan. Semua itu datang di Fase 2 sampai Fase 4.
+### Beberapa dokumen sekaligus
+
+Setiap dokumen yang dibuka mendapat tabnya sendiri. Strip tab muncul begitu ada
+dua dokumen — dengan satu dokumen ia hanya akan memakan ruang halaman.
+
+- Berpindah tab: klik, atau `Ctrl+Tab` dan `Ctrl+Shift+Tab`.
+- Menutup tab: tombol `×` pada tabnya, klik tombol tengah tetikus, atau
+  `Ctrl+W`. `Ctrl+W` menutup **tab**, bukan jendela.
+- Mengurutkan ulang: seret tabnya ke tempat lain.
+
+Setiap tab mengingat perbesaran, rotasi, posisi baca, dan hasil pencariannya
+sendiri, jadi berpindah bolak-balik tidak menghilangkan apa pun.
+
+Tab yang lama tidak dilihat melepaskan gambar halamannya untuk menghemat memori,
+dan mengambilnya kembali saat dibuka lagi. Tiga tab terakhir yang dilihat selalu
+siap seketika. Membuka berkas yang sudah terbuka akan berpindah ke tabnya, bukan
+membuat salinan kedua.
+
+Susunan tab disimpan otomatis dan dipulihkan saat aplikasi dijalankan lagi.
+Berkas yang sudah dipindah atau dihapus dilewati tanpa pesan galat.
+
+### Jendela aplikasi
+
+Jendelanya memakai bilah judul sendiri, bukan milik Windows. Tombol perkecil,
+perbesar, dan **tutup (✕)** ada di ujung kanan bilah judul itu. Bilah judulnya
+juga bisa diseret untuk memindahkan jendela, dan diklik ganda untuk
+memperbesar.
+
+Kalau ada anotasi di dokumen yang terbuka, menutup aplikasi akan bertanya lebih
+dulu — anotasi belum bisa disimpan ke berkas PDF sampai Fase 4, jadi menutup
+berarti kehilangannya.
+
+### Membuka berkas dengan cara lain
+
+- **Tombol 📂 di toolbar** (paling kiri) atau `Ctrl+O` — bisa memilih beberapa
+  berkas sekaligus, masing-masing jadi satu tab. Tidak perlu menutup aplikasi
+  dulu.
+- **Seret & lepas** berkas PDF ke jendela.
+- **Klik ganda** berkas PDF di Windows Explorer, jika asosiasi berkas dipasang
+  saat instalasi. Kalau aplikasi sudah berjalan, berkasnya menjadi tab baru di
+  jendela yang sedang terbuka — bukan jendela kedua.
+- **Daftar berkas terakhir** di layar awal, kini bergambar sampul halaman
+  pertama. Sampul hanya ada untuk berkas yang pernah dibuka di aplikasi ini —
+  membuatkannya untuk berkas yang belum pernah dibuka berarti membuka semuanya,
+  dan itu akan membuat layar awal lambat. Tombol bintang menyematkan berkas ke
+  atas daftar.
+
+### Mencari
+
+Buka panel pencarian dengan `Ctrl+F`. Ada tiga cakupan:
+
+| Cakupan | Mencari di | Hasilnya |
+|---|---|---|
+| **Dokumen ini** | seluruh halaman dokumen yang terbuka | daftar halaman beserta cuplikan kalimatnya |
+| **Semua dokumen** | setiap berkas yang pernah dibuka di aplikasi ini | daftar halaman beserta nama berkasnya; satu klik membukanya |
+| **Regex** | halaman yang sedang dibuka saja | kecocokan disorot langsung di halaman |
+
+`F3` melompat ke hasil berikutnya, `Shift+F3` ke sebelumnya, `Esc` menutup
+panel. Kecocokan pada halaman yang sedang tampak selalu disorot kuning.
+
+Dua catatan yang jujur soal batasannya:
+
+- **Teks dokumen diindeks di latar belakang** saat dokumen dibuka. Untuk
+  dokumen besar ini perlu beberapa detik, dan panel menampilkan kemajuannya.
+  Mencari sebelum selesai akan menemukan halaman yang sudah terindeks saja.
+- **Regex hanya berlaku untuk dokumen yang sedang terbuka, satu halaman pada
+  satu waktu.** Ini bukan kekurangan yang akan ditambal: indeks pencarian
+  menyimpan kata, bukan teks berurutan, sehingga pola tidak punya apa pun untuk
+  dijalankan di sana. Untuk mencari di seluruh pustaka, pakai cakupan
+  **Semua dokumen**.
+
+### Menganotasi
+
+Baris alat di bawah toolbar berisi alat gambar. Pilih satu, lalu seret di atas
+halaman.
+
+| Alat | Cara pakai |
+|---|---|
+| Pena bebas, garis, panah | seret dari titik awal ke titik akhir |
+| Kotak, elips | seret untuk membentuk kotak pembatasnya |
+| Poligon | seret; bentuknya mengikuti jalur yang dilalui |
+| Kotak teks | seret untuk membuat kotaknya, lalu ketik isinya di panel properti |
+| Catatan tempel | klik di tempat catatan ingin ditempelkan |
+| Stempel | seret untuk membentuk badgenya, lalu ubah tulisannya di panel properti |
+| Gambar | tombol gambar membuka pemilih berkas; gambarnya muncul di tengah halaman |
+
+Untuk stabilo, garis bawah, dan coret: **tandai dulu teksnya** dengan menyeret
+kursor di atas halaman, lalu tekan tombolnya. Ketiganya mengikuti teks yang
+ditandai, jadi tombolnya tidak melakukan apa-apa kalau tidak ada yang ditandai.
+
+### Mengubah anotasi yang sudah ada
+
+Dengan alat panah (tombol pertama, atau tekan `Esc`):
+
+- **Pilih**: klik objeknya. Shift+klik menambah ke pilihan. Menyeret di ruang
+  kosong membuat kotak pilihan.
+- **Geser**: seret objeknya.
+- **Ubah ukuran**: seret salah satu dari delapan pegangan di tepi kotaknya.
+- **Putar**: seret pegangan bulat di atas kotaknya. Tahan Shift untuk mengunci
+  ke kelipatan 15 derajat.
+- **Hapus**: tombol `Delete`.
+- **Batalkan / ulangi**: `Ctrl+Z` dan `Ctrl+Y`. Satu geseran adalah satu
+  langkah, bukan seratus langkah kecil. Riwayatnya menyimpan 200 langkah.
+
+Panel di sebelah kanan mengatur warna, opasitas, tebal garis, font, ukuran
+huruf, isi teks, rotasi, dan kunci. Objek yang dikunci tidak ikut terseret dan
+bisa diklik tembus — berguna untuk stempel latar.
+
+Tab **Anotasi** di panel samping mendaftar semua anotasi dokumen, dikelompokkan
+per halaman dan bisa disaring per jenis. Mengkliknya melompat ke tempatnya.
+
+### Yang perlu diketahui soal anotasi di fase ini
+
+**Anotasi belum disimpan ke berkas.** Semuanya hidup di memori aplikasi sampai
+tab ditutup atau aplikasi keluar. Menulisnya ke PDF, menyimpan otomatis, dan
+memulihkannya setelah crash adalah Fase 4. Sampai itu ada, jangan menganggap
+pekerjaan anotasi Anda aman.
+
+Yang **belum** dapat dilakukan selain itu: menyunting teks langsung di atas
+halaman (isinya diketik lewat panel properti), dan menyimpan atau mengekspor.
 
 ## Persyaratan sistem
 

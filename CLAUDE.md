@@ -229,6 +229,15 @@ Yang perlu diingat saat CI merah lagi nanti:
   jalankan `cargo clippy --workspace --all-targets -- -D warnings`. Itu
   memunculkan galat unused-import yang sama persis dengan yang dilaporkan CI
   Windows, tanpa perlu mesin Windows.
+- **Harness dan benchmark ikut dibangun di kedua runner.** `cargo build
+  --workspace` dan `cargo clippy --workspace --all-targets` mencakup `bench/`
+  dan `tests-integration/`, jadi kode yang hanya benar di Unix di sana adalah
+  CI Windows merah — bukan sekadar test yang dilewati. Ini yang menjatuhkan
+  `Rust (windows-latest)` pada push pertama Fase 2: `bench/src/multidoc.rs`
+  menyebut `tokio::net::UnixStream` langsung. Berkas test punya `#![cfg(unix)]`
+  yang menjaganya; binari benchmark tidak, dan tidak bisa punya — sebuah
+  `[[bin]]` tetap dibangun. Pilih tipe per platform (seperti `izul-ipc`
+  melakukannya di dalam `transport.rs`) sejak baris pertama ditulis.
 - **Jalankan `cargo test --workspace --no-fail-fast`** sebelum push. Tanpa itu
   cargo berhenti di binari test pertama yang gagal, dan kegagalan berikutnya
   baru terlihat satu putaran CI kemudian.
@@ -257,15 +266,238 @@ ketiga dari ingatan. Yang menyelesaikannya selalu salah satu dari:
 Kalau sebuah dugaan tidak bisa diuji dalam sepuluh menit, itu tanda dugaannya
 belum cukup tajam — bukan tanda harus dicoba di komputer pengguna.
 
+## Keadaan Fase 2 (Multi-Dokumen & Pencarian)
+
+Dikerjakan sekaligus — bagian multi-dokumen dan bagian pencarian — atas
+keputusan pengguna, di branch `claude/pdf-studio-izul-v7-fase-2`. **Seluruh
+cakupan fase ini selesai**; yang tersisa hanya persetujuan pengguna sebelum
+Fase 3.
+
+**Lapisan Rust (dari putaran pertama):**
+
+1. `izul-store/sessions.rs` — mengisi tabel `sessions`/`session_tabs`. Satu
+   baris sesi per sekali jalan; susunan tab ditulis ulang di tempat.
+   `latest()` **sengaja melewati sesi kosong**: startup membuat sesi baru
+   sebelum memulihkan yang lama, dan tanpa saringan itu baris kosong yang baru
+   jadi "paling baru" lalu menghapus susunan yang mau dipulihkan.
+2. `izul-store/search.rs` + migrasi `app_002_index_state.sql` — teks halaman ke
+   `doc_text`. `doc_index_state` menjawab apakah indeks masih cocok dengan
+   berkas di disk dan sampai halaman berapa pengindeksan sempat berjalan.
+3. `izul-pdf/find.rs` — membungkus `FPDFText_FindStart`. Kotak sorot
+   dikembalikan sebagai **daftar**, bukan satu kotak.
+4. `Request::Search` di pekerja — `PROTOCOL_VERSION` naik 2 → 3.
+
+**Yang ditambahkan di putaran kedua:**
+
+5. `src-tauri/src/workspace.rs` — registri dokumen terbuka: urutan tab, fokus,
+   dan baris `session_tabs` yang ditulis darinya. Urutan tab **adalah** urutan
+   vektornya; field `order` terpisah akan jadi sumber kebenaran kedua yang
+   melenceng saat close dan reorder berbalapan.
+6. `src-tauri/src/indexing.rs` — pengindeksan latar per halaman, dapat
+   dilanjutkan dan dibatalkan, jeda 15 ms antar halaman, komit tiap 16 halaman.
+7. `src-tauri/src/textsearch.rs` — jalur regex dan geometri sorotan (rentang
+   karakter → kotak per baris). Alasan regex harus jalur terpisah ditulis
+   panjang di kepala berkas itu.
+8. `src-tauri/src/thumbs.rs` — sampul berkas terakhir, PNG di folder data,
+   direkam saat dokumen dibuka. Base64-nya ditulis tangan dan diuji terhadap
+   vektor RFC, bukan terhadap dirinya sendiri.
+9. Perintah Tauri baru: `list_tabs`, `activate_document`, `reorder_tabs`,
+   `set_tab_pinned`, `restore_session`, `startup_files`, `pin_recent`,
+   `index_document`, `index_progress`, `search_page`, `search_document`,
+   `search_library`, `search_regex_page`.
+10. Frontend dipecah: `src/state/documentSession.ts` (satu store per dokumen,
+    dibuat dari balasan `open_document`) + `src/state/workspaceStore.ts`
+    (daftar tab, fokus, kebijakan memori). `documentStore.ts` sekarang tinggal
+    lapisan tipis yang berlangganan ke sesi yang aktif — itulah yang membuat
+    komponen Fase 1 tidak perlu diubah satu per satu.
+11. `TabBar.tsx`, `SearchPanel.tsx`, `dropTarget.tsx`, `EmptyState` bersampul,
+    `src/viewport/highlights.ts` + integrasinya di `renderer.ts`.
+12. `bench/src/multidoc.rs` — kriteria lulus fase ini, diukur.
+
+**Keputusan teknis yang diambil sendiri, beserta alasannya:**
+
+- **Pencarian per-halaman, bukan per-dokumen.** Pekerja yang pergi mencari di
+  500 halaman berhenti menjawab heartbeat dan dibunuh di detik keenam
+  (SPEC 3.4). Indeks FTS5 menjawab "halaman mana", pekerja menjawab "di sebelah
+  mana". Ini juga yang membuat pencarian bisa dibatalkan per ketukan.
+- **`Response::SearchReady` ditambahkan di ujung enum**, karena `postcard`
+  mengenali varian lewat indeksnya (bug #4 di atas).
+- **Terjemahan ketikan pengguna ke sintaks FTS5 ditangani serius.** Tiap token
+  dibungkus kutip, kutip di dalamnya digandakan; ada test yang melempar empat
+  belas bentuk ketikan bermasalah.
+- **Tiga tab tetap "hangat", bukan satu.** Pembaca yang membandingkan dua
+  dokumen membolak-balik keduanya tiap beberapa detik; menyusutkan tiap pindah
+  berarti merender ulang keduanya setiap kali. Aturannya murni (`tabsToTrim`)
+  supaya bisa diuji tanpa menonton grafik memori.
+- **Sesi ditulis tiap kali berubah, bukan saat keluar.** Kasus yang membuat
+  session restore ada justru kasus aplikasi tidak ditutup baik-baik.
+- **Sampul direkam saat dokumen dibuka, bukan saat daftar digambar.** Membuat
+  sampul berarti membuka PDF; daftar dua puluh berkas akan membuka dua puluh
+  dokumen untuk panel yang belum diklik siapa pun.
+- **Seret & lepas lewat kanal Tauri, bukan DOM.** Drag-and-drop webview
+  menyerahkan objek `File` tanpa path, sedangkan pekerja membuka berkas lewat
+  path.
+
+**Temuan pengukuran yang perlu diingat:** `Trim` **melepas** seluruh pegangan
+halaman (dijaga test `releasing_the_pages_empties_the_page_cache`), tetapi
+resident set pekerja **tidak turun** — PDFium menyimpan arena alokatornya. Yang
+dibeli `Trim` di sisi pekerja adalah memori yang dapat dipakai ulang, bukan RAM
+yang kembali ke sistem. Sisi proses UI berbeda: di sana bitmap benar-benar
+dibuang dari cache ubin. Kalau nanti ada yang melaporkan "Trim tidak
+menghemat apa-apa", inilah jawabannya — dan angkanya ada di
+`bench/results/phase2-linux.txt`.
+
+**Single-instance sudah ada** (diminta pengguna setelah laporan fase):
+`tauri_plugin_single_instance` didaftarkan **paling awal** di builder — ia yang
+memutuskan apakah proses ini adalah aplikasinya sama sekali — dan meneruskan
+argumen ke instance yang sudah jalan lewat event `izul://open-files`;
+`src/app/openFiles.ts` yang mendengarkannya.
+
+**Jumlah dokumen di benchmark:** SPEC Bagian 17 menulis kriterianya *50
+dokumen*, tetapi pengguna meminta angka yang dilaporkan adalah **30**. Harness
+sekarang menerima `--documents N` dengan bawaan 30, dan
+`bench/results/phase2-linux.txt` memuat **keduanya** — menghapus angka 50 berarti
+berkas itu diam-diam berhenti menjawab kriteria yang tertulis di SPEC. Kalau
+kriterianya memang mau diturunkan, itu perubahan SPEC dan perlu dibahas.
+
+**Yang sengaja tidak dikerjakan di fase ini:** dua tab untuk satu berkas
+(menunggu split view di Fase 5); test integrasi Windows (masih `#![cfg(unix)]`,
+sama seperti Fase 1).
+
+**Cacat harness yang ditemukan dan diperbaiki (bukan bug aplikasi):** suite
+test `izul-pdf` mati dengan SIGSEGV begitu test yang memakai PDFium bertambah.
+Dua sebab: tiap modul test memegang `OnceLock<Engine>` sendiri — `Engine::load_from`
+menolak panggilan kedua, jadi modul yang kalah start **melewati seluruh
+tesnya tanpa suara** — dan tidak ada yang menjaga aturan satu-thread yang
+dipatuhi produksi. Diperbaiki dengan `izul-pdf/src/test_support.rs`: satu engine
+untuk seluruh binari test, dan `pdfium_lock()` yang wajib dipegang selama
+sebuah `Document` hidup. **Kalau nanti menambah test yang membuka `Document`
+di crate itu, pakai `engine_and_lock!()` — jangan bikin engine sendiri.**
+
+**Catatan lingkungan:** membangun `izul-app` di kontainer Linux butuh
+`libwebkit2gtk-4.1-dev libgtk-3-dev librsvg2-dev patchelf` (sama seperti CI).
+Tanpa itu `cargo check -p izul-app` gagal di `gdk-sys`, bukan di kode kita.
+
+## Keadaan Fase 3 (Mesin Anotasi & Paritas)
+
+Diminta pengguna langsung setelah Fase 2, dikerjakan **di branch yang sama**
+(`claude/pdf-studio-izul-v7-fase-2`) karena aturan branch sesi ini melarang
+push ke branch lain tanpa izin eksplisit. Akibatnya PR #2 memuat dua fase;
+kalau pengguna lebih suka terpisah, itu perlu branch baru dan izinnya.
+
+**Lapisan model (`izul-model`, murni, tanpa PDFium dan tanpa I/O):**
+
+1. `annot.rs` — tiga belas jenis SPEC 11.2 sebagai satu enum tertutup dengan
+   payload per jenis. Koordinat selalu ruang PDF.
+2. `build.rs` — `display_list(obj, font_ctx)`, murni dan deterministik. **Semua**
+   yang menggoda untuk diserahkan ke backend diputuskan di sini: penghalusan
+   tinta jadi Bézier eksplisit, kepala panah jadi jalur, elips jadi empat kurva,
+   teks jadi glif berposisi, rotasi jadi satu transform.
+3. `font.rs` — `FontCtx` sebagai trait; model tidak boleh menyentuh berkas font.
+4. `ap.rs` — backend AP stream. Byte deterministik (satu formatter angka),
+   state seimbang, dan penulisnya menutup apa pun yang tidak seimbang alih-alih
+   memercayainya.
+5. `ops.rs` — `Op` yang tahu kebalikannya, satu gestur satu transaksi, rollback
+   penuh saat transaksi gagal di tengah, batas 200 langkah.
+
+**Lapisan aplikasi:**
+
+6. `izul-pdf/src/fonts.rs` — metrik standard-14 **diukur dari PDFium**.
+   Asumsinya (kode karakter = indeks glif) diuji dengan render sungguhan di
+   `the_measured_widths_match_what_pdfium_draws`, bukan dipercaya dari ingatan.
+7. `Request::FontMetrics` di pekerja — `PROTOCOL_VERSION` naik 3 → 4. Proses UI
+   tidak boleh menaut PDFium, jadi ia bertanya dan menyimpan jawabannya.
+8. `src-tauri/src/annots.rs` — `AnnotDoc` + `CommandStack` per dokumen, cache
+   metrik font, dan registry gambar. Di proses UI, bukan di pekerja: pekerja
+   bisa dibunuh supervisor kapan saja dan anotasi yang belum disimpan tidak
+   boleh ikut mati.
+9. Rute protokol `izul://image/{doc}/{ref}` untuk piksel gambar.
+
+**Frontend:**
+
+10. `src/annots/canvas.ts` — backend kanvas, konsumen kedua daftar yang sama.
+11. `src/annots/interaction.ts` — uji tembak, pegangan, resize, rotasi, murni.
+12. `src/annots/factory.ts` — gestur jadi objek, murni.
+13. Gestur dan chrome seleksi di `renderer.ts`; toolbar, panel properti, dan
+    daftar anotasi di `src/app/`.
+
+**Kriteria lulus, diukur:**
+
+- Golden image: 15 baseline, semua lulus < 0,5 persen (SPEC 3.3). Di
+  `crates/izul-pdf/golden/`, dijalankan CI.
+- Paritas kanvas: `tools/canvas-parity/run.mjs`, butuh Chromium sungguhan, tidak
+  di CI. **Dua belas jenis non-teks di bawah 0,53 persen.** Tiga kasus berteks
+  dikecualikan dari angka itu sejak baseline pindah ke font uji Type 3 — kanvas
+  menggambar huruf sungguhan, baselinenya blok, jadi membandingkan pikselnya
+  tidak berarti; yang masih berarti di sana cakupan tintanya (56,5 vs 56,6
+  persen), artinya posisinya sama. Angka lengkapnya di
+  `bench/results/phase3-parity.txt`.
+
+**Cacat nyata yang ditemukan harness paritas:** anotasi gambar berbeda 30,7
+persen karena kanvas menghaluskan gambar yang diperbesar sementara PDFium
+menampilkan pikselnya — pergantian yang terlihat saat proksi digantikan render
+otoritatif. Diperbaiki; sesudahnya 0,00 persen.
+
+**Pelajaran CI yang mahal dan baru:** golden image untuk teks **tidak boleh**
+memakai font sistem. Versi pertama memakai metrik standard-14 dari PDFium dan
+glif Helvetica/Times; lulus di Linux, gagal di Windows pada ketiga baseline
+berteks (1,6–3,0 persen, ambang 0,5) sementara dua belas lainnya lulus tanpa
+disentuh. PDFium tidak membawa satu set outline lintas platform. Diperbaiki
+dengan memindahkan kedua sisinya ke dalam `golden.rs`: metrik `FixedFont` dan
+font **Type 3** yang charproc-nya ditulis di sana. Kalau nanti menambah baseline
+yang memuat teks, jangan kembali ke font sungguhan sebelum Fase 4 menanam font
+ke dalam PDF-nya.
+
+**Jebakan harness yang sempat memakan waktu:** Chromium membatasi
+`--window-size` (jendela 480x240 melaporkan `innerHeight` 153), jadi
+`--screenshot` mengembalikan gambar yang terpotong dan itu **terlihat persis
+seperti bug rendering**. Harness sekarang membandingkan piksel **di dalam
+halaman** lewat `--dump-dom`, dan butuh `--allow-file-access-from-files` karena
+tanpa itu gambar `file://` mencemari kanvas dan `getImageData` melempar.
+
+**Cacat UI yang dilaporkan pengguna saat menguji Fase 2/3, sudah diperbaiki:**
+jendela `decorations: false` tidak punya tombol perkecil/perbesar/tutup sama
+sekali — bilah judul kita tidak pernah menggambarnya, jadi satu-satunya jalan
+keluar adalah Alt+F4. Dan tombol "Buka Berkas" hanya ada di layar kosong, jadi
+begitu satu dokumen terbuka tidak ada cara terlihat untuk membuka yang kedua
+(hanya `Ctrl+O`, yang tidak seorang pun tahu). Keduanya kelas kesalahan yang
+sama: **fitur yang hanya bisa dicapai lewat pintasan atau tidak bisa dicapai
+sama sekali**. Perintah jendela juga butuh izin eksplisit di
+`capabilities/default.json` (`core:window:allow-minimize`,
+`allow-toggle-maximize`, `allow-close`, `allow-start-dragging`) — tanpa itu
+tombolnya diam saja, persis bug #1 Fase 1.
+
+**Tab berganda: tiga berkas jadi enam tab.** Dilaporkan pengguna sesudahnya.
+Penjaga "sudah terbuka" di `openFile` membaca daftar tab, dan sebuah tab baru
+ada di daftar itu **setelah** `open_document` menjawab — jadi dua pemanggil
+yang tumpang tindih sama-sama melihat daftar kosong dan sama-sama membuka.
+Kedua pemanggilnya ternyata satu kode: efek startup di `App.tsx` yang
+dijalankan dua kali oleh mount ganda `StrictMode` React. Diperbaiki dua lapis
+— peta "sedang dibuka" per path di `openFile` (menutup lubangnya untuk semua
+pemanggil, bukan hanya StrictMode) dan penjaga sekali-per-proses di efek
+startup. **Pelajaran:** penjaga "sudah ada" yang membaca state yang baru terisi
+setelah sebuah `await` bukan penjaga; yang menjaga adalah pendaftaran niat
+**sebelum** await-nya. Mount ganda StrictMode adalah alat, bukan gangguan —
+ia yang menjaring ini.
+
+**Yang belum dikerjakan di Fase 3:** menyimpan ke PDF (itu Fase 4 — anotasi
+masih hidup di memori sampai tab ditutup); penyuntingan teks langsung di atas
+halaman (isinya diketik lewat panel properti); dan **UI-nya belum pernah
+dijalankan di jendela sungguhan** karena kontainer ini tidak punya layar.
+
 ## Alur kerja proyek ini
 
-- Branch aktif pengguna: `claude/pdf-studio-izul-v7-fase-1-tki5pi`.
+- Branch aktif: `claude/pdf-studio-izul-v7-fase-2`.
+- Trunk proyek ini **bukan** `main` — tidak ada branch `main`. Trunk-nya
+  `claude/pdf-studio-izul-v7-atlas-r29mdh`, dan Fase 1 sudah di-merge ke sana
+  lewat PR #1.
 - Dokumen rujukan: `SPEC.md` (jangan diubah tanpa dibahas). Progres per fase
   dicatat di `CHANGELOG.md`. Panduan pengguna di `PANDUAN.md`.
 - Setiap akhir fase: laporkan hasil + angka benchmark nyata, tunggu
   persetujuan pengguna sebelum lanjut ke fase berikutnya (lihat SPEC.md
   Bagian 0 dan 18).
-- Total 9 fase (0–8). Fase 0 dan 1 sudah selesai dan disetujui pengguna.
+- Total 9 fase (0–8). Fase 0 dan 1 selesai dan disetujui pengguna; Fase 2 dan
+  Fase 3 selesai dan menunggu persetujuan, keduanya di branch yang sama.
 - Panduan menjalankan & menguji aplikasi di Windows (untuk pemula) ada di
   `TESTING.md`, bagian "Menjalankan sendiri di Windows (langkah demi
   langkah)" — termasuk cara memasang alat, mengambil PDFium, menjalankan

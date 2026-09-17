@@ -27,6 +27,8 @@ pub mod error;
 pub mod files;
 pub mod identity;
 pub mod prefs;
+pub mod search;
+pub mod sessions;
 
 pub use db::{
     default_data_dir, open, open_memory, Which, APP_SCHEMA_VERSION, CACHE_SCHEMA_VERSION,
@@ -34,3 +36,5 @@ pub use db::{
 pub use error::{Result, StoreError};
 pub use files::{FileId, FileRow, ReadingState, ViewMode};
 pub use identity::{content_hash, FileStamp, PathHash};
+pub use search::{Hit, IndexState};
+pub use sessions::{SessionId, SessionTab, TabSlot};

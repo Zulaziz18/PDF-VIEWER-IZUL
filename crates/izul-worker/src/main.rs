@@ -36,12 +36,13 @@ use std::path::PathBuf;
 
 use izul_ipc::codec::{read_frame, write_frame};
 use izul_ipc::message::{
-    DocId, Envelope, ErrorKind, OutlineEntry, Request, RequestId, Response, SlotRef,
+    DocId, Envelope, ErrorKind, OutlineEntry, Request, RequestId, Response, SearchHitWire, SlotRef,
 };
 use izul_ipc::ring::{TileRing, TILE_EDGE};
 use izul_ipc::{region_bytes, ChannelName, SharedRegion};
+use izul_model::font::FontCtx;
 use izul_pdf::render::Quality;
-use izul_pdf::{Engine, PdfError, PdfRectF, TileRequest};
+use izul_pdf::{Engine, FindOptions, PdfError, PdfRectF, TileRequest};
 use session::{classify, quality_of, Session};
 use tokio::io::{AsyncRead, AsyncWrite};
 
@@ -411,15 +412,102 @@ where
             }
         }
 
-        // Search lands in Phase 2, where the FTS5 index it cooperates with is
-        // built. Answering with a clear "not yet" beats answering with nothing.
-        Request::Search { doc, .. } => {
-            fail_kind(
+        Request::Search {
+            doc,
+            page,
+            query,
+            opts,
+            rotation,
+            generation,
+        } => {
+            sess.bump_generation(doc, generation);
+            // Same cancellation point as a tile: a query the user has already
+            // typed past never reaches PDFium. Typing into a search box produces
+            // a new generation per keystroke, so without this the worker would
+            // finish every prefix of the word.
+            if !sess.is_current(doc, generation) {
+                return reply(channel, id, Response::Superseded { doc, generation }).await;
+            }
+            let Some(open) = sess.get(doc) else {
+                return fail_kind(channel, id, Some(doc), ErrorKind::BadRequest, "doc.unknown")
+                    .await;
+            };
+            let find_opts = FindOptions {
+                case_sensitive: opts.case_sensitive,
+                whole_word: opts.whole_word,
+                max_hits: opts.max_hits,
+            };
+            match open.doc.find_on_page(page, &query, find_opts, rotation) {
+                Ok(matches) => {
+                    let hits = matches
+                        .into_iter()
+                        .map(|m| SearchHitWire {
+                            char_index: m.char_index,
+                            char_count: m.char_count,
+                            rects: m.rects,
+                        })
+                        .collect();
+                    reply(
+                        channel,
+                        id,
+                        Response::SearchReady {
+                            doc,
+                            page,
+                            hits,
+                            generation,
+                        },
+                    )
+                    .await
+                }
+                Err(e) => fail(channel, id, Some(doc), &e).await,
+            }
+        }
+
+        Request::FontMetrics {
+            family,
+            bold,
+            italic,
+            chars,
+        } => {
+            let spec = izul_model::annot::FontSpec {
+                family,
+                size: 12.0,
+                bold,
+                italic,
+            };
+            let fonts = match sess.fonts() {
+                Ok(f) => f,
+                Err(e) => return fail(channel, id, None, &e).await,
+            };
+            let Some(font) = fonts.resolve(&spec) else {
+                return fail_kind(channel, id, None, ErrorKind::BadRequest, "font.unavailable")
+                    .await;
+            };
+            let face = fonts.face(font);
+            let mut advances = Vec::new();
+            let mut missing = Vec::new();
+            // Deduplicated: a page of text asks about the same letters over and
+            // over, and the answer is per character, not per occurrence.
+            let mut seen = std::collections::BTreeSet::new();
+            for ch in chars.chars() {
+                if !seen.insert(ch) {
+                    continue;
+                }
+                match fonts.glyph(font, ch) {
+                    Some(g) => advances.push((ch, g.advance_milli)),
+                    None => missing.push(ch),
+                }
+            }
+            reply(
                 channel,
                 id,
-                Some(doc),
-                ErrorKind::BadRequest,
-                "err.not_in_this_phase",
+                Response::FontMetricsReady {
+                    base_font: izul_pdf::fonts::base_font_of(&spec).to_string(),
+                    ascent_milli: face.ascent_milli,
+                    descent_milli: face.descent_milli,
+                    advances,
+                    missing,
+                },
             )
             .await
         }

@@ -1,0 +1,108 @@
+{
+  "default_30_documents": {
+    "cycle_after_mb": 11.84765625,
+    "cycle_before_mb": 10.265625,
+    "cycle_curve": [
+      {
+        "cycle": 25,
+        "rss_mb": 11.79296875
+      },
+      {
+        "cycle": 50,
+        "rss_mb": 11.8203125
+      },
+      {
+        "cycle": 75,
+        "rss_mb": 11.828125
+      },
+      {
+        "cycle": 100,
+        "rss_mb": 11.8359375
+      },
+      {
+        "cycle": 125,
+        "rss_mb": 11.8359375
+      },
+      {
+        "cycle": 150,
+        "rss_mb": 11.83984375
+      },
+      {
+        "cycle": 175,
+        "rss_mb": 11.83984375
+      },
+      {
+        "cycle": 200,
+        "rss_mb": 11.84765625
+      }
+    ],
+    "cycle_drift_kb_per_cycle": 8.1,
+    "cycle_ms": 350.43522,
+    "cycles": 200,
+    "documents_open": 30,
+    "documents_requested": 30,
+    "idle_mb": 47.4296875,
+    "loaded_mb": 80.5625,
+    "open_all_ms": 80.158041,
+    "per_document_mb": 1.1044270833333334,
+    "trim_after_mb": 13.5,
+    "trim_base_mb": 5.92578125,
+    "trim_pages_read": 60,
+    "trim_read_mb": 13.5,
+    "worker_profile": "release",
+    "workers": 8
+  },
+  "spec_criterion_50_documents": {
+    "cycle_after_mb": 12.00390625,
+    "cycle_before_mb": 10.421875,
+    "cycle_curve": [
+      {
+        "cycle": 25,
+        "rss_mb": 11.94921875
+      },
+      {
+        "cycle": 50,
+        "rss_mb": 11.9765625
+      },
+      {
+        "cycle": 75,
+        "rss_mb": 11.984375
+      },
+      {
+        "cycle": 100,
+        "rss_mb": 11.9921875
+      },
+      {
+        "cycle": 125,
+        "rss_mb": 11.9921875
+      },
+      {
+        "cycle": 150,
+        "rss_mb": 11.99609375
+      },
+      {
+        "cycle": 175,
+        "rss_mb": 11.99609375
+      },
+      {
+        "cycle": 200,
+        "rss_mb": 12.00390625
+      }
+    ],
+    "cycle_drift_kb_per_cycle": 8.1,
+    "cycle_ms": 352.844795,
+    "cycles": 200,
+    "documents_open": 50,
+    "documents_requested": 50,
+    "idle_mb": 47.23828125,
+    "loaded_mb": 94.00390625,
+    "open_all_ms": 133.11247300000002,
+    "per_document_mb": 0.9353125,
+    "trim_after_mb": 13.41796875,
+    "trim_base_mb": 5.84375,
+    "trim_pages_read": 60,
+    "trim_read_mb": 13.41796875,
+    "worker_profile": "release",
+    "workers": 8
+  }
+}

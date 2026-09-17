@@ -13,6 +13,7 @@
 
 import { useEffect, useRef } from "react";
 import { ViewportRenderer } from "@/viewport/renderer";
+import { DEFAULT_STYLE, objectFromDrawn } from "@/annots/factory";
 import { useDocument } from "@/state/documentStore";
 import { setViewport } from "./viewportHandle";
 import { t } from "@/i18n";
@@ -36,6 +37,12 @@ export function Viewport(): React.JSX.Element {
   const pageRotation = useDocument((s) => s.pageRotation);
   const generation = useDocument((s) => s.generation);
   const texts = useDocument((s) => s.texts);
+  const highlights = useDocument((s) => s.highlights);
+  const annots = useDocument((s) => s.annots);
+  const annotLists = useDocument((s) => s.annotLists);
+  const annotImages = useDocument((s) => s.annotImages);
+  const selection = useDocument((s) => s.selection);
+  const tool = useDocument((s) => s.tool);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -57,14 +64,64 @@ export function Viewport(): React.JSX.Element {
         },
         onZoom: (next) => store().setZoom(next),
         onViewport: (w, h) => store().setViewport(w, h),
-        onWantText: (pages) => void store().loadText(pages),
+        onWantText: (pages) => {
+          void store().loadText(pages);
+          // The same pages, and the only ones worth asking about: highlights are
+          // fetched per page from the worker, so asking for a page nobody is
+          // looking at would be a round trip for nothing.
+          void store().loadHighlights(pages);
+        },
+        onWantAnnots: (pages) => void store().loadAnnots(pages),
+        onSelect: (ids) => store().select(ids),
+        onTransform: (objects) => void store().replaceAnnots(objects),
+        onDraw: (drawn) => {
+          const kind = store().tool;
+          if (kind === null) return;
+          const object = objectFromDrawn(kind, drawn, DEFAULT_STYLE, Date.now());
+          if (object) void store().addAnnot(object);
+          else store().setTool(null);
+        },
       },
     );
     rendererRef.current = renderer;
     setViewport(renderer);
     store().setViewport(scroller.clientWidth, scroller.clientHeight);
 
+    // Annotation editing is pointer work on the scrolling element. It is
+    // attached here rather than as React handlers because the renderer owns the
+    // gesture, and a React re-render in the middle of a drag would be a frame
+    // the pointer did not get.
+    const down = (e: PointerEvent): void => {
+      if (e.button !== 0) return;
+      const editing = store().tool !== null || store().selection.length > 0;
+      if (!renderer.onAnnotPointerDown(e)) return;
+      if (renderer.gestureActive) {
+        // Only capture once a gesture really started, so an ordinary click on
+        // the page still reaches the text layer for selection.
+        if (editing || store().selection.length > 0) {
+          scroller.setPointerCapture(e.pointerId);
+          e.preventDefault();
+        }
+      }
+    };
+    const move = (e: PointerEvent): void => {
+      if (renderer.gestureActive) renderer.onAnnotPointerMove(e);
+    };
+    const up = (e: PointerEvent): void => {
+      if (!renderer.gestureActive) return;
+      renderer.onAnnotPointerUp(e);
+      if (scroller.hasPointerCapture(e.pointerId)) scroller.releasePointerCapture(e.pointerId);
+    };
+    scroller.addEventListener("pointerdown", down);
+    scroller.addEventListener("pointermove", move);
+    scroller.addEventListener("pointerup", up);
+    scroller.addEventListener("pointercancel", up);
+
     return () => {
+      scroller.removeEventListener("pointerdown", down);
+      scroller.removeEventListener("pointermove", move);
+      scroller.removeEventListener("pointerup", up);
+      scroller.removeEventListener("pointercancel", up);
       if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
       setViewport(null);
       rendererRef.current = null;
@@ -82,8 +139,41 @@ export function Viewport(): React.JSX.Element {
       pageRotation,
       generation,
       texts,
+      highlights,
+      annots,
+      annotLists,
+      annotImages,
+      selection,
+      tool,
     });
-  }, [doc, pageSizes, zoom, viewMode, docRotation, pageRotation, generation, texts]);
+  }, [
+    doc,
+    pageSizes,
+    zoom,
+    viewMode,
+    docRotation,
+    pageRotation,
+    generation,
+    texts,
+    highlights,
+    annots,
+    annotLists,
+    annotImages,
+    selection,
+    tool,
+  ]);
+
+  // A search result asks the viewport to go somewhere. The store cannot scroll
+  // — it has no renderer — so it leaves the page behind and this picks it up.
+  const pendingPage = useDocument((s) => s.pendingPage);
+  useEffect(() => {
+    if (pendingPage === null) return;
+    const page = useDocument.getState().consumePendingPage();
+    if (page !== null) {
+      useDocument.getState().setPage(page);
+      rendererRef.current?.goToPage(page);
+    }
+  }, [pendingPage]);
 
   // A document that has been open before reopens where it was left (SPEC 11.1).
   // Applied after the first layout, so the offset means what it meant then.
@@ -107,11 +197,14 @@ export function Viewport(): React.JSX.Element {
         role="region"
         aria-label={t("viewport.label")}
         className="absolute inset-0 overflow-auto outline-none"
+        // A drawing tool takes the pointer, so the text layer underneath must
+        // not also start a selection with it.
+        style={tool === null ? undefined : { cursor: "crosshair" }}
       >
         <div ref={spacerRef} className="relative">
           <div
             ref={textRef}
-            className="izul-text-layer absolute inset-0 select-text"
+            className={`izul-text-layer absolute inset-0 ${tool === null ? "select-text" : "pointer-events-none"}`}
             aria-label={t("viewport.textLayer")}
           />
         </div>

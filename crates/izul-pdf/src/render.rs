@@ -480,52 +480,17 @@ mod rendered {
     //! pages that put ink in one known corner for the rotation and bounding-box
     //! rules.
     use super::*;
-    use crate::Engine;
-    use std::path::PathBuf;
-    use std::sync::OnceLock;
+    use crate::{engine_and_lock, viewer_fixture};
 
-    fn root() -> PathBuf {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
-    }
-
-    /// PDFium may be initialised only once per process, and every test in this
-    /// binary shares that process.
-    fn engine() -> Option<&'static Engine> {
-        static ENGINE: OnceLock<Option<&'static Engine>> = OnceLock::new();
-        *ENGINE.get_or_init(|| {
-            let lib = if cfg!(windows) {
-                root().join("vendor/pdfium/win-x64/bin/pdfium.dll")
-            } else {
-                root().join("vendor/pdfium/linux-x64/lib/libpdfium.so")
-            };
-            lib.exists().then(|| Engine::load_from(&lib).ok()).flatten()
-        })
-    }
-
-    /// Skips rather than fails when a prerequisite has not been fetched —
-    /// unless the caller insisted it be there, which is what CI does. A test
-    /// that silently passes because its fixture is missing guards nothing, so
-    /// the escape hatch exists only to keep `vendor/pdfium/fetch.sh` optional
-    /// for a docs-only change on a developer machine.
-    macro_rules! require {
-        ($what:expr, $missing:expr) => {
-            if $missing {
-                if std::env::var_os("IZUL_REQUIRE_FIXTURES").is_some() {
-                    panic!(concat!($what, " tidak ada dan IZUL_REQUIRE_FIXTURES diset"));
-                }
-                eprintln!(concat!("LEWATI: ", $what, " belum diambil"));
-                return;
-            }
-        };
-    }
-
+    /// The engine, plus the lock that makes using it safe on a test thread pool.
+    ///
+    /// The guard comes back to the caller to bind — `let (engine, _pdfium) =
+    /// engine_or_skip!()` — because PDFium's global state tolerates exactly one
+    /// user at a time and `cargo test` provides several. See
+    /// [`crate::test_support`].
     macro_rules! engine_or_skip {
         () => {{
-            require!("PDFium", engine().is_none());
-            match engine() {
-                Some(e) => e,
-                None => return,
-            }
+            engine_and_lock!()
         }};
     }
 
@@ -533,9 +498,7 @@ mod rendered {
     /// carries its own `/Rotate`; `bench/make_fixtures.py viewer` builds it.
     macro_rules! fixture_or_skip {
         () => {{
-            let path = root().join("test-fixtures/viewer-10p.pdf");
-            require!("test-fixtures/viewer-10p.pdf", !path.exists());
-            path
+            viewer_fixture!()
         }};
     }
 
@@ -628,7 +591,7 @@ mod rendered {
     /// asked for a different space and every arm of it needs rederiving.
     #[test]
     fn renders_identically_to_the_plain_api() {
-        let engine = engine_or_skip!();
+        let (engine, _pdfium) = engine_or_skip!();
         let fixture = fixture_or_skip!();
         let doc = engine.open(&fixture, None).expect("buka");
         let size = doc.page_size(0).expect("ukuran");
@@ -687,7 +650,7 @@ mod rendered {
     /// nothing caught it until a zoomed tile was rendered.
     #[test]
     fn zooming_past_one_to_one_still_puts_ink_on_the_tile() {
-        let engine = engine_or_skip!();
+        let (engine, _pdfium) = engine_or_skip!();
         let fixture = fixture_or_skip!();
         let doc = engine.open(&fixture, None).expect("buka");
         let size = doc.page_size(0).expect("ukuran");
@@ -721,7 +684,7 @@ mod rendered {
     /// `tile_matrix` must not subtract it again.
     #[test]
     fn a_media_box_away_from_the_origin_does_not_shift_the_page() {
-        let engine = engine_or_skip!();
+        let (engine, _pdfium) = engine_or_skip!();
         for (mx, my) in [(0.0f32, 0.0f32), (-50.0, 20.0), (120.0, -300.0)] {
             let doc = engine
                 .open_bytes(corner_page(mx, my, 0), None, None)
@@ -752,7 +715,7 @@ mod rendered {
     /// `tile_matrix` must be given only the rotation the user added.
     #[test]
     fn the_pages_own_rotate_is_applied_exactly_once() {
-        let engine = engine_or_skip!();
+        let (engine, _pdfium) = engine_or_skip!();
         // The ink square sits at the page's bottom-left in user space. Turning
         // the page clockwise walks that corner round the bitmap.
         for (rotate, want) in [
@@ -796,7 +759,7 @@ mod rendered {
     /// The rotation the *user* asks for stacks on top of the page's own.
     #[test]
     fn the_users_extra_rotation_turns_the_page_further() {
-        let engine = engine_or_skip!();
+        let (engine, _pdfium) = engine_or_skip!();
         for (extra, want) in [
             (RotationQuarter::None, (true, false)),
             (RotationQuarter::Cw90, (true, true)),
@@ -833,7 +796,7 @@ mod rendered {
     /// A tile asks for one rectangle of the page and must get exactly that one.
     #[test]
     fn a_tile_shows_only_its_own_rectangle() {
-        let engine = engine_or_skip!();
+        let (engine, _pdfium) = engine_or_skip!();
         let doc = engine
             .open_bytes(corner_page(0.0, 0.0, 0), None, None)
             .expect("buka sintetis");

@@ -27,6 +27,8 @@ dist
 !/bench/results/.gitkeep
 !/bench/results/phase0-*
 !/bench/results/phase1-*
+!/bench/results/phase2-*
+!/bench/results/phase3-*
 
 # Python byte cache from the fixture generator.
 __pycache__/
