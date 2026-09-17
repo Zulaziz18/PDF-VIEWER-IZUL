@@ -1969,6 +1969,7 @@ dependencies = [
 name = "izul-pdf"
 version = "7.0.0-alpha.2"
 dependencies = [
+ "image",
  "izul-model",
  "memmap2",
  "pdfium-render",

@@ -8,11 +8,13 @@
 //! tested without rendering anything. If parity ever breaks, the bug is in here,
 //! and it has to be reproducible in a unit test.
 //!
-//! What Phase 0 delivers: the coordinate system and the display-list vocabulary,
-//! both fully specified and tested. The `display_list(obj, font_ctx)` function
-//! and the two backends that consume it belong to Phase 3 and are not stubbed
-//! here — an empty function that returns nothing would be worse than an absent
-//! one.
+//! Phase 0 delivered the coordinate system and the display-list vocabulary.
+//! Phase 3 adds what stands on them: the annotation objects themselves
+//! (`annot`), the pure `display_list(obj, font_ctx)` that turns one into
+//! primitives (`build`), the appearance-stream backend that serialises those
+//! primitives into PDF operators (`ap`), and the command stack that makes every
+//! edit undoable (`ops`). The canvas backend consumes the same list from the
+//! frontend, which is why nothing here knows what a canvas is.
 
 // SPEC 0 bans `unwrap`, `expect` and `panic` in production code, and the
 // workspace lints deny them. Test code is the exception on purpose: inside a
@@ -30,11 +32,23 @@
     )
 )]
 
+pub mod annot;
+pub mod ap;
+pub mod build;
 pub mod display;
+pub mod font;
 pub mod geom;
+pub mod ops;
 
+pub use annot::{
+    AnnotId, AnnotKind, AnnotObject, AnnotPayload, FontSpec, NoteIcon, ShapeStyle, TextAlign,
+};
+pub use ap::{appearance, Appearance, GState, Resources};
+pub use build::display_list;
 pub use display::{
     BlendMode, DisplayList, DisplayOp, FillRule, FontRef, ImageRef, LineCap, LineJoin, Path,
     PathSeg, PositionedGlyph, Rgba, StrokeStyle,
 };
+pub use font::{FaceMetrics, FixedFont, FontCtx, GlyphMetrics, TextError};
 pub use geom::{Matrix, PdfPointF, PdfRectF, RotationQuarter};
+pub use ops::{AnnotDoc, CommandStack, EditError, Op, Transaction, DEFAULT_UNDO_LIMIT};

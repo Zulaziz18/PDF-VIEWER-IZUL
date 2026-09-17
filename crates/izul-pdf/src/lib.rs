@@ -32,6 +32,8 @@ pub mod error;
 mod ffi_guard;
 pub mod find;
 pub mod geom;
+#[cfg(test)]
+mod golden;
 pub mod outline;
 pub mod render;
 pub mod sys;

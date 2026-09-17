@@ -13,5 +13,11 @@ thiserror.workspace = true
 tracing.workspace = true
 serde.workspace = true
 
+[dev-dependencies]
+# PNG for the golden-image baselines. A dev dependency on purpose: the shipped
+# crate has no business encoding images, and Phase 3's parity evidence has to be
+# readable by a human opening the file.
+image.workspace = true
+
 [lints]
 workspace = true
