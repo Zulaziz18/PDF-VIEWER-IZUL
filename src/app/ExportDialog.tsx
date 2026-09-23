@@ -37,10 +37,23 @@ export function rangeMessage(error: PageRangeError): string {
   }
 }
 
-export function Choice(props: { name: string; checked: boolean; onChange: () => void; children: React.ReactNode }): JSX.Element {
+export function Choice(props: {
+  name: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: () => void;
+  children: React.ReactNode;
+}): JSX.Element {
   return (
-    <label className="flex items-center gap-2 h-7 text-[13px] cursor-default">
-      <input type="radio" name={props.name} checked={props.checked} onChange={props.onChange} className="accent-[var(--izul-accent)]" />
+    <label className={["flex items-center gap-2 h-7 text-[13px] cursor-default", props.disabled ? "opacity-50" : ""].join(" ")}>
+      <input
+        type="radio"
+        name={props.name}
+        checked={props.checked}
+        disabled={props.disabled}
+        onChange={props.onChange}
+        className="accent-[var(--izul-accent)]"
+      />
       {props.children}
     </label>
   );

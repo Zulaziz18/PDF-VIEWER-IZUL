@@ -37,6 +37,7 @@
 
 pub mod annots;
 pub mod commands;
+pub mod compare;
 pub mod folders;
 pub mod indexing;
 pub mod logging;
@@ -302,6 +303,9 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
             save_commands::draft_discard,
             save_commands::file_status,
             save_commands::file_acknowledge,
+            compare::compare_visual,
+            commands::pref_get,
+            commands::pref_set,
             pagemap::pages_state,
             pagemap::pages_apply,
             pagemap::pages_insert_file,

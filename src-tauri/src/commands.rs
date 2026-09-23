@@ -1134,3 +1134,48 @@ pub fn annot_add_image(
     }
     state.annots.add_image(doc, bytes)
 }
+
+// ---- Preferences the interface keeps (Phase 5) ------------------------------
+
+/// Only interface preferences can be read or written from the webview. The
+/// store also holds engine settings (the render cache budget), and a page
+/// script — ours or anything that got into the webview — has no business
+/// changing those.
+fn ui_pref_key(key: &str) -> CmdResult<&str> {
+    if key.starts_with("ui.") && key.len() <= 64 && key.chars().all(|c| c.is_ascii_graphic()) {
+        Ok(key)
+    } else {
+        Err(format!("kunci preferensi tidak diizinkan: {key}"))
+    }
+}
+
+#[tauri::command]
+pub fn pref_get(state: tauri::State<'_, AppState>, key: String) -> CmdResult<Option<String>> {
+    let key = ui_pref_key(&key)?;
+    let conn = state.db()?;
+    izul_store::prefs::get(&conn, key).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn pref_set(state: tauri::State<'_, AppState>, key: String, value: String) -> CmdResult<()> {
+    let key = ui_pref_key(&key)?;
+    if value.len() > 4096 {
+        return Err("nilai preferensi terlalu panjang".into());
+    }
+    let conn = state.db()?;
+    izul_store::prefs::set(&conn, key, &value).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod pref_tests {
+    use super::ui_pref_key;
+
+    #[test]
+    fn only_interface_keys_are_reachable_from_the_webview() {
+        assert!(ui_pref_key("ui.split.ratio").is_ok());
+        assert!(ui_pref_key("render.cache_budget_mb").is_err());
+        assert!(ui_pref_key("ui.").is_ok());
+        assert!(ui_pref_key("ui.a b").is_err());
+        assert!(ui_pref_key(&format!("ui.{}", "x".repeat(80))).is_err());
+    }
+}

@@ -30,6 +30,7 @@ dist
 !/bench/results/phase2-*
 !/bench/results/phase3-*
 !/bench/results/phase4-*
+!/bench/results/phase5-*
 
 # Python byte cache from the fixture generator.
 __pycache__/

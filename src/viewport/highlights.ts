@@ -52,6 +52,7 @@ export function buildHighlightLayer(
   rects: readonly PdfRect[],
   place: PagePlacement,
   doc: Document,
+  variant: "izul-highlight" | "izul-diff-mark" = "izul-highlight",
 ): HTMLElement {
   const host = doc.createElement("div");
   host.className = "izul-highlight-page";
@@ -62,7 +63,7 @@ export function buildHighlightLayer(
   for (const rect of rects) {
     const box = highlightBox(rect, place);
     const el = doc.createElement("div");
-    el.className = "izul-highlight";
+    el.className = variant;
     el.style.position = "absolute";
     el.style.left = `${box.left}px`;
     el.style.top = `${box.top}px`;
@@ -71,4 +72,15 @@ export function buildHighlightLayer(
     host.appendChild(el);
   }
   return host;
+}
+
+/**
+ * A cheap fingerprint of a set of boxes, for deciding whether a page's layer
+ * must be rebuilt. The count alone is not enough: a new query can match as
+ * many places as the last one, elsewhere on the page.
+ */
+export function rectsSignature(rects: readonly PdfRect[]): string {
+  let sum = 0;
+  for (const r of rects) sum += r.left * 3 + r.bottom * 5 + r.right * 7 + r.top * 11;
+  return `${rects.length}:${sum.toFixed(2)}`;
 }

@@ -260,6 +260,8 @@ export interface DocumentState {
   pagesEpoch: number;
   /** Pages selected in the page panel, for the page operations. */
   pageSelection: number[];
+  /** Differences compare mode found, per page, in display space. */
+  marks: Map<number, readonly PdfRect[]>;
   /** Set when an edit was refused — a missing font, a locked object. */
   annotError: string | null;
 
@@ -325,6 +327,8 @@ export interface DocumentState {
   insertFile(path: string, at: number): Promise<boolean>;
   copyPagesFrom(from: number, pages: readonly number[], at: number, remove: boolean): Promise<boolean>;
   setPageSelection(pages: readonly number[]): void;
+  setMarks(page: number, rects: readonly PdfRect[]): void;
+  clearMarks(): void;
   setSaving(saving: boolean): void;
   markSaved(report: SaveReport): void;
   /** The selected objects, in paint order. */
@@ -427,6 +431,7 @@ export function createDocumentSession(
     mapRevision: 0,
     pagesEpoch: 0,
     pageSelection: [],
+    marks: new Map(),
     annotError: null,
 
     viewportWidth: viewport.width,
@@ -887,6 +892,7 @@ export function createDocumentSession(
         page: Math.min(state.page, Math.max(0, pageSizes.length - 1)),
         texts: new Map(),
         highlights: new Map(),
+        marks: new Map(),
         annots: new Map(),
         annotLists: new Map(),
         selection: [],
@@ -957,6 +963,17 @@ export function createDocumentSession(
         set({ busy: false, annotError: String(e) });
         return false;
       }
+    },
+
+    setMarks(page: number, rects: readonly PdfRect[]) {
+      const next = new Map(get().marks);
+      if (rects.length === 0) next.delete(page);
+      else next.set(page, rects);
+      set({ marks: next });
+    },
+
+    clearMarks() {
+      if (get().marks.size > 0) set({ marks: new Map() });
     },
 
     setPageSelection(pages: readonly number[]) {

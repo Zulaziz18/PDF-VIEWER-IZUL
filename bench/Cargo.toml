@@ -34,6 +34,11 @@ path = "src/ui_harness.rs"
 name = "fase4-uji"
 path = "src/fase4_uji.rs"
 
+# Phase 5's page-rearrangement timings.
+[[bin]]
+name = "fase5-uji"
+path = "src/fase5_uji.rs"
+
 [dependencies]
 izul-pdf.workspace = true
 izul-ipc.workspace = true

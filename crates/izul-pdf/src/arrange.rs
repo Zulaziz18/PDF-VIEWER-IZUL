@@ -61,14 +61,21 @@ impl Document {
         self.release_all_pages();
 
         // Where each entry is right now, in the document as it is being
-        // changed. `None` until it exists.
-        let mut at: Vec<usize> = Vec::with_capacity(pages.len());
+        // changed; filled in as each page comes to exist.
+        let mut at: Vec<Option<usize>> = vec![None; pages.len()];
         let mut kept: HashSet<u32> = HashSet::new();
         let mut count = original as usize;
 
-        // 1. Add what is new at the end.
-        for entry in pages {
-            match entry.source {
+        // The file's own pages, first use of each: they stay where they are.
+        // Every other page is imported, **one call per source document**:
+        // PDFium copies a page's shared resources (fonts, images) once per
+        // import call, so importing page by page wrote a 500-page merge with
+        // 500 copies of the same embedded font — 22 MB instead of 1.9 MB,
+        // measured on `text-500p.pdf`.
+        let mut groups: Vec<(&Document, Vec<(usize, u32)>)> = Vec::new();
+        let mut blanks: Vec<(usize, f32, f32)> = Vec::new();
+        for (i, entry) in pages.iter().enumerate() {
+            let (src, p) = match entry.source {
                 ArrangeSource::Own(p) if !kept.contains(&p) => {
                     if p >= original {
                         return Err(PdfError::PageOutOfRange {
@@ -77,43 +84,82 @@ impl Document {
                         });
                     }
                     kept.insert(p);
-                    at.push(p as usize);
-                }
-                ArrangeSource::Own(p) => {
-                    let again = own_again.ok_or_else(|| {
-                        corrupt("salinan kedua dokumen diperlukan untuk menggandakan halaman")
-                    })?;
-                    import(self, again, p, count)?;
-                    at.push(count);
-                    count += 1;
-                }
-                ArrangeSource::From(src, p) => {
-                    import(self, src, p, count)?;
-                    at.push(count);
-                    count += 1;
-                }
-                ArrangeSource::Blank { width, height } => {
-                    // SAFETY: `handle` is live; the index is the current page
-                    // count, which is always a valid insertion point; the page
-                    // handle returned is closed at once, as the header asks.
-                    let page = unsafe {
-                        bindings.FPDFPage_New(
-                            self.handle(),
-                            count as c_int,
-                            f64::from(width),
-                            f64::from(height),
-                        )
-                    };
-                    if page.is_null() {
-                        return Err(corrupt("halaman kosong tidak dapat dibuat"));
+                    if let Some(slot) = at.get_mut(i) {
+                        *slot = Some(p as usize);
                     }
-                    // SAFETY: `page` was just returned non-null by FPDFPage_New.
-                    unsafe { bindings.FPDF_ClosePage(page) };
-                    at.push(count);
-                    count += 1;
+                    continue;
                 }
+                ArrangeSource::Own(p) => (
+                    own_again.ok_or_else(|| {
+                        corrupt("salinan kedua dokumen diperlukan untuk menggandakan halaman")
+                    })?,
+                    p,
+                ),
+                ArrangeSource::From(src, p) => (src, p),
+                ArrangeSource::Blank { width, height } => {
+                    blanks.push((i, width, height));
+                    continue;
+                }
+            };
+            src.check_page(p)?;
+            match groups.iter_mut().find(|(d, _)| std::ptr::eq(*d, src)) {
+                Some((_, list)) => list.push((i, p)),
+                None => groups.push((src, vec![(i, p)])),
             }
         }
+
+        // 1. Add what is new at the end: each source's pages in one import,
+        //    then the blank pages.
+        for (src, list) in &groups {
+            let indices: Vec<c_int> = list.iter().map(|(_, p)| *p as c_int).collect();
+            // SAFETY: both documents are live; the index buffer outlives the
+            // call; `count` is the current page count, a valid insertion
+            // point. Repeated indices are allowed (each makes a page).
+            let ok = unsafe {
+                bindings.FPDF_ImportPagesByIndex(
+                    self.handle(),
+                    src.handle(),
+                    indices.as_ptr(),
+                    indices.len() as c_ulong,
+                    count as c_int,
+                )
+            };
+            if ok == 0 {
+                return Err(corrupt("halaman dari dokumen lain tidak dapat disalin"));
+            }
+            for (k, (i, _)) in list.iter().enumerate() {
+                if let Some(slot) = at.get_mut(*i) {
+                    *slot = Some(count + k);
+                }
+            }
+            count += list.len();
+        }
+        for (i, width, height) in blanks {
+            // SAFETY: `handle` is live; the index is the current page count,
+            // which is always a valid insertion point; the page handle
+            // returned is closed at once, as the header asks.
+            let page = unsafe {
+                bindings.FPDFPage_New(
+                    self.handle(),
+                    count as c_int,
+                    f64::from(width),
+                    f64::from(height),
+                )
+            };
+            if page.is_null() {
+                return Err(corrupt("halaman kosong tidak dapat dibuat"));
+            }
+            // SAFETY: `page` was just returned non-null by FPDFPage_New.
+            unsafe { bindings.FPDF_ClosePage(page) };
+            if let Some(slot) = at.get_mut(i) {
+                *slot = Some(count);
+            }
+            count += 1;
+        }
+        let mut at: Vec<usize> = at
+            .into_iter()
+            .map(|p| p.ok_or_else(|| corrupt("halaman tanpa tempat")))
+            .collect::<Result<_>>()?;
 
         // 2. Delete the file's own pages nobody asked for, last first so the
         //    indices still to be deleted do not move.
@@ -189,26 +235,6 @@ impl Document {
     }
 }
 
-/// Copies page `page` of `src` into `dest` at index `at`.
-fn import(dest: &Document, src: &Document, page: u32, at: usize) -> Result<()> {
-    src.check_page(page)?;
-    let index = page as c_int;
-    // SAFETY: both documents are live; the index buffer outlives the call.
-    let ok = unsafe {
-        dest.engine().bindings().FPDF_ImportPagesByIndex(
-            dest.handle(),
-            src.handle(),
-            &index,
-            1 as c_ulong,
-            at as c_int,
-        )
-    };
-    if ok == 0 {
-        return Err(corrupt(format!("halaman {} tidak dapat disalin", page + 1)));
-    }
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -267,6 +293,46 @@ mod tests {
             .as_bytes(),
         );
         pdf
+    }
+
+    /// The contents of every stream in `pdf`, inflated where they are
+    /// Flate-compressed, as one string.
+    fn every_stream(pdf: &[u8]) -> String {
+        use std::io::Read;
+        let mut out = String::new();
+        let mut at = 0;
+        while let Some(start) = find(pdf, b"stream", at) {
+            let mut body = start + 6;
+            if pdf.get(body) == Some(&b'\r') {
+                body += 1;
+            }
+            if pdf.get(body) == Some(&b'\n') {
+                body += 1;
+            }
+            let Some(end) = find(pdf, b"endstream", body) else {
+                break;
+            };
+            let raw = &pdf[body..end];
+            let mut inflated = Vec::new();
+            if flate2::read::ZlibDecoder::new(raw)
+                .read_to_end(&mut inflated)
+                .is_ok()
+            {
+                out.push_str(&String::from_utf8_lossy(&inflated));
+            } else {
+                out.push_str(&String::from_utf8_lossy(raw));
+            }
+            out.push('\n');
+            at = end + 9;
+        }
+        out
+    }
+
+    fn find(hay: &[u8], needle: &[u8], from: usize) -> Option<usize> {
+        hay.get(from..)?
+            .windows(needle.len())
+            .position(|w| w == needle)
+            .map(|p| p + from)
     }
 
     fn texts(doc: &Document) -> Vec<String> {
@@ -388,6 +454,152 @@ mod tests {
             .unwrap();
         // Page 1 was /Rotate 90 already: 1 + 3 is a full turn.
         assert_eq!(rotations(&back), vec![3, 0]);
+    }
+
+    /// `n` pages all drawing the same 200 x 200 RGB image: 120 000 bytes,
+    /// stored once, uncompressed so its size is plain to see.
+    fn shared_image(n: usize) -> Vec<u8> {
+        shared_image_with(n, false)
+    }
+
+    /// `indirect_dict`: the page's `/XObject` dictionary is itself a shared
+    /// object, as `/Font` is in files written by most producers.
+    fn shared_image_with(n: usize, indirect_dict: bool) -> Vec<u8> {
+        let side = 200usize;
+        // Noise, so that PDFium's own compression on save cannot hide how
+        // many copies were written (a regular pattern shrank to 1 KB).
+        let mut seed = 0x2545_f491_u32;
+        let pixels: Vec<u8> = (0..side * side * 3)
+            .map(|_| {
+                seed ^= seed << 13;
+                seed ^= seed >> 17;
+                seed ^= seed << 5;
+                (seed >> 24) as u8
+            })
+            .collect();
+        let first_page = 5usize;
+        let mut objects: Vec<Vec<u8>> = vec![
+            b"<</Type/Catalog/Pages 2 0 R>>".to_vec(),
+            Vec::new(),
+            [
+                format!(
+                    "<</Type/XObject/Subtype/Image/Width {side}/Height {side}/ColorSpace/DeviceRGB/BitsPerComponent 8/Length {}>>stream\n",
+                    pixels.len()
+                )
+                .into_bytes(),
+                pixels,
+                b"\nendstream".to_vec(),
+            ]
+            .concat(),
+            b"<</Im1 3 0 R>>".to_vec(),
+        ];
+        let xobjects = if indirect_dict {
+            "4 0 R"
+        } else {
+            "<</Im1 3 0 R>>"
+        };
+        let content = b"q 100 0 0 100 50 50 cm /Im1 Do Q";
+        let mut kids = Vec::new();
+        for i in 0..n {
+            let page = first_page + 2 * i;
+            kids.push(format!("{page} 0 R"));
+            objects.push(
+                format!(
+                    "<</Type/Page/Parent 2 0 R/MediaBox[0 0 300 300]/Resources<</XObject {xobjects}>>/Contents {} 0 R>>",
+                    page + 1
+                )
+                .into_bytes(),
+            );
+            objects.push(
+                [
+                    format!("<</Length {}>>stream\n", content.len()).into_bytes(),
+                    content.to_vec(),
+                    b"\nendstream".to_vec(),
+                ]
+                .concat(),
+            );
+        }
+        objects[1] = format!("<</Type/Pages/Kids[{}]/Count {n}>>", kids.join(" ")).into_bytes();
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        let mut offsets = Vec::new();
+        for (i, body) in objects.iter().enumerate() {
+            offsets.push(pdf.len());
+            pdf.extend_from_slice(format!("{} 0 obj\n", i + 1).as_bytes());
+            pdf.extend_from_slice(body);
+            pdf.extend_from_slice(b"\nendobj\n");
+        }
+        let xref = pdf.len();
+        pdf.extend_from_slice(
+            format!("xref\n0 {}\n0000000000 65535 f \n", objects.len() + 1).as_bytes(),
+        );
+        for off in offsets {
+            pdf.extend_from_slice(format!("{off:010} 00000 n \n").as_bytes());
+        }
+        pdf.extend_from_slice(
+            format!(
+                "trailer\n<</Size {}/Root 1 0 R>>\nstartxref\n{xref}\n%%EOF\n",
+                objects.len() + 1
+            )
+            .as_bytes(),
+        );
+        pdf
+    }
+
+    /// PDFium copies a page's shared resources once per import call. Merging
+    /// twenty pages that share one image must bring the image once, not
+    /// twenty times — the first version imported page by page and turned a
+    /// merge of two 1 MB files into 22 MB.
+    #[test]
+    fn merged_pages_share_their_resources() {
+        let (engine, _pdfium) = engine_and_lock!();
+        let doc = engine.open_bytes(numbered(2), None::<&str>, None).unwrap();
+        doc.set_strip_izul(false);
+        let src = engine
+            .open_bytes(shared_image(20), None::<&str>, None)
+            .unwrap();
+        let mut plan = vec![own(0), own(1)];
+        plan.extend((0..20).map(|p| Arranged {
+            source: ArrangeSource::From(&src, p),
+            rotation: 0,
+        }));
+        doc.arrange(&plan, None).unwrap();
+        let saved = doc.save_to_vec().unwrap();
+        assert_eq!(
+            engine
+                .open_bytes(saved.clone(), None::<&str>, None)
+                .unwrap()
+                .page_count(),
+            22
+        );
+        assert!(
+            saved.len() < 3 * 120_000,
+            "{} bytes: the shared image was copied once per page",
+            saved.len()
+        );
+    }
+
+    /// A deleted page must leave the file, not only the page tree: a page
+    /// removed because it held something private, whose content stream is
+    /// still in the saved bytes, has not been removed at all.
+    #[test]
+    fn a_deleted_pages_content_is_not_in_the_saved_file() {
+        let (engine, _pdfium) = engine_and_lock!();
+        let doc = engine.open_bytes(numbered(4), None::<&str>, None).unwrap();
+        doc.set_strip_izul(false);
+        doc.arrange(&[own(0), own(2), own(3)], None).unwrap();
+        let saved = doc.save_to_vec().unwrap();
+        let text = every_stream(&saved);
+        // PDFium compresses content streams when it saves, so the check reads
+        // every stream in the file, inflated, not the raw bytes (a first
+        // version of this test looked at the raw bytes and could see nothing).
+        assert!(
+            text.contains("(Halaman 0)"),
+            "the check can see content at all"
+        );
+        assert!(
+            !text.contains("(Halaman 1)"),
+            "the deleted page's content is still in the file"
+        );
     }
 
     #[test]

@@ -136,12 +136,17 @@ export function SplitDialog(): JSX.Element | null {
             onChange={(e) => setRanges(e.target.value)}
             className="ml-6 h-8 px-2 text-[13px] rounded-[6px] bg-[var(--izul-surface)] border border-[var(--izul-border)] focus:border-[var(--izul-accent)] outline-none"
           />
-          <Choice name="split" checked={mode === "bookmarks"} onChange={() => setMode("bookmarks")}>
+          <Choice
+            name="split"
+            checked={mode === "bookmarks"}
+            disabled={byBookmark.length === 0}
+            onChange={() => setMode("bookmarks")}
+          >
             {t("split.bookmarks")}
-            {byBookmark.length === 0 && (
-              <span className="text-[12px] text-[var(--izul-text-dim)]"> — {t("sidebar.noOutline")}</span>
-            )}
           </Choice>
+          {byBookmark.length === 0 && (
+            <p className="ml-6 text-[12px] text-[var(--izul-text-dim)]">{t("sidebar.noOutline")}</p>
+          )}
         </fieldset>
 
         <p

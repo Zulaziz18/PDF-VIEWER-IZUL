@@ -179,7 +179,45 @@ def report(path, title, pages):
     c.save()
 
 
+def agreement(path, version):
+    """Two versions of one made-up agreement, for compare mode: a few words
+    changed, a sentence added, one figure in the table different."""
+    c = canvas.Canvas(str(path))
+    c.setTitle(f"Draf Perjanjian Kerja Sama {version}")
+    fee = "Rp 12.500.000" if version == "v1" else "Rp 14.000.000"
+    days = "30 (tiga puluh)" if version == "v1" else "14 (empat belas)"
+    extra = "" if version == "v1" else " Keterlambatan pembayaran dikenakan denda satu persen per bulan."
+    clauses = [
+        [
+            "Perjanjian ini dibuat antara Pihak Pertama, sebuah lembaga pelatihan contoh, dan Pihak Kedua, "
+            "seorang penyedia jasa desain contoh. Kedua pihak sepakat bekerja sama dalam penyusunan materi pelatihan.",
+            f"Nilai pekerjaan sebesar {fee} dibayar dalam dua tahap setelah hasil kerja diterima.{extra}",
+            f"Pembayaran dilakukan paling lambat {days} hari kalender sejak tagihan diterima oleh Pihak Pertama.",
+        ],
+        [
+            "Pihak Kedua menyerahkan rancangan awal dalam waktu tiga minggu sejak perjanjian ditandatangani.",
+            "Revisi dilakukan paling banyak dua kali untuk setiap bagian materi."
+            if version == "v1" else "Revisi dilakukan paling banyak tiga kali untuk setiap bagian materi.",
+            "Hak cipta atas materi yang telah dibayar lunas beralih kepada Pihak Pertama.",
+        ],
+        [
+            "Perselisihan diselesaikan secara musyawarah. Bila tidak tercapai kesepakatan, kedua pihak memilih "
+            "penyelesaian melalui mediasi.",
+            "Perjanjian ini dibuat dalam dua rangkap yang sama kuatnya.",
+        ],
+    ]
+    table = [["Tahap", "Porsi", "Syarat"], ["Pertama", "50%", "Rancangan awal"],
+             ["Kedua", "50%" if version == "v1" else "40%", "Materi final"]]
+    if version == "v2":
+        table.append(["Ketiga", "10%", "Masa garansi"])
+    for i, paragraphs in enumerate(clauses):
+        body_page(c, i + 1, f"Pasal {i + 1}", paragraphs, table if i == 0 else None)
+    c.save()
+
+
 guide(OUT / "Panduan Studi 2026.pdf")
+agreement(OUT / "Draf Perjanjian v1.pdf", "v1")
+agreement(OUT / "Draf Perjanjian v2.pdf", "v2")
 report(OUT / "Laporan Kegiatan Semester.pdf", "Laporan Kegiatan", 9)
 report(OUT / "Catatan Rapat Organisasi.pdf", "Catatan Rapat", 5)
 report(OUT / "Proposal Penelitian.pdf", "Proposal Penelitian", 14)

@@ -2001,6 +2001,7 @@ dependencies = [
 name = "izul-pdf"
 version = "7.0.0-alpha.4"
 dependencies = [
+ "flate2",
  "image",
  "izul-model",
  "izul-write",

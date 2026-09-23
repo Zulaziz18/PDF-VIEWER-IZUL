@@ -39,7 +39,7 @@ import {
 import type { Layout, ViewMode, ViewRect } from "./layout";
 import { boxOf, dominantPage, layoutDocument, scrollToPage, visiblePages } from "./layout";
 import { prefetchPages, ScrollTracker } from "./prediction";
-import { buildHighlightLayer } from "./highlights";
+import { buildHighlightLayer, rectsSignature } from "./highlights";
 import type { PageBox } from "./annotLayer";
 import { pageAt, pageBox, toContentPoint, toPagePoint } from "./annotLayer";
 import { drawDisplayList } from "@/annots/canvas";
@@ -122,6 +122,8 @@ export interface RendererState {
   readonly pagesView?: readonly { readonly render_doc: number | null; readonly page: number }[] | null;
   /** Changes when display page numbers stop meaning what they meant. */
   readonly pagesEpoch?: number;
+  /** Differences found by compare mode, per page, in display space. */
+  readonly marks?: ReadonlyMap<number, readonly PdfRect[]>;
 }
 
 export interface RendererEvents {
@@ -213,6 +215,7 @@ export class ViewportRenderer {
   #pending = new Set<string>();
   #textSignatures = new Map<number, string>();
   #highlightSignatures = new Map<number, string>();
+  #markSignatures = new Map<number, string>();
   /** The gesture in progress, if any. */
   #gesture: Gesture | null = null;
   #reportedPage = -1;
@@ -303,6 +306,7 @@ export class ViewportRenderer {
       this.#bitmaps.clear();
       this.#textSignatures.clear();
       this.#highlightSignatures.clear();
+      this.#markSignatures.clear();
       this.#host.textLayer.replaceChildren();
       this.#tracker.reset();
       this.#reportedPage = -1;
@@ -334,6 +338,37 @@ export class ViewportRenderer {
     }
     this.#tracker.reset();
     this.#host.scroller.scrollTo({ left: target.x, top: Math.max(0, y), behavior: "auto" });
+    this.requestFrame();
+  }
+
+  /**
+   * Where the reader is, as the page at the top edge of the view and how far
+   * into it (0 at its top, 1 at its bottom). Compare mode keeps two
+   * documents aligned by this rather than by pixels, because their pages
+   * need not be the same size.
+   */
+  position(): { page: number; fraction: number } {
+    const view = this.#view();
+    const horizontal = this.#layout.horizontal;
+    const page = visiblePages(this.#layout, view, 0)[0] ?? 0;
+    const box = boxOf(this.#layout, page);
+    if (!box) return { page, fraction: 0 };
+    const fraction = horizontal ? (view.x - box.x) / Math.max(1, box.w) : (view.y - box.y) / Math.max(1, box.h);
+    return { page, fraction: Math.min(1, Math.max(0, fraction)) };
+  }
+
+  /** The inverse of {@link position}; clamps to the pages this document has. */
+  scrollToPosition(page: number, fraction: number): void {
+    const last = this.#layout.pages.length - 1;
+    if (last < 0) return;
+    const box = boxOf(this.#layout, Math.min(Math.max(0, page), last));
+    if (!box) return;
+    const s = this.#host.scroller;
+    if (this.#layout.horizontal) {
+      s.scrollTo({ left: box.x + fraction * box.w, top: s.scrollTop, behavior: "auto" });
+    } else {
+      s.scrollTo({ left: s.scrollLeft, top: box.y + fraction * box.h, behavior: "auto" });
+    }
     this.requestFrame();
   }
 
@@ -554,7 +589,8 @@ export class ViewportRenderer {
     }
 
     this.#syncTextLayer(pages);
-    this.#syncHighlightLayer(pages);
+    this.#syncBoxLayer(pages, this.#state.highlights, this.#highlightSignatures, "hl", "izul-highlight");
+    this.#syncBoxLayer(pages, this.#state.marks, this.#markSignatures, "mk", "izul-diff-mark");
     if (wantText.length > 0) this.#events.onWantText(wantText);
     if (wantAnnots.length > 0) this.#events.onWantAnnots(wantAnnots);
 
@@ -687,32 +723,39 @@ export class ViewportRenderer {
    * display space — a box left over from another zoom is not merely stale, it
    * is over the wrong words.
    */
-  #syncHighlightLayer(pages: readonly number[]): void {
+  #syncBoxLayer(
+    pages: readonly number[],
+    source: ReadonlyMap<number, readonly PdfRect[]> | undefined,
+    signatures: Map<number, string>,
+    attr: "hl" | "mk",
+    variant: "izul-highlight" | "izul-diff-mark",
+  ): void {
     const wanted = new Set(pages);
-    for (const page of Array.from(this.#highlightSignatures.keys())) {
-      const rects = this.#state.highlights.get(page);
+    for (const page of Array.from(signatures.keys())) {
+      const rects = source?.get(page);
       if (!wanted.has(page) || !rects || rects.length === 0) {
-        this.#host.textLayer.querySelector(`[data-hl="${page}"]`)?.remove();
-        this.#highlightSignatures.delete(page);
+        this.#host.textLayer.querySelector(`[data-${attr}="${page}"]`)?.remove();
+        signatures.delete(page);
       }
     }
     for (const page of pages) {
-      const rects = this.#state.highlights.get(page);
+      const rects = source?.get(page);
       const box = boxOf(this.#layout, page);
       const size = this.#displaySizeOf(page);
       if (!rects || rects.length === 0 || !box || !size) continue;
-      const signature = `${rects.length}:${this.#state.zoom}:${this.#rotationOf(page)}`;
-      if (this.#highlightSignatures.get(page) === signature) continue;
+      const signature = `${rectsSignature(rects)}:${this.#state.zoom}:${this.#rotationOf(page)}`;
+      if (signatures.get(page) === signature) continue;
 
       const layer = buildHighlightLayer(
         rects,
         { x: box.x, y: box.y, zoom: this.#state.zoom, pageHeight: size.height },
         document,
+        variant,
       );
-      layer.dataset["hl"] = String(page);
-      this.#host.textLayer.querySelector(`[data-hl="${page}"]`)?.remove();
+      layer.dataset[attr] = String(page);
+      this.#host.textLayer.querySelector(`[data-${attr}="${page}"]`)?.remove();
       this.#host.textLayer.appendChild(layer);
-      this.#highlightSignatures.set(page, signature);
+      signatures.set(page, signature);
     }
   }
 

@@ -33,6 +33,8 @@ import { useDocument } from "@/state/documentStore";
 import { useUi, type MarkupKind, type RibbonTab } from "@/state/uiStore";
 import { useWorkspace } from "@/state/workspaceStore";
 import type { ViewMode } from "@/viewport/layout";
+import type { Layout } from "@/state/panels";
+import { toggleCompare } from "./compare";
 import { insertImage, markupSelection, pickAndOpen } from "./actions";
 import { exportFlat, requestCloseAll, requestCloseTab, saveDocument } from "./fileActions";
 import {
@@ -305,6 +307,50 @@ const VIEW_MODES: ReadonlyArray<{ mode: ViewMode; icon: IconName; label: StringK
   { mode: "horizontal", icon: "viewHorizontal", label: "view.horizontal" },
 ];
 
+const LAYOUTS: ReadonlyArray<{ layout: Layout; icon: IconName; label: StringKey }> = [
+  { layout: "single", icon: "viewSingle", label: "panels.single" },
+  { layout: "columns", icon: "layoutTwo", label: "panels.columns" },
+  { layout: "rows", icon: "layoutRows", label: "panels.rows" },
+  { layout: "grid", icon: "layoutFour", label: "panels.grid" },
+];
+
+/** Split view and compare mode (Phase 5), one dropdown as WPS's "Jendela". */
+function WindowButton(): JSX.Element {
+  const layout = useWorkspace((s) => s.panels.layout);
+  const compare = useWorkspace((s) => s.compare);
+  const tabs = useWorkspace((s) => s.tabs.length);
+  const current = LAYOUTS.find((l) => l.layout === layout);
+  return (
+    <RibbonButton
+      icon={compare ? "compare" : (current?.icon ?? "windows")}
+      tone="blue"
+      label={t("ribbon.windows")}
+      onClick={() => undefined}
+      menu={[
+        ...LAYOUTS.map((l) => ({
+          label: t(l.label),
+          icon: l.icon,
+          tone: "blue" as Tone,
+          checked: !compare && l.layout === layout,
+          onSelect: () => {
+            useWorkspace.getState().setCompare(false);
+            useWorkspace.getState().setLayout(l.layout);
+          },
+        })),
+        {
+          label: t("compare.title"),
+          icon: "compare" as IconName,
+          tone: "rose" as Tone,
+          separator: true,
+          checked: compare,
+          disabled: tabs < 2 && !compare,
+          onSelect: toggleCompare,
+        },
+      ]}
+    />
+  );
+}
+
 function HomePanel(): JSX.Element {
   const tool = useDocument((s) => s.tool);
   const zoomMode = useDocument((s) => s.zoomMode);
@@ -365,6 +411,7 @@ function HomePanel(): JSX.Element {
           onSelect: () => store().setViewMode(v.mode),
         }))}
       />
+      <WindowButton />
     </>
   );
 }

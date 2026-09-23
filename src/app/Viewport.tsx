@@ -12,16 +12,29 @@
  */
 
 import { useEffect, useRef } from "react";
+import { useStore } from "zustand";
 import { ViewportRenderer } from "@/viewport/renderer";
 import { DEFAULT_STYLE, objectFromDrawn } from "@/annots/factory";
-import { useDocument } from "@/state/documentStore";
-import { setViewport } from "./viewportHandle";
+import type { DocumentState, DocumentStore } from "@/state/documentSession";
+import { registerViewport } from "./viewportHandle";
 import { t } from "@/i18n";
 
 /** How long the scroll must be still before the reading position is stored. */
 const SAVE_IDLE_MS = 1200;
 
-export function Viewport(): React.JSX.Element {
+/**
+ * One document's viewport. `store` is that document's session: with split
+ * view (Phase 5) several are on screen, and each must read and write its
+ * own document, not whichever one happens to be in front.
+ */
+export function Viewport(props: {
+  store: DocumentStore;
+  onFocus?: () => void;
+  /** Called on every scroll, after the renderer has moved (compare mode). */
+  onScrolled?: () => void;
+}): React.JSX.Element {
+  const { store: session } = props;
+  const useDocument = <T,>(selector: (s: DocumentState) => T): T => useStore(session, selector);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const scrollerRef = useRef<HTMLDivElement>(null);
   const spacerRef = useRef<HTMLDivElement>(null);
@@ -45,6 +58,11 @@ export function Viewport(): React.JSX.Element {
   const tool = useDocument((s) => s.tool);
   const pagesView = useDocument((s) => s.pagesView);
   const pagesEpoch = useDocument((s) => s.pagesEpoch);
+  const marks = useDocument((s) => s.marks);
+  // Read through a ref: the renderer's callbacks are built once, and must
+  // call whatever the panel passes now.
+  const onScrolled = useRef(props.onScrolled);
+  onScrolled.current = props.onScrolled;
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -53,12 +71,13 @@ export function Viewport(): React.JSX.Element {
     const textLayer = textRef.current;
     if (!canvas || !scroller || !spacer || !textLayer) return;
 
-    const store = useDocument.getState;
+    const store = session.getState;
     const renderer = new ViewportRenderer(
       { canvas, scroller, spacer, textLayer },
       {
         onPage: (page) => store().setPage(page),
         onScroll: (_x, y) => {
+          onScrolled.current?.();
           if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
           saveTimer.current = window.setTimeout(() => {
             void store().saveView(y);
@@ -86,7 +105,8 @@ export function Viewport(): React.JSX.Element {
       },
     );
     rendererRef.current = renderer;
-    setViewport(renderer);
+    const docId = store().doc;
+    if (docId !== null) registerViewport(docId, renderer);
     store().setViewport(scroller.clientWidth, scroller.clientHeight);
 
     // Annotation editing is pointer work on the scrolling element. It is
@@ -125,11 +145,13 @@ export function Viewport(): React.JSX.Element {
       scroller.removeEventListener("pointerup", up);
       scroller.removeEventListener("pointercancel", up);
       if (saveTimer.current !== null) window.clearTimeout(saveTimer.current);
-      setViewport(null);
+      if (docId !== null) registerViewport(docId, null);
       rendererRef.current = null;
       renderer.destroy();
     };
-  }, []);
+    // One renderer per session: a different document is a different panel
+    // content, and gets a fresh renderer rather than a repainted one.
+  }, [session]);
 
   useEffect(() => {
     rendererRef.current?.update({
@@ -149,6 +171,7 @@ export function Viewport(): React.JSX.Element {
       tool,
       pagesView,
       pagesEpoch,
+      marks,
     });
   }, [
     doc,
@@ -167,6 +190,7 @@ export function Viewport(): React.JSX.Element {
     tool,
     pagesView,
     pagesEpoch,
+    marks,
   ]);
 
   // A search result asks the viewport to go somewhere. The store cannot scroll
@@ -174,9 +198,9 @@ export function Viewport(): React.JSX.Element {
   const pendingPage = useDocument((s) => s.pendingPage);
   useEffect(() => {
     if (pendingPage === null) return;
-    const page = useDocument.getState().consumePendingPage();
+    const page = session.getState().consumePendingPage();
     if (page !== null) {
-      useDocument.getState().setPage(page);
+      session.getState().setPage(page);
       rendererRef.current?.goToPage(page);
     }
   }, [pendingPage]);
@@ -185,14 +209,18 @@ export function Viewport(): React.JSX.Element {
   // Applied after the first layout, so the offset means what it meant then.
   useEffect(() => {
     if (doc === null) return;
-    const pending = useDocument.getState().consumePendingScroll();
+    const pending = session.getState().consumePendingScroll();
     if (pending !== null) {
       rendererRef.current?.restoreScroll(0, pending);
     }
   }, [doc, pageSizes]);
 
   return (
-    <div className="relative flex-1 min-h-0 overflow-hidden bg-[var(--izul-canvas)]">
+    <div
+      className="relative flex-1 min-h-0 min-w-0 overflow-hidden bg-[var(--izul-canvas)]"
+      onPointerDownCapture={props.onFocus}
+      onFocusCapture={props.onFocus}
+    >
       <canvas ref={canvasRef} className="absolute inset-0 block" aria-hidden="true" />
       <div
         ref={scrollerRef}

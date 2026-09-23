@@ -75,6 +75,33 @@ export function installMocks(data: HarnessData): void {
   const pathOf = new Map(data.docs.map((d) => [d.doc, d.path]));
   const flags = data.flags;
 
+  // Phase 5: a page map per document, applied the way `izul_model::pages`
+  // does — enough for the screenshots, not a second implementation to test.
+  interface View {
+    render_doc: number | null;
+    page: number;
+    rotation: number;
+    width: number;
+    height: number;
+    source: number;
+  }
+  const maps = new Map<number, View[]>();
+  let revision = 0;
+  const viewOf = (doc: number): View[] =>
+    maps.get(doc) ??
+    (data.docs.find((d) => d.doc === doc)?.page_sizes ?? []).map(([width, height], page) => ({
+      render_doc: doc,
+      page,
+      rotation: 0,
+      width,
+      height,
+      source: 0,
+    }));
+  const pagesReply = (doc: number) => ({
+    view: { pages: viewOf(doc), mapped: maps.has(doc), map_revision: revision, sources: [] },
+    edit: { objects: [], can_undo: true, can_redo: false, dirty: true, map_revision: revision },
+  });
+
   mockIPC(
     async (cmd, raw) => {
       const args = (raw ?? {}) as Record<string, unknown>;
@@ -141,6 +168,41 @@ export function installMocks(data: HarnessData): void {
             : null;
         case "export_history":
           return flags.exports === true ? data.exports : [];
+        case "pages_state":
+          return pagesReply(Number(args["doc"])).view;
+        case "pages_apply": {
+          const doc = Number(args["doc"]);
+          const cmd = args["cmd"] as { kind: string; pages?: number[]; at?: number; count?: number; width?: number; height?: number; quarters?: number; before?: number };
+          const pages = [...viewOf(doc)];
+          const sel = [...new Set(cmd.pages ?? [])].sort((a, b) => a - b);
+          if (cmd.kind === "insertBlank") {
+            const blank = { render_doc: null, page: 0, rotation: 0, width: cmd.width ?? 595, height: cmd.height ?? 842, source: 0 };
+            pages.splice(cmd.at ?? pages.length, 0, ...Array.from({ length: cmd.count ?? 1 }, () => ({ ...blank })));
+          } else if (cmd.kind === "delete") {
+            for (const p of [...sel].reverse()) pages.splice(p, 1);
+          } else if (cmd.kind === "duplicate") {
+            const copies = sel.map((p) => ({ ...(pages[p] as View) }));
+            pages.splice((sel[sel.length - 1] ?? 0) + 1, 0, ...copies);
+          } else if (cmd.kind === "rotate") {
+            for (const p of sel) {
+              const v = pages[p] as View;
+              pages[p] = { ...v, rotation: (((v.rotation + (cmd.quarters ?? 1)) % 4) + 4) % 4 };
+            }
+          } else if (cmd.kind === "move") {
+            const moved = sel.map((p) => pages[p] as View);
+            const rest = pages.filter((_, i) => !sel.includes(i));
+            const at = rest.filter((_, i) => i < (cmd.before ?? 0) - sel.filter((p) => p < (cmd.before ?? 0)).length).length;
+            rest.splice(at, 0, ...moved);
+            pages.splice(0, pages.length, ...rest);
+          }
+          maps.set(doc, pages);
+          revision += 1;
+          return pagesReply(doc);
+        }
+        case "pref_get":
+          return null;
+        case "compare_visual":
+          throw new Error("tidak tersedia di harness");
         case "plugin:window|is_maximized":
         case "plugin:window|is_fullscreen":
           return false;

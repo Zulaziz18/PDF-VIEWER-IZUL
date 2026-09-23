@@ -24,6 +24,7 @@ import { BottomBar } from "./BottomBar";
 import { ExportDialog } from "./ExportDialog";
 import { FileBanner } from "./FileBanner";
 import { NoticeToast } from "./NoticeToast";
+import { PanelGrid } from "./PanelGrid";
 import { PromptDialog } from "./PromptDialog";
 import { SplitDialog } from "./SplitDialog";
 import { Home } from "./Home";
@@ -31,7 +32,6 @@ import { PropertiesPanel } from "./PropertiesPanel";
 import { MenuBar, Ribbon } from "./Ribbon";
 import { LeftRail, Sidebar } from "./Sidebar";
 import { TitleBar } from "./TitleBar";
-import { Viewport } from "./Viewport";
 import { useArmedMarkup } from "./armedMarkup";
 import { useDropTarget } from "./dropTarget";
 import { installDraftOffer, useAutosave, useCloseGuard, useFileWatch } from "./fileActions";
@@ -70,6 +70,8 @@ export function App(): React.JSX.Element {
     void workspace
       .restoreSession()
       .then(() => workspace.openStartupFiles())
+      // The remembered split, once there are documents to put in it.
+      .then(() => workspace.loadPanels())
       .catch(() => {
         // Neither is something the user asked for in this moment; a failure to
         // restore must not be the first thing they see.
@@ -100,7 +102,7 @@ export function App(): React.JSX.Element {
           >
             <LeftRail />
             <Sidebar />
-            <Viewport />
+            <PanelGrid />
             <PropertiesPanel />
           </div>
           <BottomBar />
