@@ -21,6 +21,14 @@ path = "src/viewport.rs"
 name = "multidoc"
 path = "src/multidoc.rs"
 
+# Backend for the UI screenshot harness (`npm run ui:shots`): renders the tiles
+# and annotation display lists the mocked webview asks for, with the same
+# PDFium and the same builders the application uses. Stdin/stdout only, so it
+# builds on every runner.
+[[bin]]
+name = "ui-harness"
+path = "src/ui_harness.rs"
+
 [dependencies]
 izul-pdf.workspace = true
 izul-ipc.workspace = true

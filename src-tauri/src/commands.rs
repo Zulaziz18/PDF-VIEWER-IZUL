@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use crate::annots::{AnnotState, EditResult};
+use crate::folders;
 use crate::indexing::{IndexProgress, Indexer, Job};
 use crate::render::{DocInfo, RenderService, RenderStats, TileKey, TileKind};
 use crate::supervisor::Pool;
@@ -144,6 +145,11 @@ pub struct RecentFile {
     /// rendered — making one would mean opening the PDF, which is exactly what
     /// a list of recent files must not do.
     pub cover: Option<String>,
+    /// Bytes, from the file as it is now — or as it was when last opened, when
+    /// it is no longer there.
+    pub size: u64,
+    /// Seconds since the Unix epoch; the home screen's "Terakhir Diubah".
+    pub modified: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -517,17 +523,30 @@ pub async fn render_stats(state: tauri::State<'_, AppState>) -> CmdResult<Render
 #[tauri::command]
 pub async fn recent_files(state: tauri::State<'_, AppState>) -> CmdResult<Vec<RecentFile>> {
     let conn = state.db()?;
-    let rows = files::recent(&conn, 20).map_err(|e| format!("basis data: {e}"))?;
+    // Fifty, not twenty: since the 2026-09-23 home screen the list is a table
+    // grouped by recency rather than a shelf of covers, and a table of twenty
+    // rows looks like a list that forgot things.
+    let rows = files::recent(&conn, 50).map_err(|e| format!("basis data: {e}"))?;
     Ok(rows
         .into_iter()
         .map(|r| {
             let path = PathBuf::from(&r.path);
+            // One `stat`, which answers "is it still there" and "how big is it
+            // now" together.
+            let meta = std::fs::metadata(&path).ok().filter(|m| m.is_file());
+            let modified = meta
+                .as_ref()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(r.stamp.mtime, |d| d.as_secs() as i64);
             RecentFile {
                 name: path
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| r.path.clone()),
-                available: path.is_file(),
+                available: meta.is_some(),
+                size: meta.as_ref().map_or(r.stamp.size, std::fs::Metadata::len),
+                modified,
                 cover: thumbs::load_data_url(&state.data_dir, &path),
                 path: r.path,
                 last_opened: r.last_opened,
@@ -535,6 +554,45 @@ pub async fn recent_files(state: tauri::State<'_, AppState>) -> CmdResult<Vec<Re
             }
         })
         .collect())
+}
+
+/// Desktop, Documents, Downloads and the drives, for the home screen's
+/// navigation. A folder the platform does not report is simply absent.
+#[tauri::command]
+pub fn known_folders(app: tauri::AppHandle) -> Vec<folders::KnownFolder> {
+    use tauri::Manager;
+    let paths = app.path();
+    let mut out = Vec::new();
+    for (kind, found) in [
+        ("desktop", paths.desktop_dir()),
+        ("documents", paths.document_dir()),
+        ("downloads", paths.download_dir()),
+    ] {
+        if let Ok(dir) = found {
+            out.push(folders::KnownFolder {
+                kind,
+                path: dir.to_string_lossy().to_string(),
+            });
+        }
+    }
+    for drive in folders::drives() {
+        out.push(folders::KnownFolder {
+            kind: "drive",
+            path: drive.to_string_lossy().to_string(),
+        });
+    }
+    out
+}
+
+/// Sub-folders and PDFs in one folder.
+#[tauri::command]
+pub async fn browse_folder(path: String) -> CmdResult<Vec<folders::FolderEntry>> {
+    // Off the async runtime's worker: a slow network share must not stall the
+    // commands queued behind it.
+    tokio::task::spawn_blocking(move || folders::list(std::path::Path::new(&path)))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("folder tidak dapat dibaca: {e}"))
 }
 
 // ---------------------------------------------------------------------------

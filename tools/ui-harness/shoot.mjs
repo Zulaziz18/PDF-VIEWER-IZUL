@@ -1,0 +1,361 @@
+#!/usr/bin/env node
+/**
+ * UI screenshot harness: `npm run ui:shots`.
+ *
+ * The development container has no display, and a user interface nobody has
+ * looked at cannot be made to resemble anything. This runs the real frontend in
+ * a real Chromium with Tauri's IPC mocked (`mock.ts`), feeds it pages rendered
+ * by the application's own PDFium (`izul-bench --bin ui-harness`), and writes a
+ * screenshot per scene, size and theme to `docs/ui/`.
+ *
+ *   npm run ui:shots                         # every scene, 1366x768 + 1920x1080, light + dark
+ *   npm run ui:shots -- --scene=home         # one scene
+ *   npm run ui:shots -- --scale=1.5          # Windows display scaling (device pixel ratio)
+ *   npm run ui:shots -- --out=/tmp/shots     # somewhere other than docs/ui
+ *   npm run ui:shots -- --serve              # leave the harness running for a human
+ *
+ * Nothing here is part of the application: the mock lives in
+ * `tools/ui-harness/`, which the production build never references.
+ */
+
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { deflateSync } from "node:zlib";
+import { chromium } from "playwright-core";
+import { createServer } from "vite";
+
+const HERE = dirname(fileURLToPath(import.meta.url));
+const ROOT = resolve(HERE, "../..");
+const SAMPLES = join(HERE, ".samples");
+const args = Object.fromEntries(
+  process.argv.slice(2).map((a) => {
+    const [k, v] = a.replace(/^--/, "").split("=");
+    return [k, v ?? "true"];
+  }),
+);
+const OUT = resolve(ROOT, args.out ?? "docs/ui");
+const PORT = Number(args.port ?? 5199);
+
+// ---------------------------------------------------------------------------
+// Prerequisites
+// ---------------------------------------------------------------------------
+
+function run(cmd, argv) {
+  const r = spawnSync(cmd, argv, { cwd: ROOT, stdio: "inherit", shell: process.platform === "win32" });
+  if (r.status !== 0) throw new Error(`${cmd} ${argv.join(" ")} gagal`);
+}
+
+if (!existsSync(join(SAMPLES, "Panduan Studi 2026.pdf"))) {
+  run(process.platform === "win32" ? "python" : "python3", ["tools/ui-harness/make_samples.py"]);
+}
+run("cargo", ["build", "-q", "-p", "izul-bench", "--bin", "ui-harness"]);
+
+// ---------------------------------------------------------------------------
+// The PDFium side: one long-lived process, one request at a time.
+// ---------------------------------------------------------------------------
+
+const exe = join(ROOT, "target/debug", process.platform === "win32" ? "ui-harness.exe" : "ui-harness");
+const helper = spawn(exe, [], { cwd: ROOT, stdio: ["pipe", "pipe", "inherit"] });
+let buffered = Buffer.alloc(0);
+const waiting = [];
+helper.stdout.on("data", (chunk) => {
+  buffered = Buffer.concat([buffered, chunk]);
+  for (;;) {
+    const head = waiting[0];
+    if (!head) return;
+    const nl = buffered.indexOf(10);
+    if (nl < 0) return;
+    const header = JSON.parse(buffered.subarray(0, nl).toString("utf8"));
+    if (buffered.length < nl + 1 + header.len) return;
+    const body = buffered.subarray(nl + 1, nl + 1 + header.len);
+    buffered = buffered.subarray(nl + 1 + header.len);
+    waiting.shift();
+    head.resolve({ header, body: Buffer.from(body) });
+  }
+});
+let chain = Promise.resolve();
+function ask(req) {
+  const p = chain.then(
+    () =>
+      new Promise((res) => {
+        waiting.push({ resolve: res });
+        helper.stdin.write(JSON.stringify(req) + "\n");
+      }),
+  );
+  chain = p.then(() => undefined);
+  return p;
+}
+
+// ---------------------------------------------------------------------------
+// Sample data
+// ---------------------------------------------------------------------------
+
+const DAY = 86_400_000;
+const NOW = Date.parse("2026-09-23T10:00:00+07:00");
+const USER = "C:\\Users\\contoh";
+const docsFolder = `${USER}\\Documents`;
+const SAMPLE_FILES = [
+  { name: "Panduan Studi 2026.pdf", folder: docsFolder, opened: NOW - 2 * 3600_000, modified: NOW - 3 * DAY },
+  { name: "Laporan Kegiatan Semester.pdf", folder: `${USER}\\Desktop`, opened: NOW - 1 * DAY, modified: NOW - 9 * DAY },
+  { name: "Proposal Penelitian.pdf", folder: `${docsFolder}\\Kuliah`, opened: NOW - 6 * DAY, modified: NOW - 40 * DAY },
+  { name: "Catatan Rapat Organisasi.pdf", folder: `${USER}\\Downloads`, opened: NOW - 45 * DAY, modified: NOW - 45 * DAY },
+];
+
+const realPath = new Map();
+const docs = [];
+const recent = [];
+
+function crc32(buf) {
+  let c;
+  const table = (crc32.t ??= Array.from({ length: 256 }, (_, n) => {
+    c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? 0xedb88320 ^ (c >>> 1) : c >>> 1;
+    return c >>> 0;
+  }));
+  let crc = 0xffffffff;
+  for (const b of buf) crc = table[(crc ^ b) & 0xff] ^ (crc >>> 8);
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function png(width, height, stride, bgra) {
+  const raw = Buffer.alloc((width * 4 + 1) * height);
+  for (let y = 0; y < height; y++) {
+    raw[y * (width * 4 + 1)] = 0;
+    for (let x = 0; x < width; x++) {
+      const s = y * stride + x * 4;
+      const d = y * (width * 4 + 1) + 1 + x * 4;
+      raw[d] = bgra[s + 2];
+      raw[d + 1] = bgra[s + 1];
+      raw[d + 2] = bgra[s];
+      raw[d + 3] = bgra[s + 3];
+    }
+  }
+  const chunk = (type, data) => {
+    const len = Buffer.alloc(4);
+    len.writeUInt32BE(data.length);
+    const td = Buffer.concat([Buffer.from(type), data]);
+    const crc = Buffer.alloc(4);
+    crc.writeUInt32BE(crc32(td));
+    return Buffer.concat([len, td, crc]);
+  };
+  const ihdr = Buffer.alloc(13);
+  ihdr.writeUInt32BE(width, 0);
+  ihdr.writeUInt32BE(height, 4);
+  ihdr[8] = 8;
+  ihdr[9] = 6;
+  return Buffer.concat([
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+    chunk("IHDR", ihdr),
+    chunk("IDAT", deflateSync(raw)),
+    chunk("IEND", Buffer.alloc(0)),
+  ]);
+}
+
+let nextDoc = 1;
+for (const f of SAMPLE_FILES) {
+  const real = join(SAMPLES, f.name);
+  const shown = `${f.folder}\\${f.name}`;
+  realPath.set(shown, real);
+  const { header } = await ask({ op: "open", path: real });
+  const doc = nextDoc++;
+  docs.push({ doc, path: shown, page_count: header.page_count, page_sizes: header.sizes });
+  const cover = await ask({ op: "tile", path: real, page: 0, scale: 256, tier: "preview" });
+  recent.push({
+    path: shown,
+    name: f.name,
+    // Seconds, as the store writes them (`as_secs()`), not milliseconds.
+    last_opened: Math.floor(f.opened / 1000),
+    modified: Math.floor(f.modified / 1000),
+    size: readFileSync(real).length,
+    page_count: header.page_count,
+    pinned: f.name.startsWith("Panduan"),
+    available: true,
+    cover: `data:image/png;base64,${png(cover.header.width, cover.header.height, cover.header.stride, cover.body).toString("base64")}`,
+  });
+}
+const docById = new Map(docs.map((d) => [d.doc, realPath.get(d.path)]));
+
+const version = JSON.parse(readFileSync(join(ROOT, "version.json"), "utf8"));
+const folders = {
+  known: [
+    { kind: "desktop", path: `${USER}\\Desktop` },
+    { kind: "documents", path: docsFolder },
+    { kind: "downloads", path: `${USER}\\Downloads` },
+    { kind: "drive", path: "C:\\" },
+    { kind: "drive", path: "D:\\" },
+  ],
+};
+for (const f of SAMPLE_FILES) {
+  const list = (folders[f.folder] ??= []);
+  const r = recent.find((x) => x.name === f.name);
+  list.push({ name: f.name, path: `${f.folder}\\${f.name}`, is_dir: false, size: r.size, modified: r.modified });
+}
+folders[docsFolder]?.unshift({ name: "Kuliah", path: `${docsFolder}\\Kuliah`, is_dir: true, size: null, modified: Math.floor((NOW - 12 * DAY) / 1000) });
+
+// ---------------------------------------------------------------------------
+// Scenes. Later phases add theirs here, one per new piece of UI.
+// ---------------------------------------------------------------------------
+
+const OPEN_ALL = SAMPLE_FILES.slice(0, 3).map((f) => `${f.folder}\\${f.name}`);
+
+/** Resolves once the viewport has stopped asking for tiles for a while. */
+async function settle(page, quietMs = 700) {
+  const start = Date.now();
+  for (;;) {
+    await page.waitForTimeout(150);
+    if (Date.now() - page.__lastTile > quietMs && Date.now() - start > quietMs) return;
+    if (Date.now() - start > 15_000) return;
+  }
+}
+
+async function izul(page, fn, arg) {
+  return page.evaluate(
+    ([src, a]) => {
+      const f = new Function("izul", "arg", `return (${src})(izul, arg);`);
+      return f(window.__izul, a);
+    },
+    [fn.toString(), arg],
+  );
+}
+
+const SCENES = {
+  home: {
+    session: [],
+    async steps(page) {
+      await page.getByRole("row", { name: /Panduan Studi 2026/ }).first().click();
+    },
+  },
+  document: { session: OPEN_ALL, async steps() {} },
+  edit: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await page.getByRole("tab", { name: "Edit", exact: true }).click();
+      await izul(page, (z) => z.goToPage(2));
+      await settle(page);
+      await izul(page, (z) => z.select([205]));
+    },
+  },
+  comment: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await page.getByRole("tab", { name: "Komentar", exact: true }).click();
+      await izul(page, (z) => z.goToPage(2));
+      await izul(page, (z) => z.sidebar("annots"));
+    },
+  },
+};
+
+// ---------------------------------------------------------------------------
+// Run
+// ---------------------------------------------------------------------------
+
+const server = await createServer({
+  root: ROOT,
+  configFile: join(ROOT, "vite.config.ts"),
+  server: { port: PORT, strictPort: true },
+  logLevel: "warn",
+});
+await server.listen();
+
+const browser = await chromium.launch({
+  executablePath: process.env.IZUL_CHROMIUM || undefined,
+});
+
+async function newPage({ width, height, theme, scale, scene }) {
+  const context = await browser.newContext({
+    viewport: { width, height },
+    deviceScaleFactor: scale,
+    colorScheme: theme,
+    locale: "id-ID",
+    timezoneId: "Asia/Jakarta",
+  });
+  const page = await context.newPage();
+  page.__lastTile = Date.now();
+  page.on("pageerror", (e) => console.error(`  [halaman] ${e.message}`));
+  page.on("console", (m) => {
+    if (m.type() === "error") console.error(`  [konsol] ${m.text()}`);
+  });
+  await page.clock.setFixedTime(new Date(NOW));
+  const data = { version, docs, recent, session: SCENES[scene].session, active: SCENES[scene].session[0] ?? null, folders };
+  await page.addInitScript((d) => {
+    window.__HARNESS__ = d;
+  }, data);
+  await page.exposeFunction("__harnessBackend", async (cmd, a) => {
+    const path = docById.get(a.doc);
+    if (cmd === "document_outline") return (await ask({ op: "outline", path })).header.outline;
+    if (cmd === "page_text") return (await ask({ op: "text", path, page: a.page, rotation: a.rotation ?? 0 })).header;
+    const annotated = a.doc === 1 && a.page === 2;
+    if (!annotated) return [];
+    const { header } = await ask({ op: "annots", path, page: a.page });
+    return cmd === "annot_list" ? header.objects : header.lists;
+  });
+  await page.route("http://izul.localhost/**", async (route) => {
+    page.__lastTile = Date.now();
+    const url = new URL(route.request().url());
+    const cors = {
+      "Access-Control-Allow-Origin": "*",
+      "Access-Control-Expose-Headers": "X-Izul-Width, X-Izul-Height, X-Izul-Stride",
+    };
+    const [, kind, doc, pg, rot, scale, col, row, tier] = url.pathname.split("/");
+    if (kind !== "tile") return route.fulfill({ status: 404, headers: cors });
+    const { header, body } = await ask({
+      op: "tile",
+      path: docById.get(Number(doc)),
+      page: Number(pg),
+      rotation: Number(rot),
+      scale: Number(scale),
+      col: Number(col),
+      row: Number(row),
+      tier,
+    });
+    page.__lastTile = Date.now();
+    if (!header.ok) return route.fulfill({ status: 404, headers: cors });
+    return route.fulfill({
+      status: 200,
+      headers: {
+        ...cors,
+        "Content-Type": "application/octet-stream",
+        "X-Izul-Width": String(header.width),
+        "X-Izul-Height": String(header.height),
+        "X-Izul-Stride": String(header.stride),
+      },
+      body,
+    });
+  });
+  await page.goto(`http://localhost:${PORT}/tools/ui-harness/index.html?scene=${scene}`);
+  return page;
+}
+
+const sizes = (args.size ? [args.size] : ["1366x768", "1920x1080"]).map((s) => s.split("x").map(Number));
+const themes = args.theme ? [args.theme] : ["light", "dark"];
+const scenes = args.scene ? args.scene.split(",") : Object.keys(SCENES);
+const scale = Number(args.scale ?? 1);
+mkdirSync(OUT, { recursive: true });
+
+if (args.serve === "true") {
+  const page = await newPage({ width: 1366, height: 768, theme: "light", scale: 1, scene: scenes[0] });
+  console.log(`harness berjalan di http://localhost:${PORT}/tools/ui-harness/index.html (Ctrl+C untuk berhenti)`);
+  void page;
+} else {
+  for (const scene of scenes) {
+    for (const [width, height] of sizes) {
+      for (const theme of themes) {
+        const page = await newPage({ width, height, theme, scale, scene });
+        await page.waitForFunction(() => window.__izul !== undefined, null, { timeout: 15_000 });
+        await settle(page);
+        await SCENES[scene].steps(page);
+        await settle(page);
+        const suffix = scale === 1 ? "" : `@${scale}x`;
+        const file = join(OUT, `${scene}-${width}x${height}-${theme}${suffix}.png`);
+        await page.screenshot({ path: file });
+        console.log(`  ${file}`);
+        await page.context().close();
+      }
+    }
+  }
+  await browser.close();
+  await server.close();
+  helper.stdin.end();
+}

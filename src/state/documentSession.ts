@@ -110,8 +110,9 @@ export interface SearchState {
 /** How the zoom level is chosen. Fit modes follow the window; custom does not. */
 export type ZoomMode = "custom" | "fitWidth" | "fitPage" | "actual";
 
-/** What the sidebar is showing (SPEC 11.1). */
-export type SidebarTab = "thumbnails" | "outline" | "annots";
+/** What the sidebar is showing (SPEC 11.1). Search results are one of its
+ * tabs, as SPEC 11.1 lists them, reached from the icon rail like the rest. */
+export type SidebarTab = "thumbnails" | "outline" | "annots" | "search";
 
 export interface DocumentState {
   doc: number | null;
@@ -401,11 +402,17 @@ export function createDocumentSession(
     },
 
     toggleSidebar() {
-      set({ sidebarOpen: !get().sidebarOpen });
+      const open = !get().sidebarOpen;
+      // The search panel lives in the sidebar, so its `open` flag — which gates
+      // the debounced query and the index poll — follows the sidebar's.
+      set({
+        sidebarOpen: open,
+        search: { ...get().search, open: open && get().sidebarTab === "search" },
+      });
     },
 
     setSidebarTab(tab: SidebarTab) {
-      set({ sidebarTab: tab, sidebarOpen: true });
+      set({ sidebarTab: tab, sidebarOpen: true, search: { ...get().search, open: tab === "search" } });
     },
 
     async loadOutline() {
@@ -485,7 +492,18 @@ export function createDocumentSession(
 
     toggleSearch(open?: boolean) {
       const next = open ?? !get().search.open;
-      set({ search: { ...get().search, open: next } });
+      if (next) {
+        set({ sidebarOpen: true, sidebarTab: "search", search: { ...get().search, open: true } });
+      } else {
+        // Closing search closes the panel it was in, rather than leaving the
+        // sidebar showing an empty tab.
+        const wasShowing = get().sidebarTab === "search";
+        set({
+          search: { ...get().search, open: false },
+          sidebarOpen: wasShowing ? false : get().sidebarOpen,
+          sidebarTab: wasShowing ? "thumbnails" : get().sidebarTab,
+        });
+      }
     },
 
     setSearchQuery(query: string) {

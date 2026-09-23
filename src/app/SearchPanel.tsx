@@ -104,10 +104,7 @@ export function SearchPanel(): React.JSX.Element | null {
   }
 
   return (
-    <aside
-      aria-label={t("search.label")}
-      className="w-[320px] shrink-0 flex flex-col border-l border-[var(--izul-border)] bg-[var(--izul-surface)]"
-    >
+    <section aria-label={t("search.label")} className="h-full flex flex-col">
       <div className="p-3 flex flex-col gap-2 border-b border-[var(--izul-border)]">
         <div className="flex items-center gap-2">
           <input
@@ -127,14 +124,6 @@ export function SearchPanel(): React.JSX.Element | null {
             }}
             className="flex-1 min-w-0 rounded-[8px] bg-[var(--izul-canvas)] border border-[var(--izul-border)] px-2 py-1.5 text-[13px]"
           />
-          <button
-            type="button"
-            aria-label={t("search.close")}
-            onClick={() => store().toggleSearch(false)}
-            className="w-7 h-7 rounded-[8px] hover:bg-[var(--izul-surface-raised)]"
-          >
-            ×
-          </button>
         </div>
 
         <div role="tablist" aria-label={t("search.scopeLabel")} className="flex gap-1">
@@ -259,6 +248,6 @@ export function SearchPanel(): React.JSX.Element | null {
           </button>
         </div>
       )}
-    </aside>
+    </section>
   );
 }

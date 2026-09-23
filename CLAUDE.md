@@ -485,9 +485,61 @@ masih hidup di memori sampai tab ditutup); penyuntingan teks langsung di atas
 halaman (isinya diketik lewat panel properti); dan **UI-nya belum pernah
 dijalankan di jendela sungguhan** karena kontainer ini tidak punya layar.
 
+## Keadaan Langkah 0 (kerangka UI gaya WPS, 23 September 2026)
+
+Pengguna memutuskan UI meniru WPS Office semirip mungkin; SPEC Bagian 12 sudah
+ditulis ulang (bertanggal, dengan alasan). SPEC Bagian 2 tidak berubah.
+
+- **Kerangka:** `TitleBar.tsx` (tab Beranda tetap + tab dokumen + "Baru" +
+  tombol jendela), `Ribbon.tsx` (`MenuBar` + `Ribbon`: tab Beranda/Edit/
+  Komentar), `Sidebar.tsx` (`LeftRail` + panel; pencarian kini tab sidebar),
+  `BottomBar.tsx`, `Home.tsx` (Terbaru/Berbintang/PC Ini/Desktop/Dokumen/
+  Unduhan/Sering Dipakai + Info Berkas), `About.tsx`. Toolbar, AnnotToolbar,
+  TabBar, StatusBar, EmptyState lama dihapus.
+- **Aturan tab pita:** sebuah tab/tombol hanya ditambahkan ketika fiturnya
+  benar-benar bekerja (`RibbonTab` di `src/state/uiStore.ts`). Fase berikutnya
+  menambah Halaman, Lindungi, Konversi, Isi & Tanda Tangan di situ.
+- **Logika tombol** ada di `src/app/actions.ts`, bukan di komponen. Stabilo
+  tanpa seleksi teks *mensiagakan* alat (`useUi.markup`) dan
+  `armedMarkup.ts` menerapkannya ke seleksi berikutnya.
+- **Ikon:** Fluent UI System Icons (MIT), `npm run icons` menyalin path yang
+  dipakai ke `src/design/icons.generated.ts`. Ditampilkan dua nada (filled
+  tipis + regular) lewat `Icon.tsx`. Menambah ikon = tambah baris di
+  `tools/icons/build.mjs` lalu jalankan ulang (butuh jaringan sekali).
+- **Tema gelap** baru benar-benar tersambung sekarang (`src/design/theme.ts`);
+  sebelumnya token `data-theme="dark"` ada tapi tidak pernah dipasang.
+- **Rust baru:** `src-tauri/src/folders.rs` + perintah `known_folders`,
+  `browse_folder`; `recent_files` kini membawa `size` dan `modified`.
+  **Semua cap waktu di store dalam detik** (`as_secs()`), bukan milidetik.
+
+**Harness screenshot — `npm run ui:shots`** (`tools/ui-harness/`): Vite dev
+server + `mockIPC`, Chromium lewat `playwright-core` (dipatok 1.56.1, cocok
+dengan `/opt/pw-browsers/chromium-1194`), ubin dijawab lewat `page.route` oleh
+`izul-bench --bin ui-harness` yang merender dengan PDFium sungguhan, dan
+anotasi contoh dibangun oleh `izul_model::build::display_list` yang sama.
+Sampel PDF dibuat `tools/ui-harness/make_samples.py` (isi karangan sendiri).
+Opsi: `--scene=home,document,edit,comment`, `--size=1366x768`,
+`--theme=light|dark`, `--scale=1.5`, `--out=...`, `--serve`. **Tiap UI baru
+wajib ditambah scene-nya di `SCENES` dalam `shoot.mjs`** dan dilihat sebelum
+dinyatakan selesai. Mock hanya di `tools/ui-harness/`; build produksi tidak
+pernah menyentuhnya.
+
+**Cacat yang ditemukan harness:** (1) membuka dokumen menggulir halaman
+pertama ~40 px ke bawah — zoom tanpa kursor menahan titik tengah, padahal
+pembaca di paling atas mengharapkan tetap di atas. Diperbaiki dengan
+`zoomHoldingView` (test terbukti gagal pada aturan lama). (2) Halaman putih
+tanpa tepi hilang di kanvas terang — kini ada garis tepi + bayangan tipis.
+(3) Kontras tombol aksen di mode gelap 2,6:1 — token `--izul-on-accent`.
+
 ## Alur kerja proyek ini
 
-- Branch aktif: `claude/pdf-studio-izul-v7-fase-2`.
+- Branch aktif: `claude/pdf-studio-izul-v7-fase-4` (Langkah 0 + Fase 4),
+  bercabang dari `claude/pdf-studio-izul-v7-fase-2`. Pengguna mengizinkan
+  branch `claude/pdf-studio-izul-v7-fase-N` per fase, masing-masing bercabang
+  dari fase sebelumnya dengan draft PR ber-base fase sebelumnya, dan meminta
+  Fase 4–8 dikerjakan berturut-turut tanpa menunggu persetujuan (tetap wajib
+  laporan SPEC 18, CI hijau, dan CLAUDE.md diperbarui tiap akhir fase).
+- Sebelumnya: `claude/pdf-studio-izul-v7-fase-2`.
 - Trunk proyek ini **bukan** `main` — tidak ada branch `main`. Trunk-nya
   `claude/pdf-studio-izul-v7-atlas-r29mdh`, dan Fase 1 sudah di-merge ke sana
   lewat PR #1.

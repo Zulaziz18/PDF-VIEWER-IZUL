@@ -59,7 +59,15 @@ export interface WorkspaceState {
   recent: number[];
   busy: boolean;
   error: string | null;
+  /**
+   * Whether the home screen is in front. WPS keeps a "Beranda" tab pinned at
+   * the left of the tab strip; clicking it shows the recent files without
+   * closing anything, and clicking a document tab goes back. With nothing
+   * open, the home screen is all there is.
+   */
+  home: boolean;
 
+  showHome(): void;
   openFile(path: string): Promise<number | null>;
   closeTab(doc: number): Promise<void>;
   closeAll(): Promise<void>;
@@ -100,6 +108,11 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   recent: [],
   busy: false,
   error: null,
+  home: true,
+
+  showHome() {
+    set({ home: true });
+  },
 
   session(doc: number) {
     return get().sessions.get(doc);
@@ -168,6 +181,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       activeDoc: successor,
       recent: get().recent.filter((d) => d !== doc),
       error: null,
+      home: nextTabs.length === 0 ? true : get().home,
     });
     // The images of a closed document are megabytes the browser would otherwise
     // hold for the rest of the run.
@@ -190,7 +204,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   async activate(doc: number) {
     if (!get().sessions.has(doc)) return;
     const recent = [doc, ...get().recent.filter((d) => d !== doc)];
-    set({ activeDoc: doc, recent });
+    set({ activeDoc: doc, recent, home: false });
     try {
       await invoke("activate_document", { doc });
     } catch {
@@ -299,6 +313,7 @@ async function openUnguarded(
       recent: [opened.doc, ...get().recent.filter((d) => d !== opened.doc)],
       busy: false,
       error: null,
+      home: false,
     });
     void store.getState().loadOutline();
     void trimCold(get().recent);

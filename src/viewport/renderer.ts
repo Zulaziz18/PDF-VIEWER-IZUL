@@ -34,6 +34,7 @@ import {
   scaleKey,
   tilesCovering,
   zoomAbout,
+  zoomHoldingView,
 } from "./geometry";
 import type { Layout, ViewMode, ViewRect } from "./layout";
 import { boxOf, dominantPage, layoutDocument, scrollToPage, visiblePages } from "./layout";
@@ -429,16 +430,15 @@ export class ViewportRenderer {
       return;
     }
     // No cursor to anchor to — a toolbar or keyboard zoom — so hold the centre
-    // of the viewport instead, which is where the eye is.
-    const cx = scroller.clientWidth / 2;
-    const cy = scroller.clientHeight / 2;
-    const next = zoomAbout(
-      { x: cx, y: cy },
+    // of the viewport, which is where the eye is; see `zoomHoldingView` for
+    // the one exception.
+    const next = zoomHoldingView(
       { x: scroller.scrollLeft, y: scroller.scrollTop },
+      { w: scroller.clientWidth, h: scroller.clientHeight },
       oldZoom,
       newZoom,
     );
-    scroller.scrollTo({ left: Math.max(0, next.x), top: Math.max(0, next.y), behavior: "auto" });
+    scroller.scrollTo({ left: next.x, top: next.y, behavior: "auto" });
   }
 
   #view(): ViewRect {
@@ -479,6 +479,7 @@ export class ViewportRenderer {
 
       // 1. The page is white even before anything has been rendered, so the
       //    user never sees the canvas background where a page should be.
+      this.#surface.drawPageFrame({ x: originX, y: originY, w: pw, h: ph }, dpr);
       this.#surface.drawPlaceholder({ x: originX, y: originY, w: pw, h: ph }, "#ffffff");
 
       // 2. The preview tier, upscaled to the page's box.

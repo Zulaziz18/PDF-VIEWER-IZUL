@@ -37,6 +37,7 @@
 
 pub mod annots;
 pub mod commands;
+pub mod folders;
 pub mod indexing;
 pub mod logging;
 pub mod protocol;
@@ -258,6 +259,8 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
             commands::render_stats,
             commands::recent_files,
             commands::pin_recent,
+            commands::known_folders,
+            commands::browse_folder,
             commands::list_tabs,
             commands::activate_document,
             commands::reorder_tabs,

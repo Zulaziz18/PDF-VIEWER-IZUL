@@ -196,6 +196,31 @@ export function zoomAbout(
   };
 }
 
+/**
+ * Where to scroll after a zoom that has no cursor to anchor to — a button, a
+ * shortcut, a fit mode following the window.
+ *
+ * The centre of the view is held, which is where the eye is — except on an
+ * axis the reader has not scrolled at all. A reader at the very top of a
+ * document who zooms in expects to still be looking at the top of page one;
+ * holding the centre instead pushed the page's top edge out of view on every
+ * document open, because the fit-width zoom is applied just after the first
+ * layout (found by the screenshot harness, 2026-09-23).
+ */
+export function zoomHoldingView(
+  scroll: { x: number; y: number },
+  client: { w: number; h: number },
+  oldZoom: number,
+  newZoom: number,
+): { x: number; y: number } {
+  const anchor = {
+    x: scroll.x <= 0 ? 0 : client.w / 2,
+    y: scroll.y <= 0 ? 0 : client.h / 2,
+  };
+  const next = zoomAbout(anchor, scroll, oldZoom, newZoom);
+  return { x: Math.max(0, next.x), y: Math.max(0, next.y) };
+}
+
 /** Zoom limits from SPEC 11.1: 10 % to 1600 %. */
 export const MIN_ZOOM = 0.1;
 export const MAX_ZOOM = 16;
@@ -223,4 +248,23 @@ export function zoomIn(zoom: number): number {
 export function zoomOut(zoom: number): number {
   const below = ZOOM_STEPS.filter((z) => z < zoom - 1e-6);
   return below[below.length - 1] ?? MIN_ZOOM;
+}
+
+/**
+ * Position on the zoom slider (0..1) for a zoom level, and back.
+ *
+ * Logarithmic: 10 %–1600 % is a factor of 160, and on a linear track
+ * everything a reader actually uses (50–200 %) would be squeezed into the first
+ * tenth of it.
+ */
+export function zoomToSlider(zoom: number): number {
+  const lo = Math.log(MIN_ZOOM);
+  const hi = Math.log(MAX_ZOOM);
+  return (Math.log(clampZoom(zoom)) - lo) / (hi - lo);
+}
+
+export function sliderToZoom(position: number): number {
+  const lo = Math.log(MIN_ZOOM);
+  const hi = Math.log(MAX_ZOOM);
+  return clampZoom(Math.exp(lo + (hi - lo) * Math.min(1, Math.max(0, position))));
 }

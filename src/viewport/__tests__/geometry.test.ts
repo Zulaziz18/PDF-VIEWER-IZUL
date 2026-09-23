@@ -19,6 +19,9 @@ import {
   pdfRectToPx,
   pixelsPerPoint,
   pxRectToPdf,
+  sliderToZoom,
+  zoomToSlider,
+  zoomHoldingView,
   scaleKey,
   swapsAxes,
   TILE_EDGE,
@@ -151,5 +154,35 @@ describe("zoom", () => {
     // The ends are stable rather than wrapping or overshooting.
     expect(zoomIn(MAX_ZOOM)).toBe(MAX_ZOOM);
     expect(zoomOut(MIN_ZOOM)).toBe(MIN_ZOOM);
+  });
+});
+
+describe("zoom slider", () => {
+  it("maps the ends of the track to the ends of the zoom range", () => {
+    expect(sliderToZoom(0)).toBeCloseTo(MIN_ZOOM, 6);
+    expect(sliderToZoom(1)).toBeCloseTo(MAX_ZOOM, 6);
+    expect(sliderToZoom(-3)).toBeCloseTo(MIN_ZOOM, 6);
+  });
+
+  it("round-trips, and puts 100 % well inside the track rather than near an end", () => {
+    for (const z of [0.1, 0.5, 1, 2.5, 16]) expect(sliderToZoom(zoomToSlider(z))).toBeCloseTo(z, 6);
+    const p = zoomToSlider(1);
+    expect(p).toBeGreaterThan(0.4);
+    expect(p).toBeLessThan(0.5);
+  });
+});
+
+describe("zoomHoldingView", () => {
+  it("keeps a reader who has not scrolled at the top of the document", () => {
+    const next = zoomHoldingView({ x: 0, y: 0 }, { w: 1000, h: 600 }, 1, 1.25);
+    expect(next).toEqual({ x: 0, y: 0 });
+  });
+
+  it("holds the centre once the reader has scrolled", () => {
+    const next = zoomHoldingView({ x: 0, y: 1000 }, { w: 1000, h: 600 }, 1, 2);
+    // The content point at the centre was y = 1000 + 300 = 1300; at twice the
+    // zoom it is 2600, and it must still sit 300 px down the view.
+    expect(next.y).toBeCloseTo(2300, 6);
+    expect(next.x).toBe(0);
   });
 });
