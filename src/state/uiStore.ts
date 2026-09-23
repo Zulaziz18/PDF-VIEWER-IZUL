@@ -12,7 +12,7 @@ import { create } from "zustand";
 
 /** The ribbon tabs that exist. A tab joins this list in the phase that makes
  * every button on it work (SPEC 0: no dead controls). */
-export type RibbonTab = "home" | "edit" | "comment" | "convert";
+export type RibbonTab = "home" | "edit" | "pages" | "comment" | "convert";
 
 /** One button of a {@link Prompt}. */
 export interface PromptButton {
@@ -44,7 +44,7 @@ export interface Notice {
   readonly detail?: string;
 }
 
-export type ExportKind = "pages" | "images";
+export type ExportKind = "pages" | "images" | "split";
 
 export type MarkupKind = "Highlight" | "Underline" | "StrikeOut";
 

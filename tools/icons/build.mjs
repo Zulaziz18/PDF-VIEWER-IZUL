@@ -108,6 +108,18 @@ const ICONS = {
   draft: "document_sync",
   checkmark: "checkmark",
   error: "error_circle",
+  // Phase 5: pages, split view, comparing.
+  pageBlank: "document_one_page_add",
+  pageDelete: "document_dismiss",
+  pageDuplicate: "document_copy",
+  merge: "merge",
+  split: "document_page_break",
+  layoutTwo: "layout_column_two",
+  layoutRows: "layout_row_two",
+  layoutFour: "layout_cell_four",
+  windows: "window_multiple",
+  compare: "split_vertical",
+  link: "link",
 };
 const SIZES = [20, 24];
 

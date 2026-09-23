@@ -77,3 +77,61 @@ export function formatPageRange(pages: readonly number[]): string {
   }
   return out.join(", ");
 }
+
+/** Split points for "Pecah": every `n` pages. */
+export function rangesEvery(n: number, pageCount: number): number[][] {
+  const size = Math.max(1, Math.floor(n));
+  const out: number[][] = [];
+  for (let start = 0; start < pageCount; start += size) {
+    out.push(Array.from({ length: Math.min(size, pageCount - start) }, (_, i) => start + i));
+  }
+  return out;
+}
+
+/**
+ * "1-3; 4-6, 9": one output file per `;`-separated group, each group read
+ * like a single range. The first group that cannot be read is the error.
+ */
+export function parseRangeGroups(
+  text: string,
+  pageCount: number,
+): { ok: true; groups: number[][] } | { ok: false; error: PageRangeError; group: number } {
+  const parts = text
+    .split(";")
+    .map((p) => p.trim())
+    .filter((p) => p.length > 0);
+  if (parts.length === 0) return { ok: false, error: { kind: "empty" }, group: 0 };
+  const groups: number[][] = [];
+  for (const [i, part] of parts.entries()) {
+    const r = parsePageRange(part, pageCount);
+    if (!r.ok) return { ok: false, error: r.error, group: i };
+    groups.push(r.pages);
+  }
+  return { ok: true, groups };
+}
+
+/**
+ * One file per top-level bookmark: each runs from its bookmark's page to
+ * the page before the next one. Pages before the first bookmark — a cover,
+ * a table of contents — are a file of their own rather than being lost.
+ * Bookmarks that point nowhere, or at a page another already starts at,
+ * are skipped.
+ */
+export function rangesFromOutline(
+  outline: readonly { readonly depth: number; readonly page: number | null }[],
+  pageCount: number,
+): number[][] {
+  const starts = [
+    ...new Set(
+      outline
+        .filter((e) => e.depth === 0 && e.page !== null && e.page >= 0 && e.page < pageCount)
+        .map((e) => e.page as number),
+    ),
+  ].sort((a, b) => a - b);
+  if (starts.length === 0) return [];
+  if (starts[0] !== 0) starts.unshift(0);
+  return starts.map((start, i) => {
+    const end = (starts[i + 1] ?? pageCount) - 1;
+    return Array.from({ length: end - start + 1 }, (_, k) => start + k);
+  });
+}

@@ -99,8 +99,12 @@ export function SearchPanel(): React.JSX.Element | null {
       void useWorkspace.getState().openFile(hit.path);
       return;
     }
-    store().setPage(hit.page);
-    viewport()?.goToPage(hit.page);
+    // The index speaks in the file's page numbers; after pages have been
+    // moved, the hit may be shown elsewhere, or deleted.
+    const shown = store().displayOfOwn(hit.page);
+    if (shown === null) return;
+    store().setPage(shown);
+    viewport()?.goToPage(shown);
   }
 
   return (

@@ -35,10 +35,20 @@ import { useWorkspace } from "@/state/workspaceStore";
 import type { ViewMode } from "@/viewport/layout";
 import { insertImage, markupSelection, pickAndOpen } from "./actions";
 import { exportFlat, requestCloseAll, requestCloseTab, saveDocument } from "./fileActions";
+import {
+  deletePages,
+  duplicatePages,
+  extractPages,
+  insertBlankPage,
+  mergeFile,
+  rotatePages,
+  splitDocument,
+} from "./pageActions";
 
 const TABS: ReadonlyArray<{ id: RibbonTab; label: StringKey }> = [
   { id: "home", label: "ribbon.home" },
   { id: "edit", label: "ribbon.edit" },
+  { id: "pages", label: "ribbon.pages" },
   { id: "comment", label: "ribbon.comment" },
   { id: "convert", label: "ribbon.convert" },
 ];
@@ -426,6 +436,61 @@ function CommentPanel(): JSX.Element {
 }
 
 /**
+ * "Halaman" (Phase 5): the page operations of SPEC 11.3. Each acts on the
+ * pages selected in the page panel, or on the page being read; each is one
+ * undo step. Opening the page panel is part of the tab, because selecting
+ * several pages and dragging them is done there.
+ */
+function PagesPanel(): JSX.Element {
+  const canUndo = useDocument((s) => s.canUndo);
+  const canRedo = useDocument((s) => s.canRedo);
+  const selected = useDocument((s) => s.pageSelection.length);
+  const pageCount = useDocument((s) => s.pageCount);
+  const panelOpen = useDocument((s) => s.sidebarOpen && s.sidebarTab === "thumbnails");
+  const store = useDocument.getState;
+  const count = selected > 0 ? ` (${selected})` : "";
+  return (
+    <>
+      <RibbonButton
+        icon="thumbnails"
+        tone="blue"
+        label={t("ribbon.pagePanel")}
+        pressed={panelOpen}
+        onClick={() => {
+          if (panelOpen) store().toggleSidebar();
+          else store().setSidebarTab("thumbnails");
+        }}
+      />
+      <RibbonDivider />
+      <RibbonButton icon="pageBlank" tone="blue" label={t("pages.insertBlank")} hint={t("pages.insertBlankHint")} onClick={() => void insertBlankPage()} />
+      <RibbonButton icon="merge" tone="teal" label={t("pages.merge")} hint={t("pages.mergeHint")} onClick={() => void mergeFile()} />
+      <RibbonButton
+        icon="pageDelete"
+        tone="rose"
+        label={`${t("pages.delete")}${count}`}
+        hint={t("pages.deleteHint")}
+        disabled={pageCount <= 1 || selected >= pageCount}
+        onClick={() => void deletePages()}
+      />
+      <RibbonButton icon="pageDuplicate" tone="violet" label={`${t("pages.duplicate")}${count}`} onClick={() => void duplicatePages()} />
+      <RibbonDivider />
+      <RibbonStack>
+        <RibbonSmall icon="rotateLeft" tone="teal" label={t("rotate.left")} onClick={() => void rotatePages(-1)} />
+        <RibbonSmall icon="rotateRight" tone="teal" label={t("rotate.right")} onClick={() => void rotatePages(1)} />
+      </RibbonStack>
+      <RibbonDivider />
+      <RibbonButton icon="extractPages" tone="blue" label={t("pages.extract")} hint={t("convert.pagesHint")} onClick={extractPages} />
+      <RibbonButton icon="split" tone="orange" label={t("pages.split")} hint={t("pages.splitHint")} onClick={splitDocument} />
+      <RibbonDivider />
+      <RibbonStack>
+        <RibbonSmall icon="undo" label={t("annot.undo")} hint={`${t("annot.undo")} (Ctrl+Z)`} disabled={!canUndo} onClick={() => void store().undoAnnot()} />
+        <RibbonSmall icon="redo" label={t("annot.redo")} hint={`${t("annot.redo")} (Ctrl+Y)`} disabled={!canRedo} onClick={() => void store().redoAnnot()} />
+      </RibbonStack>
+    </>
+  );
+}
+
+/**
  * "Konversi": the three conversions that need nothing but the PDF engine.
  * WPS's converters to Word, Excel and PowerPoint are absent — they are not
  * something PDFium can do, and SPEC 2 rules out sending the file anywhere
@@ -473,6 +538,8 @@ export function Ribbon(): JSX.Element {
           <HomePanel />
         ) : ribbon === "edit" ? (
           <EditPanel />
+        ) : ribbon === "pages" ? (
+          <PagesPanel />
         ) : ribbon === "comment" ? (
           <CommentPanel />
         ) : (

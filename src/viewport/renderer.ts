@@ -114,6 +114,14 @@ export interface RendererState {
   readonly annotImages: ReadonlyMap<number, CanvasImageSource>;
   /** The active tool; `null` is the selection arrow. */
   readonly tool: string | null;
+  /**
+   * Where each display page comes from once pages have been rearranged
+   * (Phase 5); `null` while every page is the document's own, in order. A
+   * blank page has no render document and is painted white.
+   */
+  readonly pagesView?: readonly { readonly render_doc: number | null; readonly page: number }[] | null;
+  /** Changes when display page numbers stop meaning what they meant. */
+  readonly pagesEpoch?: number;
 }
 
 export interface RendererEvents {
@@ -291,7 +299,7 @@ export class ViewportRenderer {
       this.#abort = new AbortController();
       this.#pending.clear();
     }
-    if (previous.doc !== state.doc) {
+    if (previous.doc !== state.doc || previous.pagesEpoch !== state.pagesEpoch) {
       this.#bitmaps.clear();
       this.#textSignatures.clear();
       this.#highlightSignatures.clear();
@@ -482,12 +490,13 @@ export class ViewportRenderer {
       this.#surface.drawPageFrame({ x: originX, y: originY, w: pw, h: ph }, dpr);
       this.#surface.drawPlaceholder({ x: originX, y: originY, w: pw, h: ph }, "#ffffff");
 
-      // 2. The preview tier, upscaled to the page's box.
+      // 2. The preview tier, upscaled to the page's box. A blank page has
+      //    nothing to fetch: the white frame above is all of it.
       const previewRef = this.#previewRef(page);
-      const preview = this.#bitmaps.get(tileKey(previewRef));
+      const preview = previewRef ? this.#bitmaps.get(tileKey(previewRef)) : undefined;
       if (preview) {
         this.#surface.drawTile(preview, { x: originX, y: originY, w: pw, h: ph });
-      } else {
+      } else if (previewRef) {
         this.#request(previewRef, PRIORITY.preview);
       }
 
@@ -498,8 +507,9 @@ export class ViewportRenderer {
         w: view.w * dpr,
         h: view.h * dpr,
       };
-      for (const tile of tilesCovering(visibleInPage, size, this.#scale())) {
+      for (const tile of previewRef ? tilesCovering(visibleInPage, size, this.#scale()) : []) {
         const ref = this.#tileRef(page, tile.col, tile.row);
+        if (!ref) continue;
         const bitmap = this.#bitmaps.get(tileKey(ref));
         if (bitmap) {
           this.#surface.drawTile(bitmap, {
@@ -540,7 +550,7 @@ export class ViewportRenderer {
     // 4. Prefetch: previews for where the scroll is going.
     for (const page of prefetchPages(pages, this.#tracker.velocity, state.pageSizes.length)) {
       const ref = this.#previewRef(page);
-      if (!this.#bitmaps.has(tileKey(ref))) this.#request(ref, PRIORITY.prefetch);
+      if (ref && !this.#bitmaps.has(tileKey(ref))) this.#request(ref, PRIORITY.prefetch);
     }
 
     this.#syncTextLayer(pages);
@@ -563,10 +573,22 @@ export class ViewportRenderer {
     };
   }
 
-  #previewRef(page: number): TileRef {
+  /** The document and page whose pixels display page `page` shows, or
+   * `null` for a blank page. */
+  #source(page: number): { doc: number; page: number } | null {
+    const view = this.#state.pagesView;
+    if (!view) return this.#state.doc === null ? null : { doc: this.#state.doc, page };
+    const entry = view[page];
+    if (!entry || entry.render_doc === null) return null;
+    return { doc: entry.render_doc, page: entry.page };
+  }
+
+  #previewRef(page: number): TileRef | null {
+    const from = this.#source(page);
+    if (!from) return null;
     return {
-      doc: this.#state.doc ?? 0,
-      page,
+      doc: from.doc,
+      page: from.page,
       rotation: this.#rotationOf(page),
       scale: PREVIEW_EDGE,
       col: 0,
@@ -575,10 +597,12 @@ export class ViewportRenderer {
     };
   }
 
-  #tileRef(page: number, col: number, row: number): TileRef {
+  #tileRef(page: number, col: number, row: number): TileRef | null {
+    const from = this.#source(page);
+    if (!from) return null;
     return {
-      doc: this.#state.doc ?? 0,
-      page,
+      doc: from.doc,
+      page: from.page,
       rotation: this.#rotationOf(page),
       scale: scaleKey(this.#scale()),
       col,

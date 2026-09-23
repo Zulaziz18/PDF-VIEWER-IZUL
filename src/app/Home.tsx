@@ -254,6 +254,7 @@ const EXPORT_KIND: Record<string, { icon: IconName; tone: Tone; label: StringKey
   pages: { icon: "extractPages", tone: "blue", label: "convert.pages" },
   png: { icon: "toImages", tone: "teal", label: "export.png" },
   jpg: { icon: "toImages", tone: "teal", label: "export.jpg" },
+  split: { icon: "split", tone: "orange", label: "pages.split" },
 };
 
 function exportRow(e: ExportRecord, home: string | null): Row {

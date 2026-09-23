@@ -43,6 +43,8 @@ export function Viewport(): React.JSX.Element {
   const annotImages = useDocument((s) => s.annotImages);
   const selection = useDocument((s) => s.selection);
   const tool = useDocument((s) => s.tool);
+  const pagesView = useDocument((s) => s.pagesView);
+  const pagesEpoch = useDocument((s) => s.pagesEpoch);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -145,6 +147,8 @@ export function Viewport(): React.JSX.Element {
       annotImages,
       selection,
       tool,
+      pagesView,
+      pagesEpoch,
     });
   }, [
     doc,
@@ -161,6 +165,8 @@ export function Viewport(): React.JSX.Element {
     annotImages,
     selection,
     tool,
+    pagesView,
+    pagesEpoch,
   ]);
 
   // A search result asks the viewport to go somewhere. The store cannot scroll

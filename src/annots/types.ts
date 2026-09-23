@@ -226,6 +226,8 @@ export interface EditResult {
   readonly can_redo: boolean;
   /** The document has changes its file does not (Phase 4). */
   readonly dirty: boolean;
+  /** Changes when the page map does — an undo of a page move, say (Phase 5). */
+  readonly map_revision: number;
 }
 
 /** `id` is a `u64` in Rust but a plain number here; annotation ids never get

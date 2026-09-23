@@ -11,7 +11,7 @@ import { useEffect, useMemo, useRef, useState, type JSX } from "react";
 import { Icon } from "@/design/Icon";
 import { t, type StringKey } from "@/i18n";
 import { useDocument } from "@/state/documentStore";
-import { parsePageRange, type PageRangeError } from "@/state/pageRange";
+import { formatPageRange, parsePageRange, type PageRangeError } from "@/state/pageRange";
 import { useUi } from "@/state/uiStore";
 import { exportImages, exportPages } from "./fileActions";
 
@@ -26,7 +26,7 @@ const DPI_CHOICES: ReadonlyArray<{ dpi: number; label: StringKey }> = [
   { dpi: 600, label: "export.dpi600" },
 ];
 
-function rangeMessage(error: PageRangeError): string {
+export function rangeMessage(error: PageRangeError): string {
   switch (error.kind) {
     case "empty":
       return t("export.rangeEmpty");
@@ -37,7 +37,7 @@ function rangeMessage(error: PageRangeError): string {
   }
 }
 
-function Choice(props: { name: string; checked: boolean; onChange: () => void; children: React.ReactNode }): JSX.Element {
+export function Choice(props: { name: string; checked: boolean; onChange: () => void; children: React.ReactNode }): JSX.Element {
   return (
     <label className="flex items-center gap-2 h-7 text-[13px] cursor-default">
       <input type="radio" name={props.name} checked={props.checked} onChange={props.onChange} className="accent-[var(--izul-accent)]" />
@@ -61,9 +61,11 @@ export function ExportDialog(): JSX.Element | null {
   const [running, setRunning] = useState(false);
 
   useEffect(() => {
-    if (kind === null) return;
-    setScope(kind === "pages" ? "range" : "all");
-    setRange(kind === "pages" ? `${page + 1}` : "");
+    if (kind === null || kind === "split") return;
+    // Pages selected in the page panel are what "extract" most likely means.
+    const selected = useDocument.getState().pageSelection;
+    setScope(kind === "pages" || selected.length > 0 ? "range" : "all");
+    setRange(selected.length > 0 ? formatPageRange(selected) : kind === "pages" ? `${page + 1}` : "");
     setRunning(false);
     const dialog = ref.current;
     if (dialog && !dialog.open) dialog.showModal();
@@ -77,7 +79,7 @@ export function ExportDialog(): JSX.Element | null {
     return parsePageRange(range, pageCount);
   }, [scope, range, page, pageCount]);
 
-  if (kind === null || doc === null) return null;
+  if (kind === null || kind === "split" || doc === null) return null;
   const close = (): void => {
     ref.current?.close();
     useUi.getState().setExporting(null);

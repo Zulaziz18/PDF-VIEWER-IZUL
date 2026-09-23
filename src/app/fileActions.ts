@@ -116,6 +116,9 @@ export async function saveDocument(
     const report = await invoke<SaveReport>("save_document", { doc, target });
     session.getState().markSaved(report);
     if (target !== null) useWorkspace.getState().renameTab(doc, report.path);
+    // The file now holds the rearranged pages; the tab lays itself out from
+    // the file again, and page numbers start meaning file pages once more.
+    if (report.restructured) await session.getState().refreshPages();
     useUi.getState().notify({
       kind: "ok",
       text: fill(t("save.done"), { name: nameOf(report.path), size: formatBytes(report.bytes) }),
@@ -361,6 +364,7 @@ export async function acknowledgeDiskChange(doc: number | null = activeDoc()): P
 type ExportSpec =
   | { kind: "flat"; target: string }
   | { kind: "pages"; target: string; pages: number[] }
+  | { kind: "split"; folder: string; stem: string; ranges: number[][] }
   | { kind: "images"; folder: string; stem: string; pages: number[]; dpi: number; jpeg_quality: number | null };
 
 async function runExport(doc: number, spec: ExportSpec): Promise<boolean> {
@@ -374,8 +378,10 @@ async function runExport(doc: number, spec: ExportSpec): Promise<boolean> {
       text:
         spec.kind === "images"
           ? fill(t("export.doneImages"), { count: written.length, folder: nameOf(folderOf(first)) })
-          : fill(t("export.done"), { name: nameOf(first) }),
-      detail: spec.kind === "images" ? folderOf(first) : first,
+          : spec.kind === "split"
+            ? fill(t("export.doneSplit"), { count: written.length, folder: nameOf(folderOf(first)) })
+            : fill(t("export.done"), { name: nameOf(first) }),
+      detail: spec.kind === "images" || spec.kind === "split" ? folderOf(first) : first,
     });
     return true;
   } catch (e) {
@@ -435,4 +441,14 @@ export async function exportImages(
     dpi,
     jpeg_quality: format === "jpg" ? quality : null,
   });
+}
+
+/** "Pecah": one PDF per range, `<name>-1.pdf`, `<name>-2.pdf`… in a folder. */
+export async function exportSplit(doc: number, ranges: number[][]): Promise<boolean> {
+  const path = currentPath(doc);
+  const parts = ranges.filter((r) => r.length > 0);
+  if (path === null || parts.length === 0) return false;
+  const folder = await openDialog({ directory: true, defaultPath: folderOf(path) });
+  if (typeof folder !== "string") return false;
+  return await runExport(doc, { kind: "split", folder, stem: stemOf(path), ranges: parts });
 }

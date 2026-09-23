@@ -125,6 +125,8 @@ export interface SaveReport {
   readonly path: string;
   readonly bytes: number;
   readonly annotations: number;
+  /** The save rearranged the pages: their new sizes (Phase 5). */
+  readonly restructured: ReadonlyArray<[number, number]> | null;
 }
 
 /** What `file_status` answers. */
@@ -133,6 +135,51 @@ export interface FileStatusReply {
   readonly missing: boolean;
   readonly dirty: boolean;
   readonly size: number;
+}
+
+/** One page as the backend lays it out (Phase 5, `pagemap.rs`). */
+export interface PageView {
+  /** The worker document that renders it; `null` for a blank page. */
+  readonly render_doc: number | null;
+  readonly page: number;
+  /** Quarter turns on top of the page's own `/Rotate`. */
+  readonly rotation: number;
+  readonly width: number;
+  readonly height: number;
+  readonly source: number;
+}
+
+export interface PagesView {
+  readonly pages: readonly PageView[];
+  readonly mapped: boolean;
+  readonly map_revision: number;
+  readonly sources: readonly string[];
+}
+
+/** A structural edit, as `pages_apply` takes it. Pages are display indices. */
+export type PageCommand =
+  | { readonly kind: "delete"; readonly pages: readonly number[] }
+  | { readonly kind: "move"; readonly pages: readonly number[]; readonly before: number }
+  | { readonly kind: "rotate"; readonly pages: readonly number[]; readonly quarters: number }
+  | {
+      readonly kind: "insertBlank";
+      readonly at: number;
+      readonly count: number;
+      readonly width: number;
+      readonly height: number;
+    }
+  | { readonly kind: "duplicate"; readonly pages: readonly number[] };
+
+interface PagesResult {
+  readonly view: PagesView;
+  readonly edit: EditResult;
+}
+
+/** Where a display page's pixels and text come from. */
+export interface PageSourceRef {
+  /** `null` for a blank page: nothing to fetch. */
+  readonly doc: number | null;
+  readonly page: number;
 }
 
 /** How the zoom level is chosen. Fit modes follow the window; custom does not. */
@@ -196,6 +243,23 @@ export interface DocumentState {
   dirty: boolean;
   /** What is known about the file on disk (Phase 4). */
   file: FileState;
+  /**
+   * The pages as laid out, once a page operation has happened (Phase 5);
+   * `null` while they are the file's own, in order — every page is then its
+   * own source and nothing needs translating.
+   */
+  pagesView: readonly PageView[] | null;
+  /** The backend's page-map revision this session last applied. */
+  mapRevision: number;
+  /**
+   * Bumped whenever display page numbers stop meaning what they meant: a
+   * page operation, or a save that rewrote the pages. Everything cached by
+   * page number — text, annotations, highlights, the renderer's layers —
+   * starts again when it changes.
+   */
+  pagesEpoch: number;
+  /** Pages selected in the page panel, for the page operations. */
+  pageSelection: number[];
   /** Set when an edit was refused — a missing font, a locked object. */
   annotError: string | null;
 
@@ -250,6 +314,17 @@ export interface DocumentState {
    * restored draft replaced them behind the frontend's back. */
   reloadAnnots(): Promise<void>;
   setFileStatus(status: FileStatusReply): void;
+  /** The render document and page behind display page `page`. */
+  sourceOf(page: number): PageSourceRef;
+  /** The display page showing page `page` of the file itself, for outline
+   * and search results, which speak in the file's page numbers. */
+  displayOfOwn(page: number): number | null;
+  applyPagesView(view: PagesView): void;
+  refreshPages(): Promise<void>;
+  pageCommand(cmd: PageCommand): Promise<boolean>;
+  insertFile(path: string, at: number): Promise<boolean>;
+  copyPagesFrom(from: number, pages: readonly number[], at: number, remove: boolean): Promise<boolean>;
+  setPageSelection(pages: readonly number[]): void;
   setSaving(saving: boolean): void;
   markSaved(report: SaveReport): void;
   /** The selected objects, in paint order. */
@@ -348,6 +423,10 @@ export function createDocumentSession(
     canRedo: false,
     dirty: false,
     file: { size: null, changedOnDisk: false, missing: false, savedAt: null, saving: false },
+    pagesView: null,
+    mapRevision: 0,
+    pagesEpoch: 0,
+    pageSelection: [],
     annotError: null,
 
     viewportWidth: viewport.width,
@@ -431,15 +510,10 @@ export function createDocumentSession(
     },
 
     rotatePage(page: number, quarters: number) {
-      const state = get();
-      const current = state.pageRotation[page] ?? 0;
-      const next = ((((current + quarters) % 4) + 4) % 4) as Rotation;
-      // A new object, not a mutation: the renderer compares by identity to decide
-      // whether the layout has to be rebuilt.
-      const pageRotation = { ...state.pageRotation, [page]: next };
-      const highlights = new Map(state.highlights);
-      highlights.delete(page);
-      bumpGeneration(set, get, { pageRotation, highlights });
+      // Since Phase 5 turning a page is an edit of the document — saved,
+      // undoable — as it is in every editor this one is compared with. The
+      // whole-document rotation stays a view setting.
+      void get().pageCommand({ kind: "rotate", pages: [page], quarters });
     },
 
     setPage(page: number) {
@@ -488,13 +562,17 @@ export function createDocumentSession(
 
       for (const page of missing) {
         const rotation = (((docRotation + (pageRotation[page] ?? 0)) % 4) + 4) % 4;
+        const from = get().sourceOf(page);
+        // A blank page has no text; its claimed empty entry stands.
+        if (from.doc === null) continue;
         try {
           const reply = await invoke<PageTextReply>("page_text", {
-            doc,
-            page,
+            doc: from.doc,
+            page: from.page,
             withBoxes: true,
             rotation,
           });
+          if (get().doc !== doc) return;
           const next = new Map(get().texts);
           next.set(page, reply.chars);
           set({ texts: next });
@@ -609,7 +687,8 @@ export function createDocumentSession(
         });
         const first = results[0];
         if (first && (search.scope !== "library" || first.doc === doc)) {
-          set({ pendingPage: first.page });
+          const shown = get().displayOfOwn(first.page);
+          if (shown !== null) set({ pendingPage: shown });
         }
       } catch (e) {
         if (get().search.generation !== epoch) return;
@@ -627,7 +706,8 @@ export function createDocumentSession(
       // A library hit in another document cannot be jumped to from here; the
       // panel opens it in a tab instead.
       if (hit && (hit.doc === null || hit.doc === doc)) {
-        set({ pendingPage: hit.page });
+        const shown = get().displayOfOwn(hit.page);
+        if (shown !== null) set({ pendingPage: shown });
       }
     },
 
@@ -766,6 +846,121 @@ export function createDocumentSession(
 
     applyEdit(result: EditResult) {
       set({ canUndo: result.can_undo, canRedo: result.can_redo, dirty: result.dirty });
+      // An undo or redo of a page operation moves pages; the backend says so
+      // by a new map revision, and the layout is fetched again.
+      if (result.map_revision !== get().mapRevision) void get().refreshPages();
+    },
+
+    sourceOf(page: number): PageSourceRef {
+      const view = get().pagesView;
+      if (view === null) return { doc: get().doc, page };
+      const entry = view[page];
+      if (!entry) return { doc: null, page: 0 };
+      return { doc: entry.render_doc, page: entry.page };
+    },
+
+    displayOfOwn(page: number): number | null {
+      const { pagesView, doc } = get();
+      if (pagesView === null) return page;
+      const index = pagesView.findIndex(
+        (p) => p.source === 0 && p.render_doc === doc && p.page === page,
+      );
+      return index < 0 ? null : index;
+    },
+
+    applyPagesView(view: PagesView) {
+      const state = get();
+      const pageSizes = view.pages.map((p) => ({ width: p.width, height: p.height }));
+      const pageRotation: Record<number, Rotation> = {};
+      view.pages.forEach((p, i) => {
+        if (p.rotation % 4 !== 0) pageRotation[i] = (p.rotation % 4) as Rotation;
+      });
+      // Page numbers moved: whatever was cached by them is about somebody
+      // else's page now.
+      bumpGeneration(set, get, {
+        pagesView: view.mapped ? view.pages : null,
+        mapRevision: view.map_revision,
+        pagesEpoch: state.pagesEpoch + 1,
+        pageSizes,
+        pageCount: pageSizes.length,
+        pageRotation,
+        page: Math.min(state.page, Math.max(0, pageSizes.length - 1)),
+        texts: new Map(),
+        highlights: new Map(),
+        annots: new Map(),
+        annotLists: new Map(),
+        selection: [],
+        pageSelection: state.pageSelection.filter((p) => p < pageSizes.length),
+      });
+    },
+
+    async refreshPages() {
+      const { doc } = get();
+      if (doc === null) return;
+      try {
+        const view = await invoke<PagesView>("pages_state", { doc });
+        get().applyPagesView(view);
+      } catch (e) {
+        set({ annotError: String(e) });
+      }
+    },
+
+    async pageCommand(cmd: PageCommand) {
+      const { doc } = get();
+      if (doc === null) return false;
+      set({ busy: true });
+      try {
+        const result = await invoke<PagesResult>("pages_apply", { doc, cmd });
+        get().applyPagesView(result.view);
+        get().applyEdit(result.edit);
+        set({ busy: false, annotError: null });
+        return true;
+      } catch (e) {
+        set({ busy: false, annotError: String(e) });
+        return false;
+      }
+    },
+
+    async insertFile(path: string, at: number) {
+      const { doc } = get();
+      if (doc === null) return false;
+      set({ busy: true });
+      try {
+        const result = await invoke<PagesResult>("pages_insert_file", { doc, path, at });
+        get().applyPagesView(result.view);
+        get().applyEdit(result.edit);
+        set({ busy: false, annotError: null });
+        return true;
+      } catch (e) {
+        set({ busy: false, annotError: String(e) });
+        return false;
+      }
+    },
+
+    async copyPagesFrom(from: number, pages: readonly number[], at: number, remove: boolean) {
+      const { doc } = get();
+      if (doc === null) return false;
+      set({ busy: true });
+      try {
+        const result = await invoke<PagesResult>("pages_copy_from", {
+          doc,
+          from,
+          pages,
+          at,
+          remove,
+        });
+        get().applyPagesView(result.view);
+        get().applyEdit(result.edit);
+        set({ busy: false, annotError: null });
+        return true;
+      } catch (e) {
+        set({ busy: false, annotError: String(e) });
+        return false;
+      }
+    },
+
+    setPageSelection(pages: readonly number[]) {
+      set({ pageSelection: [...new Set(pages)].sort((a, b) => a - b) });
     },
 
     async reloadAnnots() {
@@ -827,19 +1022,21 @@ export function createDocumentSession(
 
       for (const page of wanted) {
         const rotation = (((docRotation + (pageRotation[page] ?? 0)) % 4) + 4) % 4;
+        const from = get().sourceOf(page);
+        if (from.doc === null) continue;
         try {
           const hits =
             search.scope === "regex"
               ? await invoke<PageHit[]>("search_regex_page", {
-                  doc,
-                  page,
+                  doc: from.doc,
+                  page: from.page,
                   pattern: query,
                   caseSensitive: search.caseSensitive,
                   rotation,
                 })
               : await invoke<PageHit[]>("search_page", {
-                  doc,
-                  page,
+                  doc: from.doc,
+                  page: from.page,
                   query,
                   caseSensitive: search.caseSensitive,
                   wholeWord: search.wholeWord,
