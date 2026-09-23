@@ -21,7 +21,7 @@ use izul_model::geom::{PdfRectF, RotationQuarter};
 /// So the worker announces this number the moment it connects, and the
 /// supervisor refuses a worker that does not match. Bump it whenever anything
 /// in [`Request`] or [`Response`] changes shape.
-pub const PROTOCOL_VERSION: u32 = 4;
+pub const PROTOCOL_VERSION: u32 = 5;
 
 /// Identifies one open document within a worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -167,6 +167,79 @@ pub enum Request {
         nonce: u64,
     },
     Shutdown,
+
+    // ---- Phase 4: saving and exporting. Appended at the end, like every
+    // variant since Phase 1's `Ping`-read-as-`Shutdown` (see
+    // `PROTOCOL_VERSION`). ----------------------------------------------
+    /// This application's own annotations on one page of an open document,
+    /// taken out of the page the first time it loaded (see `izul-pdf`'s
+    /// `izul` module). Answered with `PageAnnotsReady`.
+    PageAnnots {
+        doc: DocId,
+        page: u32,
+    },
+    /// Opens a *working copy* of a file for saving or exporting: read into
+    /// memory, with our annotations left in place. One per document; opening
+    /// another replaces it. Answered with `WorkReady`.
+    WorkOpen {
+        doc: DocId,
+        path: String,
+    },
+    /// On the working copy: replaces our annotations on each listed page with
+    /// placeholders `/NM (izul-<id>)`, one per `(page, id)`. Pages not listed
+    /// keep what they have.
+    WorkPlaceholders {
+        doc: DocId,
+        pages: Vec<u32>,
+        placeholders: Vec<(u32, u64)>,
+    },
+    /// On the working copy: burns the annotations of `count` pages from
+    /// `first` into their content. Batched so that a 2 000-page document
+    /// cannot keep the worker silent past the heartbeat (SPEC 3.4).
+    WorkFlatten {
+        doc: DocId,
+        first: u32,
+        count: u32,
+    },
+    /// Replaces the working copy with a new document of just these pages.
+    WorkExtract {
+        doc: DocId,
+        pages: Vec<u32>,
+    },
+    /// Renders one page of the working copy, annotations included, and
+    /// encodes it. Answered with `BlobReady`.
+    WorkRender {
+        doc: DocId,
+        page: u32,
+        /// Pixels per point.
+        scale: f32,
+        /// `None` for PNG, `Some(quality)` for JPEG.
+        jpeg_quality: Option<u8>,
+    },
+    /// Writes the working copy with PDFium. Answered with `BlobReady`.
+    WorkSave {
+        doc: DocId,
+    },
+    WorkClose {
+        doc: DocId,
+    },
+    /// Up to `len` bytes of a blob from `offset`. Blobs travel in pieces
+    /// because a saved PDF is larger than the frame limit, and because the UI
+    /// process — which owns the user's files — is the one that writes them.
+    BlobRead {
+        blob: u64,
+        offset: u64,
+        len: u32,
+    },
+    BlobDrop {
+        blob: u64,
+    },
+    /// Opens a file as a reader would and counts our annotations on `pages`.
+    /// The last check before an atomic save replaces the original.
+    VerifyFile {
+        path: String,
+        pages: Vec<u32>,
+    },
 }
 
 /// Worker process -> UI process.
@@ -250,7 +323,43 @@ pub enum Response {
         /// and names them rather than drawing empty boxes (SPEC 11.2).
         missing: Vec<char>,
     },
+
+    // ---- Phase 4, appended ------------------------------------------------
+    PageAnnotsReady {
+        doc: DocId,
+        page: u32,
+        annots: Vec<SavedAnnotWire>,
+    },
+    WorkReady {
+        doc: DocId,
+        page_count: u32,
+    },
+    /// A blob is waiting in the worker; fetch it with `BlobRead`.
+    BlobReady {
+        blob: u64,
+        len: u64,
+    },
+    BlobBytes {
+        blob: u64,
+        data: Vec<u8>,
+    },
+    Verified {
+        page_count: u32,
+        izul_annots: u32,
+    },
 }
+
+/// One saved annotation as the worker found it: its `/IzulObj` value, and —
+/// for a picture — the blob holding the picture's bytes.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SavedAnnotWire {
+    pub metadata: String,
+    pub image: Option<(u64, u64, String)>,
+}
+
+/// The largest piece `BlobRead` hands out: half the frame limit, leaving room
+/// for the envelope.
+pub const BLOB_CHUNK: u32 = 4 * 1024 * 1024;
 
 /// One match, with the boxes to draw over it.
 ///
@@ -333,3 +442,58 @@ pub struct Envelope<T> {
 
 pub type RequestEnvelope = Envelope<Request>;
 pub type ResponseEnvelope = Envelope<Response>;
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
+    use super::*;
+
+    /// `postcard` sends a variant as its index, so an index that moves is a
+    /// silent protocol break (CLAUDE.md, bug #4). These are the indices older
+    /// variants had when Phase 4 appended its own; adding a variant anywhere
+    /// but the end changes one of them and fails here.
+    #[test]
+    fn existing_variants_keep_their_wire_index() {
+        let index = |bytes: Vec<u8>| bytes[0];
+        assert_eq!(
+            index(postcard::to_allocvec(&Request::Ping { nonce: 0 }).unwrap()),
+            10
+        );
+        assert_eq!(
+            index(postcard::to_allocvec(&Request::Shutdown).unwrap()),
+            11
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Request::PageAnnots {
+                    doc: DocId(1),
+                    page: 0
+                })
+                .unwrap()
+            ),
+            12
+        );
+        assert_eq!(
+            index(postcard::to_allocvec(&Response::Pong { nonce: 0 }).unwrap()),
+            8
+        );
+        assert_eq!(
+            index(postcard::to_allocvec(&Response::BlobReady { blob: 1, len: 2 }).unwrap()),
+            13
+        );
+    }
+
+    #[test]
+    fn the_new_messages_round_trip() {
+        let r = Response::PageAnnotsReady {
+            doc: DocId(3),
+            page: 7,
+            annots: vec![SavedAnnotWire {
+                metadata: "{\"izul\":1}".into(),
+                image: Some((9, 1024, "image/png".into())),
+            }],
+        };
+        let bytes = postcard::to_allocvec(&r).unwrap();
+        assert_eq!(postcard::from_bytes::<Response>(&bytes).unwrap(), r);
+    }
+}

@@ -100,6 +100,10 @@ impl Session {
         self.docs.remove(&id).is_some()
     }
 
+    pub fn engine(&self) -> &'static Engine {
+        self.engine
+    }
+
     pub fn get(&self, id: DocId) -> Option<&OpenDoc> {
         self.docs.get(&id)
     }

@@ -131,6 +131,36 @@ impl FontCtx for FixedFont {
     }
 }
 
+/// The standard-14 face a [`FontSpec`] resolves to.
+///
+/// Times New Roman is the default SPEC 11.2 names; it maps to Times, whose
+/// metrics are identical by design — that is what "metrically compatible"
+/// means, and it is why a PDF with Times renders the same on a machine that has
+/// only Times New Roman.
+///
+/// Here rather than in `izul-pdf` because two processes need the same answer:
+/// the worker, which measures the face, and the UI process, which writes the
+/// `/BaseFont` of the saved file and must never link PDFium to learn it.
+pub fn standard_base_font(spec: &crate::annot::FontSpec) -> &'static str {
+    let family = spec.family.to_ascii_lowercase();
+    let serif = family.contains("times") || family.contains("serif") && !family.contains("sans");
+    let mono = family.contains("courier") || family.contains("mono");
+    match (mono, serif, spec.bold, spec.italic) {
+        (true, _, false, false) => "Courier",
+        (true, _, true, false) => "Courier-Bold",
+        (true, _, false, true) => "Courier-Oblique",
+        (true, _, true, true) => "Courier-BoldOblique",
+        (_, true, false, false) => "Times-Roman",
+        (_, true, true, false) => "Times-Bold",
+        (_, true, false, true) => "Times-Italic",
+        (_, true, true, true) => "Times-BoldItalic",
+        (_, _, false, false) => "Helvetica",
+        (_, _, true, false) => "Helvetica-Bold",
+        (_, _, false, true) => "Helvetica-Oblique",
+        (_, _, true, true) => "Helvetica-BoldOblique",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

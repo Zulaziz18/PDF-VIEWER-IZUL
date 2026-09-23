@@ -129,6 +129,22 @@ impl AnnotDoc {
         id
     }
 
+    /// Places an object read back from a saved file, keeping its id.
+    ///
+    /// Not an [`Op`]: opening a file is not an edit, and an undo that removed
+    /// the annotations the file already had would be undoing something the
+    /// user never did. `next_id` moves past the object so a fresh id can never
+    /// collide with it. An object whose id is already taken is refused — two
+    /// objects with one id would make every later undo ambiguous.
+    pub fn import(&mut self, obj: AnnotObject) -> Result<(), EditError> {
+        if obj.id.0 == 0 || self.objects.contains_key(&obj.id) {
+            return Err(EditError::AlreadyExists(obj.id));
+        }
+        self.next_id = self.next_id.max(obj.id.0.saturating_add(1));
+        self.objects.insert(obj.id, obj);
+        Ok(())
+    }
+
     pub fn get(&self, id: AnnotId) -> Option<&AnnotObject> {
         self.objects.get(&id)
     }

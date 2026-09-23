@@ -1,4 +1,4 @@
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::os::raw::c_int;
 use std::path::{Path, PathBuf};
@@ -192,6 +192,8 @@ impl Engine {
                 page_count,
                 origin,
                 pages: RefCell::new(HashMap::new()),
+                strip_izul: Cell::new(true),
+                izul: RefCell::new(HashMap::new()),
                 _bytes: bytes,
             })
         })
@@ -356,6 +358,12 @@ mod geometry_tests {
 /// `_bytes` — the buffer PDFium still points into — is dropped last of all.
 pub struct Document {
     pages: RefCell<HashMap<u32, PageHandle>>,
+    /// Whether a page's own annotations written by this application are taken
+    /// out when it first loads (see `izul.rs`).
+    pub(crate) strip_izul: Cell<bool>,
+    /// What was taken out, by page. Kept for the life of the document, so a
+    /// page released and loaded again does not forget its annotations.
+    pub(crate) izul: RefCell<HashMap<u32, Vec<crate::izul::IzulAnnot>>>,
     handle: FPDF_DOCUMENT,
     engine: &'static Engine,
     page_count: u32,
@@ -529,6 +537,21 @@ impl Document {
         self.handle
     }
 
+    /// Wraps a document PDFium created in memory (`FPDF_CreateNewDocument`).
+    /// It has no bytes of its own; it is closed when this is dropped.
+    pub(crate) fn adopt(engine: &'static Engine, handle: FPDF_DOCUMENT) -> Document {
+        Document {
+            handle,
+            engine,
+            page_count: 0,
+            origin: None,
+            pages: RefCell::new(HashMap::new()),
+            strip_izul: Cell::new(false),
+            izul: RefCell::new(HashMap::new()),
+            _bytes: Backing::Owned(Vec::new()),
+        }
+    }
+
     pub(crate) fn engine(&self) -> &'static Engine {
         self.engine
     }
@@ -579,6 +602,15 @@ impl Document {
                         engine: self.engine,
                     },
                 );
+                // First load of this page in this document: take our own
+                // annotations out before anything renders it. Only once —
+                // a page released and loaded again no longer has them.
+                if self.strip_izul.get() && !self.izul.borrow().contains_key(&page) {
+                    drop(cache);
+                    let found = crate::izul::take(self, raw);
+                    self.izul.borrow_mut().insert(page, found);
+                    return f(raw);
+                }
                 raw
             }
         };

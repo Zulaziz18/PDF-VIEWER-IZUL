@@ -83,8 +83,8 @@ use izul_model::font::FixedFont;
 use izul_model::geom::{PdfPointF, PdfRectF};
 
 /// Page the annotations are drawn on, in points.
-const PAGE_W: f32 = 240.0;
-const PAGE_H: f32 = 120.0;
+pub(crate) const PAGE_W: f32 = 240.0;
+pub(crate) const PAGE_H: f32 = 120.0;
 /// Rendered at 2x so antialiasing differences have somewhere to show.
 const SCALE: f32 = 2.0;
 
@@ -97,14 +97,14 @@ const SCALE: f32 = 2.0;
 const CHANNEL_TOLERANCE: u8 = 8;
 
 /// SPEC 3.3's threshold: fewer than 0.5 % of pixels may differ.
-const MAX_DIFFERING_FRACTION: f64 = 0.005;
+pub(crate) const MAX_DIFFERING_FRACTION: f64 = 0.005;
 
 /// Advance width every glyph of the test font has, in 1/1000 em.
 ///
 /// One width for all of them: the layout is what is under test, and a
 /// proportional table would be a second thing to keep in step with the font for
 /// no gain. The blocks are wide enough apart to read as separate glyphs.
-const GLYPH_ADVANCE_MILLI: u16 = 550;
+pub(crate) const GLYPH_ADVANCE_MILLI: u16 = 550;
 
 /// The glyph a character is drawn as, as a Type 3 charproc.
 ///
@@ -127,7 +127,7 @@ fn charproc(ch: char) -> String {
 /// transposed placement moves the coloured squares. Shared between the PDF the
 /// baseline is rendered from and the data URL the canvas harness draws, so both
 /// halves of the parity check are looking at the same image.
-const CHECKER: [u8; 12] = [
+pub(crate) const CHECKER: [u8; 12] = [
     220, 40, 40, // red
     40, 80, 220, // blue
     250, 210, 40, // yellow
@@ -183,7 +183,7 @@ fn rect() -> PdfRectF {
 
 /// One object per kind, sized to the same box so the baselines are comparable
 /// by eye when they are opened side by side.
-fn sample(kind: AnnotKind) -> AnnotObject {
+pub(crate) fn sample(kind: AnnotKind) -> AnnotObject {
     let payload = match kind {
         AnnotKind::Highlight | AnnotKind::Underline | AnnotKind::StrikeOut => {
             AnnotPayload::Markup {
@@ -287,7 +287,7 @@ fn sample(kind: AnnotKind) -> AnnotObject {
 /// Written by hand rather than through a PDF library on purpose: the point of
 /// the test is what *our* backend emitted, and a library that normalised the
 /// operators on the way in would hide exactly the bugs this is looking for.
-fn page_with(ap: &Appearance, needs_image: bool, text: &str) -> Vec<u8> {
+pub(crate) fn page_with(ap: &Appearance, needs_image: bool, text: &str) -> Vec<u8> {
     // Object numbering, decided up front because a PDF refers to objects by
     // number and the font needs to know where its charprocs will land.
     //  1 catalog · 2 pages · 3 page · 4 contents · 5 image (when used)
@@ -427,7 +427,7 @@ fn page_with(ap: &Appearance, needs_image: bool, text: &str) -> Vec<u8> {
 }
 
 /// Renders the page and returns tightly packed RGBA.
-fn render(engine: &'static crate::engine::Engine, pdf: Vec<u8>) -> (u32, u32, Vec<u8>) {
+pub(crate) fn render(engine: &'static crate::engine::Engine, pdf: Vec<u8>) -> (u32, u32, Vec<u8>) {
     let doc = engine
         .open_bytes(pdf, None::<&str>, None)
         .expect("dokumen terbuka");
@@ -503,7 +503,7 @@ fn dump_display_list(
 }
 
 /// Fraction of pixels that differ by more than the tolerance.
-fn differing_fraction(a: &[u8], b: &[u8]) -> f64 {
+pub(crate) fn differing_fraction(a: &[u8], b: &[u8]) -> f64 {
     let total = a.len() / 4;
     if total == 0 || a.len() != b.len() {
         return 1.0;
