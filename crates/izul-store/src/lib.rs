@@ -23,7 +23,9 @@
 )]
 
 pub mod db;
+pub mod drafts;
 pub mod error;
+pub mod exports;
 pub mod files;
 pub mod identity;
 pub mod prefs;

@@ -44,6 +44,10 @@ pub struct AppState {
     pub startup_files: Vec<String>,
     /// Annotations and their undo history, per document (SPEC 8).
     pub annots: Arc<AnnotState>,
+    /// Size and time of each open file as this application last saw it —
+    /// at open, and after each save — so a change made by another program is
+    /// noticed (SPEC 8: "deteksi berkas yang berubah di disk").
+    pub stamps: Mutex<std::collections::HashMap<u64, izul_store::FileStamp>>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -55,7 +59,7 @@ impl std::fmt::Debug for AppState {
 }
 
 impl AppState {
-    fn db(&self) -> Result<rusqlite::Connection, String> {
+    pub(crate) fn db(&self) -> Result<rusqlite::Connection, String> {
         izul_store::open(&self.data_dir, izul_store::Which::App)
             .map_err(|e| format!("basis data: {e}"))
     }
@@ -67,7 +71,7 @@ impl AppState {
     /// is precisely the case where a shutdown hook never runs. The write is a
     /// delete and a handful of inserts in one transaction, on an arrangement
     /// that changes when a human clicks something, so its cost is irrelevant.
-    fn save_session(&self) {
+    pub(crate) fn save_session(&self) {
         let (session, slots) = {
             let ws = self.workspace.lock();
             (ws.session(), ws.slots())
@@ -280,6 +284,7 @@ pub async fn open_document(
     };
 
     let file_id = file_id.map(|f| f.0).unwrap_or(0);
+    state.stamps.lock().insert(doc.0, stamp);
     state.workspace.lock().insert(OpenDoc {
         doc: doc.0,
         path: path.clone(),
@@ -372,6 +377,7 @@ pub async fn close_document(state: tauri::State<'_, AppState>, doc: u64) -> CmdR
     }
     state.render.forget(doc);
     state.annots.forget(doc);
+    state.stamps.lock().remove(&doc);
     state.workspace.lock().remove(doc);
     state.save_session();
     Ok(())
@@ -975,7 +981,11 @@ fn text_of(obj: &AnnotObject) -> Option<(&FontSpec, &str)> {
 ///
 /// Returns an error naming the characters the face does not have, which is what
 /// SPEC 11.2 asks for instead of drawing empty boxes.
-async fn prepare_fonts(state: &AppState, doc: u64, objects: &[AnnotObject]) -> CmdResult<()> {
+pub(crate) async fn prepare_fonts(
+    state: &AppState,
+    doc: u64,
+    objects: &[AnnotObject],
+) -> CmdResult<()> {
     for obj in objects {
         let Some((spec, text)) = text_of(obj) else {
             continue;
@@ -999,11 +1009,16 @@ async fn prepare_fonts(state: &AppState, doc: u64, objects: &[AnnotObject]) -> C
 }
 
 #[tauri::command]
-pub fn annot_list(
+pub async fn annot_list(
     state: tauri::State<'_, AppState>,
     doc: u64,
     page: Option<u32>,
 ) -> CmdResult<Vec<AnnotObject>> {
+    // The first look at a page brings the annotations the file itself carries
+    // into the editor (Phase 4), so they can be edited like any other.
+    if let Some(p) = page {
+        crate::saving::import_page(&state.pool, &state.annots, doc, p).await?;
+    }
     Ok(state.annots.objects(doc, page))
 }
 
@@ -1075,6 +1090,7 @@ pub async fn annot_display_lists(
     doc: u64,
     page: u32,
 ) -> CmdResult<Vec<DisplayListOut>> {
+    crate::saving::import_page(&state.pool, &state.annots, doc, page).await?;
     let objects = state.annots.objects(doc, Some(page));
     prepare_fonts(&state, doc, &objects).await.ok();
     Ok(state

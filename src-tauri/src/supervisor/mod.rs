@@ -166,6 +166,38 @@ impl Pool {
         self.request_on(index, req).await
     }
 
+    /// Closes a document in its worker but keeps its place in the pool, so
+    /// [`Pool::reload`] can open it again on the same worker.
+    ///
+    /// Saving over the open file needs this. The worker maps the file it
+    /// shows, and Windows refuses to replace a file that is mapped
+    /// (`ERROR_USER_MAPPED_FILE`); the rename can only happen in between.
+    pub async fn release(&mut self, doc: DocId) -> Result<Response, WorkerError> {
+        let index = self
+            .docs
+            .get(&doc)
+            .map(|s| s.worker)
+            .ok_or(WorkerError::Gone)?;
+        self.request_on(index, Request::Close { doc }).await
+    }
+
+    /// Opens a released document again, from `path` — the same file after a
+    /// save, or its new name after "save as". Crash recovery reopens from
+    /// the slot's path, so the slot follows the rename.
+    pub async fn reload(&mut self, doc: DocId, path: &str) -> Result<Response, WorkerError> {
+        let index = {
+            let slot = self.docs.get_mut(&doc).ok_or(WorkerError::Gone)?;
+            slot.path = path.to_string();
+            slot.worker
+        };
+        let req = Request::Open {
+            doc,
+            path: path.to_string(),
+            password: None,
+        };
+        self.request_on(index, req).await
+    }
+
     /// The worker holding a document, as a handle that outlives the pool lock.
     ///
     /// This is how the render pipeline avoids serialising every tile behind the

@@ -1924,6 +1924,7 @@ dependencies = [
  "izul-model",
  "izul-render",
  "izul-store",
+ "izul-write",
  "libc",
  "parking_lot",
  "postcard",
@@ -1947,10 +1948,12 @@ dependencies = [
 name = "izul-bench"
 version = "7.0.0-alpha.3"
 dependencies = [
+ "image",
  "izul-ipc",
  "izul-model",
  "izul-pdf",
  "izul-render",
+ "izul-write",
  "parking_lot",
  "serde",
  "serde_json",

@@ -469,7 +469,11 @@ impl Update {
             pdf.extend_from_slice(b"\nendobj\n");
         }
         let xref_at = pdf.len();
-        pdf.extend_from_slice(b"xref\n");
+        // The free-list head first. The section is valid without it, but
+        // readers with a heuristic for broken files that number their table
+        // from 1 (pypdf warns "not zero-indexed") treat a section whose first
+        // subsection is not 0 as suspect. Acrobat's own updates start this way.
+        pdf.extend_from_slice(b"xref\n0 1\n0000000000 65535 f\r\n");
         // Contiguous runs become one subsection each.
         let nums: Vec<u32> = offsets.keys().copied().collect();
         let mut i = 0usize;
@@ -623,6 +627,12 @@ mod tests {
             section.contains("\n4 1\n") && section.contains("\n7 1\n"),
             "{section}"
         );
+        // And the section opens with object 0, the free-list head.
+        assert!(
+            section.starts_with("xref\n0 1\n0000000000 65535 f\r\n"),
+            "{section}"
+        );
+        assert!(!xref2.contains_key(&0), "a free entry is not an object");
     }
 
     #[test]

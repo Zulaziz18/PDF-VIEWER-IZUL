@@ -23,6 +23,7 @@ izul-model.workspace = true
 izul-render.workspace = true
 postcard.workspace = true
 izul-store.workspace = true
+izul-write.workspace = true
 rusqlite.workspace = true
 image.workspace = true
 regex = "1"

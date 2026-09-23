@@ -29,11 +29,18 @@ path = "src/multidoc.rs"
 name = "ui-harness"
 path = "src/ui_harness.rs"
 
+# Phase 4's files for checking in Acrobat, Chrome and Edge (TESTING.md).
+[[bin]]
+name = "fase4-uji"
+path = "src/fase4_uji.rs"
+
 [dependencies]
 izul-pdf.workspace = true
 izul-ipc.workspace = true
 izul-render.workspace = true
 izul-model.workspace = true
+izul-write.workspace = true
+image.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "net", "io-util", "process", "sync"] }
 parking_lot.workspace = true
 serde.workspace = true
