@@ -87,6 +87,20 @@ export class Canvas2DSurface implements Surface {
     this.#ctx.drawImage(bitmap, at.x, at.y, at.w, at.h);
   }
 
+  /**
+   * A hairline and a soft drop under the page, so a white page still reads as
+   * a sheet against a light canvas. Two flat rectangles rather than
+   * `shadowBlur`, which would be a blur pass per page per frame during scroll.
+   */
+  drawPageFrame(at: PxRect, dpr: number): void {
+    const ctx = this.#ctx;
+    const edge = Math.max(1, Math.round(dpr));
+    ctx.fillStyle = "rgba(0, 0, 0, 0.06)";
+    ctx.fillRect(at.x - edge, at.y, at.w + 2 * edge, at.h + 3 * edge);
+    ctx.fillStyle = "rgba(0, 0, 0, 0.12)";
+    ctx.fillRect(at.x - edge, at.y - edge, at.w + 2 * edge, at.h + 2 * edge);
+  }
+
   drawPlaceholder(at: PxRect, cssColor: string): void {
     this.#ctx.fillStyle = cssColor;
     this.#ctx.fillRect(at.x, at.y, at.w, at.h);

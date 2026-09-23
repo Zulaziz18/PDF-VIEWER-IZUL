@@ -1,10 +1,15 @@
 /**
- * Application shell.
+ * Application shell, laid out after WPS Office's PDF editor (SPEC 12, revised
+ * 2026-09-23):
  *
- * Phase 2's window: title bar, tab strip, reading toolbar, sidebar, viewport,
- * search panel, status bar. The regions were already independent in Phase 1
- * precisely so that tabs and the search panel could be dropped in beside them
- * rather than through them.
+ *   title bar with the tabs · menu row · ribbon
+ *   icon rail · side panel · viewport · properties panel
+ *   bottom bar
+ *
+ * or, when the "Beranda" tab is in front, the home screen under the title bar.
+ * The viewport stays mounted while the home screen is showing, so going back
+ * to a document costs nothing: the tabs are still open, their tiles still
+ * cached, their scroll positions still where they were.
  *
  * Three things happen once, at startup, and they happen in this order for a
  * reason: files named on the command line are what the user just double-clicked
@@ -14,17 +19,21 @@
  */
 
 import { useEffect } from "react";
-import { AnnotToolbar } from "./AnnotToolbar";
-import { EmptyState } from "./EmptyState";
+import { About } from "./About";
+import { BottomBar } from "./BottomBar";
+import { ExportDialog } from "./ExportDialog";
+import { FileBanner } from "./FileBanner";
+import { NoticeToast } from "./NoticeToast";
+import { PromptDialog } from "./PromptDialog";
+import { Home } from "./Home";
 import { PropertiesPanel } from "./PropertiesPanel";
-import { SearchPanel } from "./SearchPanel";
-import { Sidebar } from "./Sidebar";
-import { StatusBar } from "./StatusBar";
-import { TabBar } from "./TabBar";
+import { MenuBar, Ribbon } from "./Ribbon";
+import { LeftRail, Sidebar } from "./Sidebar";
 import { TitleBar } from "./TitleBar";
-import { Toolbar } from "./Toolbar";
 import { Viewport } from "./Viewport";
+import { useArmedMarkup } from "./armedMarkup";
 import { useDropTarget } from "./dropTarget";
+import { installDraftOffer, useAutosave, useCloseGuard, useFileWatch } from "./fileActions";
 import { useOpenFilesFromOtherInstance } from "./openFiles";
 import { useShortcuts } from "./shortcuts";
 import { useDocument } from "@/state/documentStore";
@@ -33,12 +42,21 @@ import { t } from "@/i18n";
 
 let startupDone = false;
 
+// Before anything opens: the restored session's documents are the ones most
+// likely to have a draft waiting.
+installDraftOffer();
+
 export function App(): React.JSX.Element {
   const doc = useDocument((s) => s.doc);
+  const home = useWorkspace((s) => s.home);
   const error = useWorkspace((s) => s.error);
+  const dropping = useDropTarget();
   useShortcuts();
-  useDropTarget();
+  useArmedMarkup();
   useOpenFilesFromOtherInstance();
+  useCloseGuard();
+  useAutosave();
+  useFileWatch();
 
   useEffect(() => {
     // Once per run, not once per mount. React's development mode mounts every
@@ -57,30 +75,40 @@ export function App(): React.JSX.Element {
       });
   }, []);
 
+  const showHome = home || doc === null;
+
   return (
-    <div className="h-full flex flex-col bg-[var(--izul-canvas)]">
+    <div className="h-full flex flex-col bg-[var(--izul-chrome)]">
       <TitleBar />
-      <TabBar />
       {error !== null && (
         <div role="alert" className="px-3 py-2 bg-[var(--izul-danger)] text-white text-[13px]">
           {t("err.open")}: {error}
         </div>
       )}
-      {doc === null ? (
-        <EmptyState />
-      ) : (
-        <>
-          <Toolbar />
-          <AnnotToolbar />
-          <div className="flex-1 min-h-0 flex">
+      {showHome && <Home dropping={dropping} />}
+      {doc !== null && (
+        <div className={showHome ? "hidden" : "flex-1 min-h-0 flex flex-col"}>
+          <MenuBar />
+          <Ribbon />
+          <FileBanner />
+          <div
+            className={[
+              "flex-1 min-h-0 flex border-t border-[var(--izul-border)]",
+              dropping ? "outline outline-2 -outline-offset-2 outline-[var(--izul-accent)]" : "",
+            ].join(" ")}
+          >
+            <LeftRail />
             <Sidebar />
             <Viewport />
             <PropertiesPanel />
-            <SearchPanel />
           </div>
-        </>
+          <BottomBar />
+        </div>
       )}
-      <StatusBar />
+      <About />
+      <ExportDialog />
+      <PromptDialog />
+      <NoticeToast />
     </div>
   );
 }

@@ -37,10 +37,13 @@
 
 pub mod annots;
 pub mod commands;
+pub mod folders;
 pub mod indexing;
 pub mod logging;
 pub mod protocol;
 pub mod render;
+pub mod save_commands;
+pub mod saving;
 pub mod supervisor;
 pub mod textsearch;
 pub mod thumbs;
@@ -175,6 +178,7 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
         indexer: Arc::new(indexing::Indexer::new()),
         startup_files: pdf_arguments(std::env::args().skip(1)),
         annots: Arc::new(annots::AnnotState::new()),
+        stamps: parking_lot::Mutex::new(std::collections::HashMap::new()),
     };
 
     let title = version::title_bar_text(&v);
@@ -258,6 +262,8 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
             commands::render_stats,
             commands::recent_files,
             commands::pin_recent,
+            commands::known_folders,
+            commands::browse_folder,
             commands::list_tabs,
             commands::activate_document,
             commands::reorder_tabs,
@@ -279,6 +285,16 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
             commands::annot_history,
             commands::annot_display_lists,
             commands::annot_add_image,
+            save_commands::save_document,
+            save_commands::export_document,
+            save_commands::export_history,
+            save_commands::autosave_drafts,
+            save_commands::draft_save_now,
+            save_commands::draft_status,
+            save_commands::draft_restore,
+            save_commands::draft_discard,
+            save_commands::file_status,
+            save_commands::file_acknowledge,
         ])
         .run(tauri::generate_context!());
 

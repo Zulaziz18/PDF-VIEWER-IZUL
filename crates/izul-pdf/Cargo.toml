@@ -12,14 +12,16 @@ memmap2.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 serde.workspace = true
+# PNG and JPEG encoding. Since Phase 4 the crate hands pictures back out of
+# saved annotations (`izul.rs`) and renders pages to image files for export;
+# `pdfium-render`'s `image_025` feature already builds this crate.
+image.workspace = true
 
 [dev-dependencies]
 # JSON for the display-list dumps the canvas-parity harness reads.
 serde_json.workspace = true
-# PNG for the golden-image baselines. A dev dependency on purpose: the shipped
-# crate has no business encoding images, and Phase 3's parity evidence has to be
-# readable by a human opening the file.
-image.workspace = true
+# The Phase 4 round trip writes with the real writer.
+izul-write.workspace = true
 
 [lints]
 workspace = true

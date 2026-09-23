@@ -29,6 +29,7 @@ dist
 !/bench/results/phase1-*
 !/bench/results/phase2-*
 !/bench/results/phase3-*
+!/bench/results/phase4-*
 
 # Python byte cache from the fixture generator.
 __pycache__/
@@ -36,3 +37,4 @@ __pycache__/
 .DS_Store
 *.log
 /.venv
+tools/ui-harness/.samples/

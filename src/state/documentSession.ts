@@ -107,11 +107,40 @@ export interface SearchState {
   readonly generation: number;
 }
 
+/** The file behind a tab, as last measured. */
+export interface FileState {
+  /** Bytes on disk, or null before the first measurement. */
+  readonly size: number | null;
+  /** Another program wrote the file after this application opened or saved it. */
+  readonly changedOnDisk: boolean;
+  readonly missing: boolean;
+  /** When this application last saved it, in milliseconds. */
+  readonly savedAt: number | null;
+  /** A save is running; the buttons wait for it. */
+  readonly saving: boolean;
+}
+
+/** What `save_document` answers. */
+export interface SaveReport {
+  readonly path: string;
+  readonly bytes: number;
+  readonly annotations: number;
+}
+
+/** What `file_status` answers. */
+export interface FileStatusReply {
+  readonly changed_on_disk: boolean;
+  readonly missing: boolean;
+  readonly dirty: boolean;
+  readonly size: number;
+}
+
 /** How the zoom level is chosen. Fit modes follow the window; custom does not. */
 export type ZoomMode = "custom" | "fitWidth" | "fitPage" | "actual";
 
-/** What the sidebar is showing (SPEC 11.1). */
-export type SidebarTab = "thumbnails" | "outline" | "annots";
+/** What the sidebar is showing (SPEC 11.1). Search results are one of its
+ * tabs, as SPEC 11.1 lists them, reached from the icon rail like the rest. */
+export type SidebarTab = "thumbnails" | "outline" | "annots" | "search";
 
 export interface DocumentState {
   doc: number | null;
@@ -159,6 +188,14 @@ export interface DocumentState {
   tool: AnnotKind | null;
   canUndo: boolean;
   canRedo: boolean;
+  /**
+   * The document has changes its file does not. The backend's word, carried
+   * in every edit's reply — not `canUndo`, which stays true after a save and
+   * turns false when the user undoes past one.
+   */
+  dirty: boolean;
+  /** What is known about the file on disk (Phase 4). */
+  file: FileState;
   /** Set when an edit was refused — a missing font, a locked object. */
   annotError: string | null;
 
@@ -207,6 +244,14 @@ export interface DocumentState {
   deleteSelected(): Promise<void>;
   undoAnnot(): Promise<void>;
   redoAnnot(): Promise<void>;
+  /** Takes the undo, redo and unsaved state from an edit's reply. */
+  applyEdit(result: EditResult): void;
+  /** Drops every loaded page's annotations and loads them again — after a
+   * restored draft replaced them behind the frontend's back. */
+  reloadAnnots(): Promise<void>;
+  setFileStatus(status: FileStatusReply): void;
+  setSaving(saving: boolean): void;
+  markSaved(report: SaveReport): void;
   /** The selected objects, in paint order. */
   selectedObjects(): AnnotObject[];
 }
@@ -301,6 +346,8 @@ export function createDocumentSession(
     tool: null,
     canUndo: false,
     canRedo: false,
+    dirty: false,
+    file: { size: null, changedOnDisk: false, missing: false, savedAt: null, saving: false },
     annotError: null,
 
     viewportWidth: viewport.width,
@@ -401,11 +448,17 @@ export function createDocumentSession(
     },
 
     toggleSidebar() {
-      set({ sidebarOpen: !get().sidebarOpen });
+      const open = !get().sidebarOpen;
+      // The search panel lives in the sidebar, so its `open` flag — which gates
+      // the debounced query and the index poll — follows the sidebar's.
+      set({
+        sidebarOpen: open,
+        search: { ...get().search, open: open && get().sidebarTab === "search" },
+      });
     },
 
     setSidebarTab(tab: SidebarTab) {
-      set({ sidebarTab: tab, sidebarOpen: true });
+      set({ sidebarTab: tab, sidebarOpen: true, search: { ...get().search, open: tab === "search" } });
     },
 
     async loadOutline() {
@@ -485,7 +538,18 @@ export function createDocumentSession(
 
     toggleSearch(open?: boolean) {
       const next = open ?? !get().search.open;
-      set({ search: { ...get().search, open: next } });
+      if (next) {
+        set({ sidebarOpen: true, sidebarTab: "search", search: { ...get().search, open: true } });
+      } else {
+        // Closing search closes the panel it was in, rather than leaving the
+        // sidebar showing an empty tab.
+        const wasShowing = get().sidebarTab === "search";
+        set({
+          search: { ...get().search, open: false },
+          sidebarOpen: wasShowing ? false : get().sidebarOpen,
+          sidebarTab: wasShowing ? "thumbnails" : get().sidebarTab,
+        });
+      }
     },
 
     setSearchQuery(query: string) {
@@ -628,19 +692,13 @@ export function createDocumentSession(
       const { doc } = get();
       if (doc === null) return null;
       try {
-        const [created] = await invoke<[AnnotObject, EditResult]>("annot_add", {
+        const [created, result] = await invoke<[AnnotObject, EditResult]>("annot_add", {
           doc,
           object: { ...object, id: NEW_OBJECT_ID },
         });
         await get().loadAnnots([object.page]);
-        const history = await invoke<[boolean, boolean]>("annot_history", { doc });
-        set({
-          selection: [created.id],
-          tool: null,
-          canUndo: history[0],
-          canRedo: history[1],
-          annotError: null,
-        });
+        get().applyEdit(result);
+        set({ selection: [created.id], tool: null, annotError: null });
         return created;
       } catch (e) {
         // A refusal the user needs to read — a font without the glyphs they
@@ -655,7 +713,8 @@ export function createDocumentSession(
       if (doc === null || objects.length === 0) return;
       try {
         const result = await invoke<EditResult>("annot_replace", { doc, objects });
-        set({ canUndo: result.can_undo, canRedo: result.can_redo, annotError: null });
+        get().applyEdit(result);
+        set({ annotError: null });
         await get().loadAnnots([...new Set(objects.map((o) => o.page))]);
       } catch (e) {
         set({ annotError: String(e) });
@@ -671,12 +730,8 @@ export function createDocumentSession(
       const pages = [...new Set(get().selectedObjects().map((o) => o.page))];
       try {
         const result = await invoke<EditResult>("annot_delete", { doc, ids: selection });
-        set({
-          selection: [],
-          canUndo: result.can_undo,
-          canRedo: result.can_redo,
-          annotError: null,
-        });
+        get().applyEdit(result);
+        set({ selection: [], annotError: null });
       } catch (e) {
         set({ annotError: String(e) });
       }
@@ -688,7 +743,8 @@ export function createDocumentSession(
       if (doc === null) return;
       try {
         const result = await invoke<EditResult>("annot_undo", { doc, page: get().page });
-        set({ canUndo: result.can_undo, canRedo: result.can_redo, selection: [] });
+        get().applyEdit(result);
+        set({ selection: [] });
       } catch (e) {
         set({ annotError: String(e) });
       }
@@ -700,11 +756,60 @@ export function createDocumentSession(
       if (doc === null) return;
       try {
         const result = await invoke<EditResult>("annot_redo", { doc, page: get().page });
-        set({ canUndo: result.can_undo, canRedo: result.can_redo, selection: [] });
+        get().applyEdit(result);
+        set({ selection: [] });
       } catch (e) {
         set({ annotError: String(e) });
       }
       await get().loadAnnots([...get().annots.keys()]);
+    },
+
+    applyEdit(result: EditResult) {
+      set({ canUndo: result.can_undo, canRedo: result.can_redo, dirty: result.dirty });
+    },
+
+    async reloadAnnots() {
+      const pages = [...get().annots.keys()];
+      set({ annots: new Map(), annotLists: new Map(), selection: [] });
+      await get().loadAnnots(pages);
+    },
+
+    setFileStatus(status: FileStatusReply) {
+      const file = get().file;
+      const next = {
+        ...file,
+        size: status.missing ? file.size : status.size,
+        changedOnDisk: status.changed_on_disk,
+        missing: status.missing,
+      };
+      // Only a change is written: this runs on a timer, and a store update
+      // re-renders everything that reads the file state.
+      if (
+        next.size !== file.size ||
+        next.changedOnDisk !== file.changedOnDisk ||
+        next.missing !== file.missing ||
+        status.dirty !== get().dirty
+      ) {
+        set({ file: next, dirty: status.dirty });
+      }
+    },
+
+    setSaving(saving: boolean) {
+      set({ file: { ...get().file, saving } });
+    },
+
+    markSaved(report: SaveReport) {
+      set({
+        dirty: false,
+        path: report.path,
+        file: {
+          size: report.bytes,
+          changedOnDisk: false,
+          missing: false,
+          savedAt: Date.now(),
+          saving: false,
+        },
+      });
     },
 
     async loadHighlights(pages: readonly number[]) {

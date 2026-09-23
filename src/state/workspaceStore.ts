@@ -59,7 +59,15 @@ export interface WorkspaceState {
   recent: number[];
   busy: boolean;
   error: string | null;
+  /**
+   * Whether the home screen is in front. WPS keeps a "Beranda" tab pinned at
+   * the left of the tab strip; clicking it shows the recent files without
+   * closing anything, and clicking a document tab goes back. With nothing
+   * open, the home screen is all there is.
+   */
+  home: boolean;
 
+  showHome(): void;
   openFile(path: string): Promise<number | null>;
   closeTab(doc: number): Promise<void>;
   closeAll(): Promise<void>;
@@ -68,6 +76,10 @@ export interface WorkspaceState {
   session(doc: number): DocumentStore | undefined;
   /** True when any open document has edits that closing would lose. */
   hasEdits(): boolean;
+  /** The tabs with unsaved edits, in tab order. */
+  dirtyTabs(): Tab[];
+  /** A "save as" moved the tab to another file. */
+  renameTab(doc: number, path: string): void;
   activeSession(): DocumentStore;
   restoreSession(): Promise<void>;
   openStartupFiles(): Promise<void>;
@@ -100,20 +112,32 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   recent: [],
   busy: false,
   error: null,
+  home: true,
+
+  showHome() {
+    set({ home: true });
+  },
 
   session(doc: number) {
     return get().sessions.get(doc);
   },
 
   hasEdits() {
-    // `canUndo` is exactly the question: it is true from the first edit and
-    // false again only when everything has been undone. Counting annotations
-    // instead would miss a document edited and then emptied, which still has a
-    // history worth warning about.
-    for (const store of get().sessions.values()) {
-      if (store.getState().canUndo) return true;
-    }
-    return false;
+    return get().dirtyTabs().length > 0;
+  },
+
+  dirtyTabs() {
+    // The backend's `dirty`, not `canUndo`: a saved document keeps its undo
+    // history, and a document undone past its last save has changes again.
+    return get().tabs.filter((tab) => get().sessions.get(tab.doc)?.getState().dirty === true);
+  },
+
+  renameTab(doc: number, path: string) {
+    set({
+      tabs: get().tabs.map((tab) =>
+        tab.doc === doc ? { ...tab, path, name: path.split(/[\\/]/).pop() ?? path } : tab,
+      ),
+    });
   },
 
   activeSession() {
@@ -168,6 +192,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
       activeDoc: successor,
       recent: get().recent.filter((d) => d !== doc),
       error: null,
+      home: nextTabs.length === 0 ? true : get().home,
     });
     // The images of a closed document are megabytes the browser would otherwise
     // hold for the rest of the run.
@@ -190,7 +215,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   async activate(doc: number) {
     if (!get().sessions.has(doc)) return;
     const recent = [doc, ...get().recent.filter((d) => d !== doc)];
-    set({ activeDoc: doc, recent });
+    set({ activeDoc: doc, recent, home: false });
     try {
       await invoke("activate_document", { doc });
     } catch {
@@ -299,9 +324,11 @@ async function openUnguarded(
       recent: [opened.doc, ...get().recent.filter((d) => d !== opened.doc)],
       busy: false,
       error: null,
+      home: false,
     });
     void store.getState().loadOutline();
     void trimCold(get().recent);
+    afterOpen?.(opened.doc, opened.path);
     return opened.doc;
   } catch (e) {
     set({ busy: false, error: String(e) });
@@ -311,3 +338,15 @@ async function openUnguarded(
 
 /** Opens in flight, by path. See `openFile`. */
 const opening = new Map<string, Promise<number | null>>();
+
+/**
+ * Called once for every document that finishes opening, whoever opened it —
+ * the picker, the home screen, a drop, the restored session. Phase 4 asks
+ * about waiting drafts here (`fileActions.ts`); registered from outside so
+ * this store does not import the dialogs that ask.
+ */
+let afterOpen: ((doc: number, path: string) => void) | null = null;
+
+export function setAfterOpen(hook: ((doc: number, path: string) => void) | null): void {
+  afterOpen = hook;
+}

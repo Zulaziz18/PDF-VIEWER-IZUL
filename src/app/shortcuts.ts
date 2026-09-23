@@ -1,7 +1,7 @@
 /**
  * Keyboard shortcuts (SPEC 12).
  *
- * Only the ones Phase 1 can honour. They live in one place rather than on the
+ * Only the ones the current phase can honour. They live in one place rather than on the
  * controls themselves so that Phase 8 can make them user-editable by changing
  * this table and nothing else, and so that the list in the manual is derived
  * from the same source as the behaviour.
@@ -12,20 +12,11 @@
  */
 
 import { useEffect } from "react";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { useDocument } from "@/state/documentStore";
+import { useUi } from "@/state/uiStore";
 import { useWorkspace } from "@/state/workspaceStore";
-import { viewport } from "./viewportHandle";
-
-async function pickFile(): Promise<void> {
-  const chosen = await openDialog({
-    multiple: false,
-    filters: [{ name: "PDF", extensions: ["pdf"] }],
-  });
-  if (typeof chosen === "string") {
-    await useWorkspace.getState().openFile(chosen);
-  }
-}
+import { goToPage, pickAndOpen } from "./actions";
+import { requestCloseTab, saveDocument } from "./fileActions";
 
 export function useShortcuts(): void {
   useEffect(() => {
@@ -39,19 +30,24 @@ export function useShortcuts(): void {
         (target instanceof HTMLElement && target.isContentEditable);
 
       if (e.ctrlKey || e.metaKey) {
+        // Shift turns "s" into "S"; Ctrl+S and Ctrl+Shift+S are the same key.
+        if (e.key.toLowerCase() === "s") {
+          e.preventDefault();
+          // Saving while typing in a text box is exactly when people press it.
+          void saveDocument(undefined, e.shiftKey ? "saveAs" : "save");
+          return;
+        }
         switch (e.key) {
           case "o":
             e.preventDefault();
-            void pickFile();
+            void pickAndOpen();
             return;
-          case "w": {
+          case "w":
             e.preventDefault();
             // Closes the tab, not the window: with tabs, Ctrl+W meaning "quit"
             // would throw away every other document the user has open.
-            const active = useWorkspace.getState().activeDoc;
-            if (active !== null) void useWorkspace.getState().closeTab(active);
+            void requestCloseTab();
             return;
-          }
           case "f":
             e.preventDefault();
             store.toggleSearch(true);
@@ -110,6 +106,10 @@ export function useShortcuts(): void {
           store.setTool(null);
           return;
         }
+        if (useUi.getState().markup !== null) {
+          useUi.getState().armMarkup(null);
+          return;
+        }
         if (store.selection.length > 0) {
           store.select([]);
           return;
@@ -130,13 +130,9 @@ export function useShortcuts(): void {
       }
       // Page-at-a-time navigation, which is what the page buttons do.
       if (e.key === "n" || e.key === "j") {
-        const next = Math.min(store.page + 1, Math.max(0, store.pageCount - 1));
-        store.setPage(next);
-        viewport()?.goToPage(next);
+        goToPage(store.page + 1);
       } else if (e.key === "p" || e.key === "k") {
-        const prev = Math.max(0, store.page - 1);
-        store.setPage(prev);
-        viewport()?.goToPage(prev);
+        goToPage(store.page - 1);
       }
     };
     window.addEventListener("keydown", onKey);

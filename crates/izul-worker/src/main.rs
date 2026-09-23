@@ -30,6 +30,7 @@
     )
 )]
 
+mod saving;
 mod session;
 
 use std::path::PathBuf;
@@ -162,6 +163,7 @@ async fn run(boot: Bootstrap) -> Result<(), String> {
     .map_err(|e| format!("salam versi: {e}"))?;
 
     let mut sess = Session::new(engine);
+    let mut bench = saving::Workbench::new();
     tracing::info!(
         worker = boot.worker_id,
         slots = boot.shm_slots,
@@ -182,7 +184,7 @@ async fn run(boot: Bootstrap) -> Result<(), String> {
             tracing::info!("perintah shutdown diterima");
             return Ok(());
         }
-        handle(&mut channel, &ring, &mut sess, env).await?;
+        handle(&mut channel, &ring, &mut sess, &mut bench, env).await?;
     }
 }
 
@@ -190,6 +192,7 @@ async fn handle<C>(
     channel: &mut C,
     ring: &TileRing,
     sess: &mut Session,
+    bench: &mut saving::Workbench,
     env: Envelope<Request>,
 ) -> Result<(), String>
 where
@@ -238,6 +241,7 @@ where
 
         Request::Close { doc } => {
             sess.close(doc);
+            bench.forget(doc);
             reply(channel, id, Response::Closed { doc }).await
         }
 
@@ -513,6 +517,36 @@ where
         }
 
         Request::Shutdown => Ok(()),
+
+        request @ (Request::PageAnnots { .. }
+        | Request::WorkOpen { .. }
+        | Request::WorkPlaceholders { .. }
+        | Request::WorkFlatten { .. }
+        | Request::WorkExtract { .. }
+        | Request::WorkRender { .. }
+        | Request::WorkSave { .. }
+        | Request::WorkClose { .. }
+        | Request::BlobRead { .. }
+        | Request::BlobDrop { .. }
+        | Request::VerifyFile { .. }) => {
+            let engine = sess.engine();
+            let viewing =
+                |doc: DocId, page: u32| sess.get(doc).map(|open| open.doc.izul_annots(page));
+            match bench.handle(engine, viewing, request) {
+                Ok(response) => reply(channel, id, response).await,
+                Err(saving::Failure::Pdf(doc, e)) => fail(channel, id, doc, &e).await,
+                Err(saving::Failure::NoWorkingCopy(doc)) => {
+                    fail_kind(channel, id, Some(doc), ErrorKind::BadRequest, "doc.unknown").await
+                }
+                Err(saving::Failure::NoBlob) => {
+                    fail_kind(channel, id, None, ErrorKind::BadRequest, "blob.unknown").await
+                }
+                Err(saving::Failure::Encode(detail)) => {
+                    tracing::warn!(%detail, "enkode gagal");
+                    fail_kind(channel, id, None, ErrorKind::EngineFault, "encode.failed").await
+                }
+            }
+        }
     }
 }
 

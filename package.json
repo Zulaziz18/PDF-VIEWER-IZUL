@@ -1,7 +1,7 @@
 {
   "name": "pdf-studio-izul",
   "private": true,
-  "version": "7.0.0-alpha.3",
+  "version": "7.0.0-alpha.4",
   "type": "module",
   "scripts": {
     "dev": "npm run worker && vite",
@@ -12,7 +12,9 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "worker": "cargo build -p izul-worker",
-    "worker:release": "cargo build -p izul-worker --release"
+    "worker:release": "cargo build -p izul-worker --release",
+    "ui:shots": "node tools/ui-harness/shoot.mjs",
+    "icons": "node tools/icons/build.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",
@@ -33,6 +35,7 @@
     "@vitejs/plugin-react": "6.1.1",
     "eslint": "10.9.1",
     "globals": "^17.12.0",
+    "playwright-core": "1.56.1",
     "tailwindcss": "4.3.3",
     "typescript": "6.0.3",
     "vite": "8.2.2",

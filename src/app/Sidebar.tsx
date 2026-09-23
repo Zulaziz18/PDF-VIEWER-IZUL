@@ -11,10 +11,13 @@
 
 import { useEffect, useRef, useState, type JSX } from "react";
 import { AnnotationList } from "./AnnotationList";
-import { useDocument, type OutlineEntry } from "@/state/documentStore";
+import { SearchPanel } from "./SearchPanel";
+import { Icon, type IconName, type Tone } from "@/design/Icon";
+import { IconButton } from "@/design/controls";
+import { useDocument, type OutlineEntry, type SidebarTab } from "@/state/documentStore";
 import { paintThumbnail } from "@/viewport/thumbnails";
 import { viewport } from "./viewportHandle";
-import { t } from "@/i18n";
+import { t, type StringKey } from "@/i18n";
 
 function Thumbnail(props: {
   doc: number;
@@ -61,7 +64,9 @@ function Thumbnail(props: {
           ref={canvasRef}
           className={[
             "max-w-full h-auto rounded-[2px] bg-white",
-            props.active ? "outline outline-2 outline-[var(--izul-accent)]" : "",
+            props.active
+              ? "outline outline-2 outline-[var(--izul-accent)]"
+              : "outline outline-1 outline-[var(--izul-border)]",
             drawn ? "" : "opacity-0",
           ].join(" ")}
         />
@@ -190,6 +195,63 @@ function ThumbnailStrip(props: {
   );
 }
 
+const PANEL_TITLE: Record<SidebarTab, StringKey> = {
+  thumbnails: "sidebar.thumbnails",
+  outline: "sidebar.outline",
+  annots: "sidebar.annots",
+  search: "sidebar.search",
+};
+
+/** The icon rail's entries, top to bottom (SPEC 12, revised 2026-09-23). */
+export const RAIL: ReadonlyArray<{ tab: SidebarTab; icon: IconName; tone: Tone }> = [
+  { tab: "thumbnails", icon: "thumbnails", tone: "blue" },
+  { tab: "outline", icon: "bookmark", tone: "orange" },
+  { tab: "annots", icon: "comments", tone: "amber" },
+  { tab: "search", icon: "search", tone: "violet" },
+];
+
+/**
+ * The vertical icon rail at the window's left edge, as in WPS Office: one icon
+ * per side panel. Clicking the panel that is already showing folds it away.
+ */
+export function LeftRail(): JSX.Element {
+  const open = useDocument((s) => s.sidebarOpen);
+  const tab = useDocument((s) => s.sidebarTab);
+  return (
+    <nav
+      aria-label={t("sidebar.label")}
+      className="w-11 shrink-0 flex flex-col items-center gap-1 pt-2 bg-[var(--izul-chrome)] border-r border-[var(--izul-border)]"
+    >
+      {RAIL.map((item) => {
+        const active = open && tab === item.tab;
+        return (
+          <button
+            key={item.tab}
+            type="button"
+            aria-pressed={active}
+            aria-label={t(PANEL_TITLE[item.tab])}
+            title={t(PANEL_TITLE[item.tab])}
+            onClick={() => {
+              const store = useDocument.getState();
+              if (active) store.toggleSidebar();
+              else store.setSidebarTab(item.tab);
+            }}
+            className={[
+              "relative w-9 h-9 grid place-items-center rounded-[8px]",
+              active ? "bg-[var(--izul-accent-soft)]" : "hover:bg-[var(--izul-chrome-hover)]",
+            ].join(" ")}
+          >
+            {active && (
+              <span aria-hidden="true" className="absolute -left-1 top-2 bottom-2 w-[3px] rounded-full bg-[var(--izul-accent)]" />
+            )}
+            <Icon name={item.icon} size={20} tone={active ? item.tone : "neutral"} />
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
 export function Sidebar(): JSX.Element | null {
   const open = useDocument((s) => s.sidebarOpen);
   const tab = useDocument((s) => s.sidebarTab);
@@ -205,38 +267,28 @@ export function Sidebar(): JSX.Element | null {
 
   return (
     <aside
-      className="w-[220px] shrink-0 border-r border-[var(--izul-border)] bg-[var(--izul-surface)] flex flex-col"
-      aria-label={t("sidebar.label")}
+      className="w-[248px] shrink-0 border-r border-[var(--izul-border)] bg-[var(--izul-surface)] flex flex-col"
+      aria-label={t(PANEL_TITLE[tab])}
     >
-      <div className="flex p-1 gap-1 border-b border-[var(--izul-border)]" role="tablist">
-        {(["thumbnails", "outline", "annots"] as const).map((which) => (
-          <button
-            key={which}
-            type="button"
-            role="tab"
-            aria-selected={tab === which}
-            onClick={() => useDocument.getState().setSidebarTab(which)}
-            className={[
-              "flex-1 h-8 rounded-[8px] text-[12px]",
-              tab === which
-                ? "bg-[var(--izul-accent)] text-white"
-                : "hover:bg-[var(--izul-surface-raised)]",
-            ].join(" ")}
-          >
-            {t(
-              which === "thumbnails"
-                ? "sidebar.thumbnails"
-                : which === "outline"
-                  ? "sidebar.outline"
-                  : "sidebar.annots",
-            )}
-          </button>
-        ))}
-      </div>
+      <header className="h-10 shrink-0 flex items-center pl-3 pr-1.5 border-b border-[var(--izul-border)]">
+        <h2 className="flex-1 text-[13px] font-semibold">{t(PANEL_TITLE[tab])}</h2>
+        <IconButton
+          icon="dismiss"
+          size={16}
+          label={t("sidebar.close")}
+          onClick={() => {
+            const store = useDocument.getState();
+            if (tab === "search") store.toggleSearch(false);
+            else store.toggleSidebar();
+          }}
+        />
+      </header>
 
       <div className="flex-1 min-h-0 overflow-auto">
         {tab === "annots" ? (
           <AnnotationList />
+        ) : tab === "search" ? (
+          <SearchPanel />
         ) : tab === "thumbnails" ? (
           <ThumbnailStrip
             doc={doc}

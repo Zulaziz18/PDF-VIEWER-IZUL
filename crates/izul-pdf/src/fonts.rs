@@ -38,34 +38,15 @@ use crate::error::{PdfError, Result};
 /// are written in, with no rounding games in between.
 const MEASURE_SIZE: f32 = 1000.0;
 
-/// The standard-14 faces, chosen by family and style.
-///
-/// Times New Roman is the default SPEC 11.2 names; it maps to Times, whose
-/// metrics are identical by design — that is what "metrically compatible"
-/// means, and it is why a PDF with Times renders the same on a machine that has
-/// only Times New Roman.
+/// The standard-14 faces, chosen by family and style. The rule lives in
+/// `izul-model` so the UI process, which writes `/BaseFont` when saving, uses
+/// the very same one without linking PDFium.
 pub fn base_font_of(spec: &FontSpec) -> &'static str {
-    base_font_name(spec)
+    izul_model::font::standard_base_font(spec)
 }
 
 fn base_font_name(spec: &FontSpec) -> &'static str {
-    let family = spec.family.to_ascii_lowercase();
-    let serif = family.contains("times") || family.contains("serif") && !family.contains("sans");
-    let mono = family.contains("courier") || family.contains("mono");
-    match (mono, serif, spec.bold, spec.italic) {
-        (true, _, false, false) => "Courier",
-        (true, _, true, false) => "Courier-Bold",
-        (true, _, false, true) => "Courier-Oblique",
-        (true, _, true, true) => "Courier-BoldOblique",
-        (_, true, false, false) => "Times-Roman",
-        (_, true, true, false) => "Times-Bold",
-        (_, true, false, true) => "Times-Italic",
-        (_, true, true, true) => "Times-BoldItalic",
-        (_, _, false, false) => "Helvetica",
-        (_, _, true, false) => "Helvetica-Bold",
-        (_, _, false, true) => "Helvetica-Oblique",
-        (_, _, true, true) => "Helvetica-BoldOblique",
-    }
+    izul_model::font::standard_base_font(spec)
 }
 
 struct Face {
@@ -73,6 +54,18 @@ struct Face {
     ascent_milli: i16,
     descent_milli: i16,
     widths: RefCell<HashMap<char, u16>>,
+}
+
+impl StandardFonts {
+    /// The `/BaseFont` a handle this context gave out stands for — what the
+    /// file writer needs to name the font the appearance stream uses.
+    pub fn base_font(&self, font: FontRef) -> Option<&'static str> {
+        self.by_name
+            .borrow()
+            .iter()
+            .find(|(_, f)| **f == font)
+            .map(|(name, _)| *name)
+    }
 }
 
 /// Font metrics for the standard 14 faces, owned by one document.

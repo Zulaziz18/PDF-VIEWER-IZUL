@@ -3,6 +3,12 @@
  *
  * The document is the star; the interface is the staff. Every value here is one
  * the SPEC names explicitly, so a component never invents a colour or a radius.
+ *
+ * Since the 2026-09-23 revision of SPEC 12 the chrome follows the layout of
+ * WPS Office's PDF editor (tabbed title bar, ribbon, icon rail, bottom bar), so
+ * there are two chrome layers — `--izul-chrome` behind the tabs and menus, and
+ * `--izul-surface` for the ribbon card and the panels — and per-function tones
+ * for the ribbon icons. None of WPS's own artwork is used; the tones are ours.
  */
 @import "tailwindcss";
 
@@ -12,6 +18,8 @@
   /* Canvas is a neutral, never pure white: it has to sit behind a white page
      without the page edge disappearing into it. */
   --izul-canvas: #f5f5f4;
+  --izul-chrome: #eeeeec;
+  --izul-chrome-hover: #e2e2df;
   --izul-surface: #ffffff;
   --izul-surface-raised: #fafaf9;
   --izul-border: #e0e0dd;
@@ -20,8 +28,29 @@
 
   /* One accent for the whole application. Other colours are status only. */
   --izul-accent: #2f6feb;
+  --izul-accent-soft: #e8f0fe;
+  /* The strip that says the file on disk changed: a warning, not an error. */
+  --izul-warning-soft: #fff4e0;
+  /* Text on an accent-filled button: 4.5:1 or better in both themes (SPEC 14). */
+  --izul-on-accent: #ffffff;
   --izul-danger: #d1343c;
   --izul-unsaved: #e07b26;
+  /* Brand mark only: the "PDF" file badge and the active ribbon tab's rule,
+     which is where WPS puts its component colour. Never a status colour. */
+  --izul-brand: #d7373f;
+
+  /* Icon tones, one per family of functions. An icon's outline is drawn in its
+     tone and its filled silhouette underneath at low opacity. */
+  --izul-tone-brand: var(--izul-brand);
+  --izul-tone-blue: #2f6feb;
+  --izul-tone-amber: #d98e04;
+  --izul-tone-rose: #d6336c;
+  --izul-tone-green: #2b8a3e;
+  --izul-tone-violet: #7048e8;
+  --izul-tone-teal: #0c8599;
+  --izul-tone-orange: #e8590c;
+  --izul-tone-neutral: #4b4b52;
+  --izul-tone-fill-opacity: 0.16;
 
   --izul-radius: 8px;
   --izul-radius-panel: 12px;
@@ -42,12 +71,28 @@
   color-scheme: dark;
   /* Not pure black: a true-black canvas makes a white page glare. */
   --izul-canvas: #1c1c1e;
-  --izul-surface: #252528;
-  --izul-surface-raised: #2e2e32;
+  --izul-chrome: #202023;
+  --izul-chrome-hover: #2c2c30;
+  --izul-surface: #28282b;
+  --izul-surface-raised: #323236;
   --izul-border: #3a3a3f;
   --izul-text: #f2f2f4;
-  --izul-text-dim: #9a9aa2;
+  --izul-text-dim: #a2a2aa;
   --izul-accent: #6f9dff;
+  --izul-accent-soft: #24324d;
+  --izul-warning-soft: #3d3020;
+  --izul-on-accent: #0b1a33;
+  --izul-brand: #ff6b6b;
+
+  --izul-tone-blue: #7aa7ff;
+  --izul-tone-amber: #ffc53d;
+  --izul-tone-rose: #f783ac;
+  --izul-tone-green: #69db7c;
+  --izul-tone-violet: #b197fc;
+  --izul-tone-teal: #3bc9db;
+  --izul-tone-orange: #ffa94d;
+  --izul-tone-neutral: #d0d0d6;
+  --izul-tone-fill-opacity: 0.22;
 }
 
 * {

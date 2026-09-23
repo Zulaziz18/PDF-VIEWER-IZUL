@@ -1,0 +1,48 @@
+Fase 4 — apakah berkas yang disimpan tampil benar, dan di mesin siapa
+Diukur 23 September 2026, kontainer Linux x86_64.
+
+1. Paritas layar vs berkas tersimpan (SPEC 3.3, ambang 0,5 %)
+   cargo test -p izul-pdf --lib a_saved_annotation_renders_like_its_golden -- --nocapture
+
+   Sebelas jenis tanpa teks, masing-masing tegak dan diputar, disimpan lewat
+   jalur simpan sungguhan lalu dirender PDFium sebagai anotasi, dibandingkan
+   dengan golden Fase 3 (AP yang sama digambar sebagai isi halaman):
+
+     Highlight Underline StrikeOut Image Ink Line Arrow Rect Ellipse Polygon Note
+     22 kasus: 0,000 % piksel berbeda (semuanya)
+
+   Pemeriksaan kewarasan: golden yang sama dibandingkan dengan halaman putih
+   polos berbeda 19,444 % (stabilo) — golden memang berisi tinta, jadi 0,000 %
+   berarti identik, bukan dua gambar kosong.
+   Dua jenis berteks (FreeText, Stamp) tidak masuk angka ini:
+   golden Fase 3 memakai font Type 3 buatan test, berkas sungguhan memakai
+   standard-14. Letaknya dijaga test round-trip, bukan piksel.
+
+2. Mesin PDF lain (bukan PDFium)
+   cargo run -p izul-bench --bin fase4-uji
+   pdftoppm -r 80 -png test-fixtures/fase4-uji-simpan.pdf        (poppler)
+   mutool draw -r 80 -o mupdf-%d.png test-fixtures/fase4-uji-simpan.pdf  (MuPDF)
+
+   Keempat belas anotasi tergambar di kedua mesin, di kotaknya masing-masing,
+   termasuk gambar ber-SMask, garis putus, panah, poligon terisi, stempel, dan
+   kotak diputar 20° dengan opasitas 50 %.
+
+     poppler vs MuPDF, berkas beranotasi : 1,61 % piksel beda > 48/255
+     poppler vs MuPDF, berkas rata       : 1,59 %
+     poppler: beranotasi vs rata         : 0,00 %
+
+   Selisih poppler–MuPDF sama besar dengan dan tanpa anotasi hidup, jadi itu
+   perbedaan antialias dan font kedua mesin, bukan cara anotasi ditulis. Versi
+   rata identik dengan versi beranotasi: meratakan tidak mengubah tampilan.
+
+3. Struktur
+   pikepdf (qpdf) check_pdf_syntax : tanpa galat
+   pypdf strict=True               : terbaca, tanpa peringatan (setelah tabel
+                                     xref pembaruan dibuka dengan objek 0)
+   Tiap anotasi: /Subtype standar, /NM izul-<id>, /AP, kunci per jenis
+   (/QuadPoints, /InkList, /L, /Vertices, /IC, /DA) dan /IzulObj.
+
+4. Belum diperiksa di sini: Adobe Acrobat, Chrome, Edge (tidak ada di
+   kontainer). Chrome dan Edge memakai PDFium, mesin yang sama dengan
+   aplikasi; Acrobat adalah mesin ketiga yang independen. Langkahnya di
+   TESTING.md, "Hasil Fase 4".

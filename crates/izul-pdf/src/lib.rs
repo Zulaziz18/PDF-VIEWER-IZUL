@@ -35,6 +35,7 @@ pub mod fonts;
 pub mod geom;
 #[cfg(test)]
 mod golden;
+pub mod izul;
 pub mod outline;
 pub mod render;
 pub mod sys;

@@ -15,12 +15,12 @@
 //! process owning the window never links a PDF parser (SPEC 5) without making
 //! every text edit a round trip.
 
-use std::collections::HashMap;
+use std::collections::{BTreeSet, HashMap};
 use std::sync::Arc;
 
 use izul_ipc::message::{DocId, Request, Response};
 use izul_model::annot::{AnnotObject, FontSpec};
-use izul_model::display::FontRef;
+use izul_model::display::{FontRef, ImageRef};
 use izul_model::font::{FaceMetrics, FontCtx, GlyphMetrics};
 use izul_model::ops::{AnnotDoc, CommandStack, EditError, Op, Transaction};
 use parking_lot::Mutex;
@@ -109,6 +109,19 @@ impl FontCache {
     }
 }
 
+impl FontCache {
+    /// The standard-14 face a handle stands for, for `/BaseFont` when saving.
+    pub fn base_font(&self, font: FontRef) -> Option<&'static str> {
+        let (key, _) = self.faces.get(font.0 as usize)?;
+        Some(izul_model::font::standard_base_font(&FontSpec {
+            family: key.family.clone(),
+            size: 12.0,
+            bold: key.bold,
+            italic: key.italic,
+        }))
+    }
+}
+
 impl FontCtx for FontCache {
     fn resolve(&self, spec: &FontSpec) -> Option<FontRef> {
         self.index_of(&FaceKey::of(spec)).map(|i| FontRef(i as u32))
@@ -147,6 +160,22 @@ pub struct StoredImage {
     pub media_type: String,
 }
 
+/// Font names and image bytes, handed to `izul_write::patch`.
+#[derive(Debug)]
+pub struct SaveAssets {
+    bases: HashMap<u32, &'static str>,
+    images: HashMap<u32, Vec<u8>>,
+}
+
+impl izul_write::save::Assets for SaveAssets {
+    fn base_font(&self, font: FontRef) -> Option<&'static str> {
+        self.bases.get(&font.0).copied()
+    }
+    fn image(&self, image: ImageRef) -> Option<Vec<u8>> {
+        self.images.get(&image.0).cloned()
+    }
+}
+
 /// Everything the annotation layer keeps for the life of the run.
 #[derive(Debug, Default)]
 pub struct AnnotState {
@@ -164,6 +193,26 @@ pub struct AnnotState {
 struct DocEdits {
     doc: AnnotDoc,
     stack: CommandStack,
+    /// Bumped by every change, undo and redo included. `saved` is its value
+    /// when the file was last written (or opened), so "unsaved changes" is
+    /// exactly `revision != saved` — which, unlike `can_undo`, is false again
+    /// after a save and true after undoing past one.
+    revision: u64,
+    saved: u64,
+    /// Revision last written as a draft, so autosave writes only what changed.
+    drafted: u64,
+    /// Pages whose annotations have been read from the file into `doc`. The
+    /// editor owns these pages' annotations; a save rewrites exactly these.
+    imported: BTreeSet<u32>,
+}
+
+/// The unsaved state of one document, as the autosave draft stores it.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct Snapshot {
+    pub pages: Vec<u32>,
+    pub objects: Vec<AnnotObject>,
+    /// Images the objects draw: (handle, media type, bytes).
+    pub images: Vec<(u32, String, Vec<u8>)>,
 }
 
 /// What an edit did, for the frontend to reconcile with.
@@ -172,6 +221,8 @@ pub struct EditResult {
     pub objects: Vec<AnnotObject>,
     pub can_undo: bool,
     pub can_redo: bool,
+    /// Whether the document has changes the file does not.
+    pub dirty: bool,
 }
 
 impl AnnotState {
@@ -230,7 +281,7 @@ impl AnnotState {
         })
     }
 
-    fn result(edits: &DocEdits, page: Option<u32>) -> EditResult {
+    fn result(edits: &mut DocEdits, page: Option<u32>) -> EditResult {
         EditResult {
             objects: match page {
                 Some(p) => edits.doc.page(p).into_iter().cloned().collect(),
@@ -238,7 +289,227 @@ impl AnnotState {
             },
             can_undo: edits.stack.can_undo(),
             can_redo: edits.stack.can_redo(),
+            dirty: edits.revision != edits.saved,
         }
+    }
+
+    /// Records one change. Called by every mutation after it succeeds.
+    fn changed(edits: &mut DocEdits) {
+        edits.revision += 1;
+    }
+
+    // ---- Phase 4: saving, importing, drafts ------------------------------
+
+    /// Undo, redo and unsaved state without the objects, for the frontend
+    /// after something other than an edit changed them (a restored draft).
+    pub fn edit_state(&self, doc: u64) -> EditResult {
+        self.with(doc, |e| EditResult {
+            objects: Vec::new(),
+            can_undo: e.stack.can_undo(),
+            can_redo: e.stack.can_redo(),
+            dirty: e.revision != e.saved,
+        })
+    }
+
+    pub fn is_dirty(&self, doc: u64) -> bool {
+        self.with(doc, |e| e.revision != e.saved)
+    }
+
+    /// The file now holds everything the editor has.
+    pub fn mark_saved(&self, doc: u64) {
+        self.with(doc, |e| {
+            e.saved = e.revision;
+            e.drafted = e.revision;
+        });
+    }
+
+    /// The current edits are accounted for by a draft decision — written,
+    /// or deliberately thrown away — so autosave leaves them alone until the
+    /// next edit.
+    pub fn mark_drafted(&self, doc: u64) {
+        self.with(doc, |e| e.drafted = e.revision);
+    }
+
+    pub fn is_imported(&self, doc: u64, page: u32) -> bool {
+        self.with(doc, |e| e.imported.contains(&page))
+    }
+
+    pub fn imported_pages(&self, doc: u64) -> Vec<u32> {
+        self.with(doc, |e| e.imported.iter().copied().collect())
+    }
+
+    /// Takes the annotations a file carries on `page` into the editor.
+    ///
+    /// Not an undoable edit and not a change: opening a file is neither.
+    /// Objects whose id is already taken are renumbered rather than refused —
+    /// a file edited by two copies of this application could carry the same
+    /// id twice, and both annotations are the user's.
+    pub fn import_page(&self, doc: u64, page: u32, objects: Vec<AnnotObject>) -> usize {
+        self.with(doc, |e| {
+            if !e.imported.insert(page) {
+                return 0;
+            }
+            let mut n = 0;
+            for mut obj in objects {
+                obj.page = page;
+                if e.doc.get(obj.id).is_some() || obj.id.0 == 0 {
+                    obj.id = e.doc.fresh_id();
+                }
+                if e.doc.import(obj).is_ok() {
+                    n += 1;
+                }
+            }
+            n
+        })
+    }
+
+    /// The draft for autosave, or `None` when nothing changed since the last
+    /// draft or save.
+    pub fn snapshot_if_changed(&self, doc: u64) -> Option<Snapshot> {
+        let snap = self.with(doc, |e| {
+            if e.revision == e.drafted || e.revision == e.saved {
+                return None;
+            }
+            e.drafted = e.revision;
+            Some((
+                e.imported.iter().copied().collect::<Vec<_>>(),
+                e.doc.iter().cloned().collect::<Vec<_>>(),
+            ))
+        })?;
+        Some(self.snapshot_from(doc, snap.0, snap.1))
+    }
+
+    /// The draft, unconditionally — for a reload that must not lose edits.
+    pub fn snapshot(&self, doc: u64) -> Snapshot {
+        let (pages, objects) = self.with(doc, |e| {
+            (
+                e.imported.iter().copied().collect(),
+                e.doc.iter().cloned().collect(),
+            )
+        });
+        self.snapshot_from(doc, pages, objects)
+    }
+
+    fn snapshot_from(&self, doc: u64, pages: Vec<u32>, objects: Vec<AnnotObject>) -> Snapshot {
+        let images = self
+            .images
+            .lock()
+            .iter()
+            .filter(|((d, _), _)| *d == doc)
+            .map(|((_, r), img)| (*r, img.media_type.clone(), img.bytes.clone()))
+            .collect();
+        Snapshot {
+            pages,
+            objects,
+            images,
+        }
+    }
+
+    /// Replaces the editor's state with a draft. The pages it covers count
+    /// as imported, and the document counts as changed.
+    pub fn restore(&self, doc: u64, snap: Snapshot) {
+        {
+            let mut images = self.images.lock();
+            images.retain(|(d, _), _| *d != doc);
+            for (r, media_type, bytes) in snap.images {
+                images.insert((doc, r), StoredImage { bytes, media_type });
+            }
+        }
+        self.with(doc, |e| {
+            let revision = e.revision + 1;
+            *e = DocEdits::default();
+            for obj in snap.objects {
+                let _ = e.doc.import(obj);
+            }
+            e.imported = snap.pages.into_iter().collect();
+            e.revision = revision;
+            e.saved = 0;
+        });
+    }
+
+    /// Everything a save writes: the objects on the imported pages with the
+    /// display lists the canvas draws them from.
+    ///
+    /// An object whose list cannot be built is an **error**, never a skip: a
+    /// save rewrites every annotation on these pages, so leaving one out would
+    /// delete it from the file. (The round-trip test caught exactly that — a
+    /// text box vanishing on the second save of a freshly opened file, whose
+    /// font metrics had not been fetched yet.) Callers make sure the metrics
+    /// are cached first; see [`AnnotState::ensure_all_metrics`].
+    #[allow(clippy::type_complexity)]
+    pub fn write_set(
+        &self,
+        doc: u64,
+    ) -> Result<(Vec<u32>, Vec<(AnnotObject, izul_model::DisplayList)>), String> {
+        let fonts = self.fonts.lock();
+        self.with(doc, |e| {
+            let mut pages: BTreeSet<u32> = e.imported.clone();
+            // An object on a page never imported would mean the page's own
+            // annotations were never read — saving would drop them. The
+            // commands import before editing, so this is a belt.
+            for obj in e.doc.iter() {
+                pages.insert(obj.page);
+            }
+            let mut objects = Vec::with_capacity(e.doc.len());
+            for obj in e.doc.iter() {
+                let list = izul_model::build::display_list(obj, &*fonts).map_err(|err| {
+                    format!(
+                        "anotasi {} di halaman {} tidak dapat digambar ({err}); penyimpanan dibatalkan agar tidak hilang",
+                        obj.id.0,
+                        obj.page + 1
+                    )
+                })?;
+                objects.push((obj.clone(), list));
+            }
+            Ok((pages.into_iter().collect(), objects))
+        })
+    }
+
+    /// Fetches the metrics of every face any object of `doc` draws text in.
+    pub async fn ensure_all_metrics(
+        &self,
+        pool: &Arc<RwLock<Pool>>,
+        doc: u64,
+    ) -> Result<(), String> {
+        for obj in self.objects(doc, None) {
+            let (spec, text) = match &obj.payload {
+                izul_model::annot::AnnotPayload::FreeText { font, text, .. } => {
+                    (font, text.as_str())
+                }
+                izul_model::annot::AnnotPayload::Stamp { font, label, .. } => {
+                    (font, label.as_str())
+                }
+                _ => continue,
+            };
+            if text.is_empty() {
+                continue;
+            }
+            let missing = self.ensure_metrics(pool, doc, spec, text).await?;
+            if !missing.is_empty() {
+                let chars: String = missing.into_iter().take(8).collect();
+                return Err(format!(
+                    "font {} tidak memuat karakter: {chars}",
+                    spec.family
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    /// What the file writer needs to resolve handles in a display list.
+    pub fn assets(&self, doc: u64) -> SaveAssets {
+        let fonts = self.fonts.lock();
+        let bases = (0..fonts.faces.len() as u32)
+            .filter_map(|i| fonts.base_font(FontRef(i)).map(|b| (i, b)))
+            .collect();
+        let images = self
+            .images
+            .lock()
+            .iter()
+            .filter(|((d, _), _)| *d == doc)
+            .map(|((_, r), img)| (*r, img.bytes.clone()))
+            .collect();
+        SaveAssets { bases, images }
     }
 
     /// Applies one transaction and reports the page afterwards.
@@ -249,8 +520,8 @@ impl AnnotState {
         ops: Transaction,
     ) -> Result<EditResult, EditError> {
         self.with(doc, |edits| {
-            let DocEdits { doc: model, stack } = edits;
-            stack.commit(model, ops)?;
+            edits.stack.commit(&mut edits.doc, ops)?;
+            Self::changed(edits);
             Ok(Self::result(edits, page))
         })
     }
@@ -271,6 +542,7 @@ impl AnnotState {
             edits
                 .stack
                 .commit(&mut edits.doc, vec![Op::Insert(Box::new(obj))])?;
+            Self::changed(edits);
             Ok((created, Self::result(edits, Some(page))))
         })
     }
@@ -292,6 +564,7 @@ impl AnnotState {
                 });
             }
             edits.stack.commit(&mut edits.doc, ops)?;
+            Self::changed(edits);
             Ok(Self::result(edits, page))
         })
     }
@@ -309,22 +582,25 @@ impl AnnotState {
                 ops.push(Op::Delete(Box::new(obj)));
             }
             edits.stack.commit(&mut edits.doc, ops)?;
+            Self::changed(edits);
             Ok(Self::result(edits, page))
         })
     }
 
     pub fn undo(&self, doc: u64, page: Option<u32>) -> Result<EditResult, EditError> {
         self.with(doc, |edits| {
-            let DocEdits { doc: model, stack } = edits;
-            stack.undo(model)?;
+            if edits.stack.undo(&mut edits.doc)? {
+                Self::changed(edits);
+            }
             Ok(Self::result(edits, page))
         })
     }
 
     pub fn redo(&self, doc: u64, page: Option<u32>) -> Result<EditResult, EditError> {
         self.with(doc, |edits| {
-            let DocEdits { doc: model, stack } = edits;
-            stack.redo(model)?;
+            if edits.stack.redo(&mut edits.doc)? {
+                Self::changed(edits);
+            }
             Ok(Self::result(edits, page))
         })
     }

@@ -332,20 +332,93 @@ Semua objek hidup: pilih, geser, ubah ukuran, putar, hapus. Seleksi jamak, ratak
 
 ## 12. Desain UI/UX
 
-**Dokumen adalah bintangnya, antarmuka adalah pelayan.** Kalau UI menarik perhatian saat orang sedang membaca, desainnya gagal.
+> **Direvisi 23 September 2026 atas keputusan pemilik proyek.** Tata letak kini
+> meniru struktur dan nuansa **WPS Office (editor PDF)** semirip mungkin, karena
+> itu antarmuka yang sudah dikenal pengguna sehari-hari. Alasan: aplikasi ini
+> dipakai sebagai pengganti WPS, dan pengguna yang tidak perlu belajar ulang tata
+> letak lebih cepat produktif daripada pengguna yang disuguhi antarmuka "lebih
+> bersih" tapi asing. Yang **tidak** ikut berubah: Bagian 2 (tanpa jaringan, akun,
+> cloud, atau banner promo) dan larangan stub/tombol mati di Bagian 0. Logo,
+> nama, dan gambar ikon milik WPS tidak disalin; yang ditiru hanya susunan.
+> Versi sebelum revisi ada di riwayat git berkas ini.
 
-- Grid 8px. Radius 8px (12px panel besar). Tanpa gradien, tanpa glassmorphism, tanpa bayangan tebal.
+**Dokumen tetap bintangnya.** Kerangka WPS dipakai karena sudah dikenal, bukan
+supaya antarmuka tampil menonjol: selama membaca, kanvas dan halaman mendominasi
+layar.
+
+**Kerangka jendela (dari atas ke bawah):**
+
+- **Bilah judul bertab.** Tab "Beranda" tetap di paling kiri (dengan logo
+  aplikasi), lalu satu tab per dokumen (lencana PDF, nama, titik oranye bila ada
+  perubahan belum disimpan, tombol tutup), lalu tombol "+ Baru" yang membuka
+  Beranda. Sisa bilah adalah pegangan seret jendela; tombol perkecil/perbesar/
+  tutup di kanan, versi dari `version.json` di sebelahnya.
+- **Baris menu.** Menu "Berkas" dan tombol akses cepat di kiri, nama tab pita di
+  tengah (tab aktif tebal dengan garis merah di bawahnya), kotak "Cari di
+  dokumen" di kanan.
+- **Pita (ribbon).** Kartu putih bersudut 8 px. Tombol besar = ikon 24 px di atas
+  label; tombol kecil = ikon 20 px di samping label, dua bertumpuk setinggi satu
+  tombol besar; kelompok dipisah garis vertikal tipis; tanda ▾ untuk tombol yang
+  membuka varian. Di bawah ±1060 px lebar CSS, label tombol kecil disembunyikan
+  (nama tetap di tooltip dan label aksesibilitas).
+- **Rel ikon vertikal di kiri** untuk panel samping: Halaman (thumbnail), Daftar
+  Isi, Anotasi, Cari. Mengklik ikon panel yang sedang terbuka melipatnya.
+- **Viewport**, dengan panel properti di kanan yang muncul hanya saat objek
+  terpilih.
+- **Bilah bawah.** Tombol panel samping, navigasi halaman (pertama/sebelumnya/
+  "1/31"/berikutnya/terakhir), status (render, pekerja, cache, terenkripsi, dan
+  status simpan mulai Fase 4), lalu di kanan: mode tampilan, pas lebar/pas
+  halaman, persentase zoom bertarik-turun, dan slider zoom logaritmik.
+
+**Tab pita hanya untuk fitur yang sudah bekerja.** Setiap fase menambahkan tab
+atau tombolnya sendiri begitu fiturnya benar-benar jalan. Urutan tujuan
+mengikuti WPS: Beranda · Edit · Halaman · Komentar · Isi & Tanda Tangan ·
+Lindungi · Konversi. Tab pita menggantikan "toolbar kontekstual" lama: Beranda
+untuk membaca dan navigasi, Edit dan Komentar untuk perangkat anotasi.
+
+**Layar Beranda:** navigasi kiri (tombol Buka Berkas; Terbaru, Berbintang;
+"Lokal": PC Ini, Desktop, Dokumen, Unduhan; "Sering Dipakai": folder asal
+berkas terbaru) — hanya lokasi lokal. Tengah: tabel Nama · Lokasi · Terakhir
+Diubah · Ukuran, dikelompokkan "30 hari terakhir" / "Sebelumnya" menurut waktu
+terakhir dibuka. Kanan: panel "Info Berkas" (sampul, lokasi, ukuran, tanggal,
+tombol Buka dan Sematkan) untuk baris yang dipilih. Seret berkas ke jendela
+membukanya.
+
+**Gaya:**
+
+- Grid 8 px. Radius 8 px (12 px panel besar). Tanpa gradien, tanpa glassmorphism,
+  tanpa bayangan tebal (halaman boleh punya garis tepi dan bayangan tipis agar
+  terbaca sebagai lembaran).
 - Tipografi: Segoe UI Variable, fallback Inter (dibundel). Skala 12 / 13 / 15 / 20 / 28.
-- Warna: kanvas netral (`#f5f5f4` terang / `#1c1c1e` gelap — jangan hitam pekat), permukaan panel selapis berbeda, **satu** warna aksen untuk seluruh aplikasi. Warna lain hanya untuk status: merah destruktif, oranye belum disimpan.
-- Ikon: satu set konsisten, stroke 1,5px, 20px. Lucide atau Fluent — pilih satu, jangan campur.
-- Gerak: 120–180ms, easing `cubic-bezier(0.32, 0.72, 0, 1)`. Hanya untuk perubahan status yang perlu dipahami mata. Nol animasi dekoratif. Hormati `prefers-reduced-motion`.
-- Rapi di skala Windows 100%, 125%, 150%, 175%.
-- Title bar kustom menyatu dengan tab bar.
-- **Toolbar kontekstual**: mode Baca hanya navigasi, zoom, cari. Mode Edit memunculkan perangkat anotasi. Peralihan lewat satu tombol jelas.
-- Panel properti kanan muncul hanya saat objek terpilih.
-- Status bar: halaman, zoom, ukuran berkas, status simpan, indikator render/OCR berjalan.
-- **Command Palette** `Ctrl+Shift+P`.
-- **Empty state** dirancang serius: logo, tombol buka, recent files bergambar, area drop jelas.
+- Warna: kanvas netral (`#f5f5f4` terang / `#1c1c1e` gelap — jangan hitam
+  pekat); lapisan *chrome* abu (bilah judul, menu, rel, bilah bawah) dan lapisan
+  *surface* putih (kartu pita, panel). **Satu** warna aksen interaksi (biru:
+  fokus, pilihan, tombol utama). Satu warna **merek** merah, hanya untuk logo,
+  lencana PDF, dan garis tab pita aktif. Warna status: merah destruktif, oranye
+  belum disimpan. Teks di atas tombol aksen memenuhi kontras 4,5:1 di kedua tema.
+- **Ikon: satu set, Fluent UI System Icons (MIT)**, digambar dua nada: siluet
+  *filled* berwarna tipis di bawah garis *regular* berwarna penuh. Warna menurut
+  keluarga fungsi (biru navigasi/tampilan, kuning markup, ungu teks, hijau
+  bentuk/pena, teal gambar/putar, oranye stempel, merah muda hapus/coret). Ikon
+  chrome (tombol jendela, panah) satu warna. Path SVG disalin ke
+  `src/design/icons.generated.ts` oleh `npm run icons` dari versi paket yang
+  dipatok, lengkap dengan teks lisensinya.
+- Gerak: 120–180 ms, easing `cubic-bezier(0.32, 0.72, 0, 1)`. Hanya untuk
+  perubahan status yang perlu dipahami mata. Nol animasi dekoratif. Hormati
+  `prefers-reduced-motion`.
+- Mode gelap mengikuti tema Windows (`prefers-color-scheme`), bisa ditimpa
+  preferensi di Fase 8.
+- Rapi di skala Windows 100 %, 125 %, 150 %, 175 %, sampai ukuran jendela
+  minimum 880 × 560.
+- Semua teks lewat modul i18n.
+- Status bar/bilah bawah: halaman, zoom, ukuran berkas, status simpan,
+  indikator render/OCR berjalan.
+- **Command Palette** `Ctrl+Shift+P` (Fase 8).
+
+**Bukti visual wajib.** Setiap UI baru diperiksa lewat `npm run ui:shots`
+(frontend sungguhan di Chromium, backend dipalsukan dengan `mockIPC`, halaman
+dirender PDFium sungguhan) pada 1366×768 dan 1920×1080, terang dan gelap.
+Hasilnya disimpan di `docs/ui/`.
 
 **Pintasan** (lengkap, bisa dilihat lewat `F1`, bisa diubah, disimpan di SQLite):
 `Ctrl+O` · `Ctrl+W` · `Ctrl+Tab` · `Ctrl+S` · `Ctrl+Shift+S` · `Ctrl+F` · `Ctrl+Shift+F` · `Ctrl+Z/Y` · `Ctrl+0/+/-` · `Ctrl+P` · `F5` · `F11` · `Esc`

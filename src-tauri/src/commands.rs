@@ -16,6 +16,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use crate::annots::{AnnotState, EditResult};
+use crate::folders;
 use crate::indexing::{IndexProgress, Indexer, Job};
 use crate::render::{DocInfo, RenderService, RenderStats, TileKey, TileKind};
 use crate::supervisor::Pool;
@@ -43,6 +44,10 @@ pub struct AppState {
     pub startup_files: Vec<String>,
     /// Annotations and their undo history, per document (SPEC 8).
     pub annots: Arc<AnnotState>,
+    /// Size and time of each open file as this application last saw it —
+    /// at open, and after each save — so a change made by another program is
+    /// noticed (SPEC 8: "deteksi berkas yang berubah di disk").
+    pub stamps: Mutex<std::collections::HashMap<u64, izul_store::FileStamp>>,
 }
 
 impl std::fmt::Debug for AppState {
@@ -54,7 +59,7 @@ impl std::fmt::Debug for AppState {
 }
 
 impl AppState {
-    fn db(&self) -> Result<rusqlite::Connection, String> {
+    pub(crate) fn db(&self) -> Result<rusqlite::Connection, String> {
         izul_store::open(&self.data_dir, izul_store::Which::App)
             .map_err(|e| format!("basis data: {e}"))
     }
@@ -66,7 +71,7 @@ impl AppState {
     /// is precisely the case where a shutdown hook never runs. The write is a
     /// delete and a handful of inserts in one transaction, on an arrangement
     /// that changes when a human clicks something, so its cost is irrelevant.
-    fn save_session(&self) {
+    pub(crate) fn save_session(&self) {
         let (session, slots) = {
             let ws = self.workspace.lock();
             (ws.session(), ws.slots())
@@ -144,6 +149,11 @@ pub struct RecentFile {
     /// rendered — making one would mean opening the PDF, which is exactly what
     /// a list of recent files must not do.
     pub cover: Option<String>,
+    /// Bytes, from the file as it is now — or as it was when last opened, when
+    /// it is no longer there.
+    pub size: u64,
+    /// Seconds since the Unix epoch; the home screen's "Terakhir Diubah".
+    pub modified: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -274,6 +284,7 @@ pub async fn open_document(
     };
 
     let file_id = file_id.map(|f| f.0).unwrap_or(0);
+    state.stamps.lock().insert(doc.0, stamp);
     state.workspace.lock().insert(OpenDoc {
         doc: doc.0,
         path: path.clone(),
@@ -366,6 +377,7 @@ pub async fn close_document(state: tauri::State<'_, AppState>, doc: u64) -> CmdR
     }
     state.render.forget(doc);
     state.annots.forget(doc);
+    state.stamps.lock().remove(&doc);
     state.workspace.lock().remove(doc);
     state.save_session();
     Ok(())
@@ -517,17 +529,30 @@ pub async fn render_stats(state: tauri::State<'_, AppState>) -> CmdResult<Render
 #[tauri::command]
 pub async fn recent_files(state: tauri::State<'_, AppState>) -> CmdResult<Vec<RecentFile>> {
     let conn = state.db()?;
-    let rows = files::recent(&conn, 20).map_err(|e| format!("basis data: {e}"))?;
+    // Fifty, not twenty: since the 2026-09-23 home screen the list is a table
+    // grouped by recency rather than a shelf of covers, and a table of twenty
+    // rows looks like a list that forgot things.
+    let rows = files::recent(&conn, 50).map_err(|e| format!("basis data: {e}"))?;
     Ok(rows
         .into_iter()
         .map(|r| {
             let path = PathBuf::from(&r.path);
+            // One `stat`, which answers "is it still there" and "how big is it
+            // now" together.
+            let meta = std::fs::metadata(&path).ok().filter(|m| m.is_file());
+            let modified = meta
+                .as_ref()
+                .and_then(|m| m.modified().ok())
+                .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+                .map_or(r.stamp.mtime, |d| d.as_secs() as i64);
             RecentFile {
                 name: path
                     .file_name()
                     .map(|n| n.to_string_lossy().to_string())
                     .unwrap_or_else(|| r.path.clone()),
-                available: path.is_file(),
+                available: meta.is_some(),
+                size: meta.as_ref().map_or(r.stamp.size, std::fs::Metadata::len),
+                modified,
                 cover: thumbs::load_data_url(&state.data_dir, &path),
                 path: r.path,
                 last_opened: r.last_opened,
@@ -535,6 +560,45 @@ pub async fn recent_files(state: tauri::State<'_, AppState>) -> CmdResult<Vec<Re
             }
         })
         .collect())
+}
+
+/// Desktop, Documents, Downloads and the drives, for the home screen's
+/// navigation. A folder the platform does not report is simply absent.
+#[tauri::command]
+pub fn known_folders(app: tauri::AppHandle) -> Vec<folders::KnownFolder> {
+    use tauri::Manager;
+    let paths = app.path();
+    let mut out = Vec::new();
+    for (kind, found) in [
+        ("desktop", paths.desktop_dir()),
+        ("documents", paths.document_dir()),
+        ("downloads", paths.download_dir()),
+    ] {
+        if let Ok(dir) = found {
+            out.push(folders::KnownFolder {
+                kind,
+                path: dir.to_string_lossy().to_string(),
+            });
+        }
+    }
+    for drive in folders::drives() {
+        out.push(folders::KnownFolder {
+            kind: "drive",
+            path: drive.to_string_lossy().to_string(),
+        });
+    }
+    out
+}
+
+/// Sub-folders and PDFs in one folder.
+#[tauri::command]
+pub async fn browse_folder(path: String) -> CmdResult<Vec<folders::FolderEntry>> {
+    // Off the async runtime's worker: a slow network share must not stall the
+    // commands queued behind it.
+    tokio::task::spawn_blocking(move || folders::list(std::path::Path::new(&path)))
+        .await
+        .map_err(|e| e.to_string())?
+        .map_err(|e| format!("folder tidak dapat dibaca: {e}"))
 }
 
 // ---------------------------------------------------------------------------
@@ -917,7 +981,11 @@ fn text_of(obj: &AnnotObject) -> Option<(&FontSpec, &str)> {
 ///
 /// Returns an error naming the characters the face does not have, which is what
 /// SPEC 11.2 asks for instead of drawing empty boxes.
-async fn prepare_fonts(state: &AppState, doc: u64, objects: &[AnnotObject]) -> CmdResult<()> {
+pub(crate) async fn prepare_fonts(
+    state: &AppState,
+    doc: u64,
+    objects: &[AnnotObject],
+) -> CmdResult<()> {
     for obj in objects {
         let Some((spec, text)) = text_of(obj) else {
             continue;
@@ -941,11 +1009,16 @@ async fn prepare_fonts(state: &AppState, doc: u64, objects: &[AnnotObject]) -> C
 }
 
 #[tauri::command]
-pub fn annot_list(
+pub async fn annot_list(
     state: tauri::State<'_, AppState>,
     doc: u64,
     page: Option<u32>,
 ) -> CmdResult<Vec<AnnotObject>> {
+    // The first look at a page brings the annotations the file itself carries
+    // into the editor (Phase 4), so they can be edited like any other.
+    if let Some(p) = page {
+        crate::saving::import_page(&state.pool, &state.annots, doc, p).await?;
+    }
     Ok(state.annots.objects(doc, page))
 }
 
@@ -1017,6 +1090,7 @@ pub async fn annot_display_lists(
     doc: u64,
     page: u32,
 ) -> CmdResult<Vec<DisplayListOut>> {
+    crate::saving::import_page(&state.pool, &state.annots, doc, page).await?;
     let objects = state.annots.objects(doc, Some(page));
     prepare_fonts(&state, doc, &objects).await.ok();
     Ok(state

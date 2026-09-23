@@ -73,10 +73,13 @@ const PRECISION: usize = 3;
 
 /// Formats a number the one way this module ever formats numbers.
 ///
+/// Public so the file writer (`izul-write`) formats the numbers of the objects
+/// around the stream — `/Rect`, `/BBox`, `/QuadPoints` — with the same rule.
+///
 /// Trailing zeros are trimmed so `1.0` is `1`, and negative zero is written as
 /// `0`: some readers tolerate `-0` and some produce a different result with it,
 /// and neither is worth finding out about in a file a user has saved.
-fn num(v: f32) -> String {
+pub fn num(v: f32) -> String {
     if !v.is_finite() {
         return "0".into();
     }

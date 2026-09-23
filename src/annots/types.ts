@@ -224,6 +224,8 @@ export interface EditResult {
   readonly objects: AnnotObject[];
   readonly can_undo: boolean;
   readonly can_redo: boolean;
+  /** The document has changes its file does not (Phase 4). */
+  readonly dirty: boolean;
 }
 
 /** `id` is a `u64` in Rust but a plain number here; annotation ids never get

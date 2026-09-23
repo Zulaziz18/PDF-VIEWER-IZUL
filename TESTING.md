@@ -38,6 +38,74 @@ Test integrasi (`crash_isolation`) membaca PDFium langsung dari
 aplikasi secara otomatis pada setiap `cargo build`. Tidak ada langkah salin
 manual yang diperlukan di kedua kasus — cukup `vendor/pdfium/fetch.sh` di atas.
 
+## Hasil Fase 4
+
+| Suite | Jumlah | Status |
+|---|---|---|
+| `izul-model` (geometri, display list, objek anotasi, AP stream, undo) | 67 | lulus |
+| `izul-ipc` (shm, ring, codec, transport, **indeks varian terpatok**) | 23 | lulus |
+| `izul-store` (skema, sesi, indeks & FTS5, **draf**, **riwayat ekspor**) | 49 | lulus |
+| `izul-pdf` (ubin, pencarian, golden, **simpan-buka 13 jenis**, **paritas berkas tersimpan**, **ratakan**, **ekstrak**) | 54 | lulus |
+| `izul-render` (cache LRU, prioritas, pembatalan) | 29 | lulus |
+| **`izul-write`** (kamus anotasi, AP + resource, bagian inkremental, simpan atomik) | 30 | lulus |
+| `izul-worker` (epoch, galat, **kotak-keluar blob**) | 9 | lulus |
+| `izul-app` (kolam, protokol, tab, regex, anotasi, **simpan/draf**, **penjaga berkas terbuka**) | 96 | lulus |
+| `crash_isolation` + `render_pipeline` + `render_end_to_end` (pekerja nyata) | 26 | lulus |
+| **`save_round_trip`** (pekerja nyata: simpan-buka-sunting-simpan, simpan sebagai, ekspor) | 3 | lulus |
+| `izul-bench` (`multidoc`) | 3 | lulus |
+| **Total Rust** | **389** | **lulus** |
+| `src/viewport`, `src/state`, `src/annots`, **`src/app`** (alur tutup/simpan/draf) | 146 | lulus |
+| **Total** | **535** | **lulus** |
+
+**Koreksi tabel Fase 3 di bawah:** `izul-model` tertulis 85 dan `izul-pdf` 63,
+padahal suite commit Fase 3 (`45c9903`), dijalankan ulang di worktree terpisah
+pada 23 September 2026, berisi **67** dan **48**. Tidak ada test yang hilang
+— angka lama salah hitung. Tabel lama dibiarkan sebagai catatan sejarah.
+
+Angka Fase 4 lainnya (paritas, mesin lain, kecepatan simpan) ada di
+`bench/results/phase4-parity.txt` dan `bench/results/phase4-linux.txt`:
+
+```bash
+cargo test -p izul-pdf --lib a_saved_annotation_renders_like_its_golden -- --nocapture
+cargo run --release -p izul-bench --bin fase4-uji -- --bench   # butuh fixture 500 halaman
+```
+
+### Memeriksa berkas simpanan di Acrobat, Chrome, dan Edge
+
+Kriteria lulus Fase 4 menyebut ketiga pembaca itu, dan tidak satu pun ada di
+lingkungan pengembangan. Ini cara memeriksanya sendiri di Windows. Buka
+**PowerShell** (tekan tombol Windows, ketik `powershell`, Enter — yang biasa,
+bukan "Run as administrator"), lalu:
+
+```powershell
+cd C:\Users\muham\PDF-VIEWER-IZUL
+cargo run -p izul-bench --bin fase4-uji
+```
+
+Pertama kali butuh beberapa menit (membangun). Kalau berhasil, dua baris
+terakhirnya berbunyi kira-kira:
+
+```text
+14 anotasi ditulis ke C:\Users\muham\PDF-VIEWER-IZUL\test-fixtures\fase4-uji-simpan.pdf
+versi rata ditulis ke C:\Users\muham\PDF-VIEWER-IZUL\test-fixtures\fase4-uji-rata.pdf
+```
+
+Buka folder `C:\Users\muham\PDF-VIEWER-IZUL\test-fixtures` di File Explorer,
+klik kanan `fase4-uji-simpan.pdf` → **Open with** → pilih pembacanya. Ulangi
+untuk Chrome, Edge, dan Acrobat Reader bila terpasang.
+
+Yang benar: halaman berisi 14 kotak berlabel, dan **tiap kotak berisi gambar
+yang disebut labelnya** — stabilo kuning di atas teks, garis bawah biru, coret
+merah, kotak teks ungu dua baris, gambar bulat berwarna, gelombang hijau, garis
+putus-putus, panah merah, kotak biru, elips, segitiga kuning, ikon catatan
+oranye, stempel "DISETUJUI", dan kotak merah miring setengah tembus pandang.
+Di Acrobat, panel **Comments** mencantumkan 14 komentar. Kotak yang kosong,
+bergeser keluar dari kotaknya, atau berwarna lain adalah temuan — ambil
+screenshot dan sebutkan pembacanya.
+
+`fase4-uji-rata.pdf` harus terlihat **sama persis**, tetapi di Acrobat panel
+Comments-nya kosong: semuanya sudah menyatu ke halaman.
+
 ## Hasil Fase 3
 
 | Suite | Jumlah | Status |
@@ -448,7 +516,45 @@ di jendela sungguhan** — kontainer pengembangan tidak punya layar.
       relatif terhadap teks halaman.
 - [ ] Memutar halaman: anotasi ikut berputar bersama isinya.
 
+### Fase 4
+
+Menyimpan menimpa berkas sungguhan. **Pakai salinan**, bukan dokumen yang
+penting, untuk daftar ini.
+
+- [ ] Menambah anotasi memunculkan titik oranye di tab dan "Belum disimpan" di
+      bilah bawah; tombol Simpan (ikon disket di kiri atas) menjadi aktif.
+- [ ] Ctrl+S menyimpan: muncul "Tersimpan: nama.pdf (ukuran)" di pojok kanan
+      bawah, titik oranye hilang, ukuran di bilah bawah berubah.
+- [ ] Tutup berkas itu, buka lagi dari Beranda: semua anotasi kembali, dan bisa
+      digeser, diubah, dihapus seperti sebelum disimpan.
+- [ ] Berkas yang sama dibuka di Chrome atau Edge: anotasinya tampil di tempat
+      yang sama.
+- [ ] Ctrl+Shift+S (Simpan Sebagai) ke nama baru: tab berganti nama, berkas lama
+      tidak berubah.
+- [ ] Menutup tab yang belum disimpan menanyakan Simpan / Jangan Simpan / Batal.
+      Batal membiarkan tab terbuka; Jangan Simpan menutupnya tanpa menulis
+      apa pun.
+- [ ] Tombol × jendela **dan** Alt+F4 dengan pekerjaan belum disimpan: pertanyaan
+      yang sama, per dokumen.
+- [ ] Pemulihan: beri anotasi, tunggu 30 detik, lalu matikan aplikasi lewat Task
+      Manager (klik kanan PDF Studio Izul → End task). Buka lagi berkasnya:
+      muncul "Pulihkan pekerjaan yang belum disimpan?", dan Pulihkan
+      mengembalikan anotasinya.
+- [ ] Buka sebuah PDF di aplikasi, lalu ubah berkas yang sama dengan program
+      lain (mis. simpan ulang dari Edge). Dalam beberapa detik muncul pita
+      kuning "Berkas ini diubah oleh program lain" dengan Muat Ulang / Abaikan.
+- [ ] Konversi → PDF ke Gambar, rentang `1-3`, JPG, 150 DPI, pilih folder: tiga
+      berkas `nama-1.jpg` … `nama-3.jpg` muncul di folder itu.
+- [ ] Konversi → Ekspor Halaman `2, 5`: PDF baru berisi dua halaman itu, dan
+      anotasinya masih bisa disunting bila dibuka di aplikasi ini.
+- [ ] Konversi → Ekspor Rata: di Acrobat/Edge anotasinya tidak bisa dipilih lagi,
+      tetapi tampilannya sama.
+- [ ] Beranda → Riwayat Ekspor mencantumkan ketiga ekspor di atas.
+- [ ] Ekspor ke nama berkas yang sedang terbuka di tab lain: ditolak dengan
+      pesan, tidak ada yang tertimpa.
+
 ### Menyusul (fase terkait)
 
 - [ ] Dark mode dengan invert cerdas: teks terang, foto tidak terbalik (Fase 8).
-- [ ] Paritas anotasi saat objek diam, ambang perseptual < 0,5 % (Fase 3).
+- [x] Paritas anotasi saat objek diam, ambang perseptual < 0,5 % (Fase 3;
+      berkas tersimpan 0,000 % di Fase 4).

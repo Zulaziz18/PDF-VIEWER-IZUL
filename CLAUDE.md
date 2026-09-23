@@ -485,19 +485,151 @@ masih hidup di memori sampai tab ditutup); penyuntingan teks langsung di atas
 halaman (isinya diketik lewat panel properti); dan **UI-nya belum pernah
 dijalankan di jendela sungguhan** karena kontainer ini tidak punya layar.
 
+## Keadaan Langkah 0 (kerangka UI gaya WPS, 23 September 2026)
+
+Pengguna memutuskan UI meniru WPS Office semirip mungkin; SPEC Bagian 12 sudah
+ditulis ulang (bertanggal, dengan alasan). SPEC Bagian 2 tidak berubah.
+
+- **Kerangka:** `TitleBar.tsx` (tab Beranda tetap + tab dokumen + "Baru" +
+  tombol jendela), `Ribbon.tsx` (`MenuBar` + `Ribbon`: tab Beranda/Edit/
+  Komentar), `Sidebar.tsx` (`LeftRail` + panel; pencarian kini tab sidebar),
+  `BottomBar.tsx`, `Home.tsx` (Terbaru/Berbintang/PC Ini/Desktop/Dokumen/
+  Unduhan/Sering Dipakai + Info Berkas), `About.tsx`. Toolbar, AnnotToolbar,
+  TabBar, StatusBar, EmptyState lama dihapus.
+- **Aturan tab pita:** sebuah tab/tombol hanya ditambahkan ketika fiturnya
+  benar-benar bekerja (`RibbonTab` di `src/state/uiStore.ts`). Fase berikutnya
+  menambah Halaman, Lindungi, Konversi, Isi & Tanda Tangan di situ.
+- **Logika tombol** ada di `src/app/actions.ts`, bukan di komponen. Stabilo
+  tanpa seleksi teks *mensiagakan* alat (`useUi.markup`) dan
+  `armedMarkup.ts` menerapkannya ke seleksi berikutnya.
+- **Ikon:** Fluent UI System Icons (MIT), `npm run icons` menyalin path yang
+  dipakai ke `src/design/icons.generated.ts`. Ditampilkan dua nada (filled
+  tipis + regular) lewat `Icon.tsx`. Menambah ikon = tambah baris di
+  `tools/icons/build.mjs` lalu jalankan ulang (butuh jaringan sekali).
+- **Tema gelap** baru benar-benar tersambung sekarang (`src/design/theme.ts`);
+  sebelumnya token `data-theme="dark"` ada tapi tidak pernah dipasang.
+- **Rust baru:** `src-tauri/src/folders.rs` + perintah `known_folders`,
+  `browse_folder`; `recent_files` kini membawa `size` dan `modified`.
+  **Semua cap waktu di store dalam detik** (`as_secs()`), bukan milidetik.
+
+**Harness screenshot — `npm run ui:shots`** (`tools/ui-harness/`): Vite dev
+server + `mockIPC`, Chromium lewat `playwright-core` (dipatok 1.56.1, cocok
+dengan `/opt/pw-browsers/chromium-1194`), ubin dijawab lewat `page.route` oleh
+`izul-bench --bin ui-harness` yang merender dengan PDFium sungguhan, dan
+anotasi contoh dibangun oleh `izul_model::build::display_list` yang sama.
+Sampel PDF dibuat `tools/ui-harness/make_samples.py` (isi karangan sendiri).
+Opsi: `--scene=home,document,edit,comment`, `--size=1366x768`,
+`--theme=light|dark`, `--scale=1.5`, `--out=...`, `--serve`. **Tiap UI baru
+wajib ditambah scene-nya di `SCENES` dalam `shoot.mjs`** dan dilihat sebelum
+dinyatakan selesai. Mock hanya di `tools/ui-harness/`; build produksi tidak
+pernah menyentuhnya.
+
+**Cacat yang ditemukan harness:** (1) membuka dokumen menggulir halaman
+pertama ~40 px ke bawah — zoom tanpa kursor menahan titik tengah, padahal
+pembaca di paling atas mengharapkan tetap di atas. Diperbaiki dengan
+`zoomHoldingView` (test terbukti gagal pada aturan lama). (2) Halaman putih
+tanpa tepi hilang di kanvas terang — kini ada garis tepi + bayangan tipis.
+(3) Kontras tombol aksen di mode gelap 2,6:1 — token `--izul-on-accent`.
+
+## Keadaan Fase 4 (Tulis & Simpan, 23 September 2026)
+
+Selesai di branch `claude/pdf-studio-izul-v7-fase-4` (PR #3, base
+`claude/pdf-studio-izul-v7-fase-2`). Laporan SPEC 18 ada di badan PR #3.
+
+**Arsitektur simpan** (rincian di kepala `src-tauri/src/saving.rs`):
+pekerja membuka **salinan kerja**, menaruh penanda `/NM (izul-<id>)`, PDFium
+menulis berkas utuh (`FPDF_SaveAsCopy`, `FPDF_NO_INCREMENTAL`), proses UI
+menambah **satu bagian pembaruan inkremental** (`crates/izul-write`) berisi
+anotasi standar + AP dari display list + `/IzulObj` (JSON ASCII, versi 1).
+Ditulis ke temp di samping target, `fsync`, **diverifikasi pekerja**, baru
+di-rename. Dokumen tampilan **melepas** anotasi Izul saat halaman pertama
+dimuat (`strip_izul`), lalu editor menggambarnya dari objek — kalau tidak,
+tergambar dua kali.
+
+**Temuan terukur tentang PDFium (jangan ditebak ulang):**
+
+- `FPDFAnnot_SetAP` hanya menulis `/GS` dari opasitas dengan BM Normal — tidak
+  cukup untuk AP kita, makanya AP ditulis sendiri di bagian inkremental.
+- Simpan penuh PDFium **selalu** xref klasik dengan trailer langsung, dan
+  **mempertahankan nomor objek lama**. Anotasi baru ditulis **inline** di
+  `/Annots` halaman (bukan objek tak langsung) — `Placement::Inline` ada karena
+  ini; versi pertama gagal membuka halaman 0 karena menganggap semuanya objek.
+- `FPDFImageObj_GetImageDataRaw` = byte stream mentah (JPEG asli utuh);
+  `GetRenderedBitmap` setelah `SetMatrix(w,0,0,h)` = BGRA alfa lurus.
+- Windows **menolak mengganti berkas yang sedang di-mmap** → `Pool::release`
+  (Close) sebelum rename, `Pool::reload` sesudahnya.
+- Jangan tulis `/CA` pada kamus anotasi: opasitas sudah dibakar ke AP, dan
+  Acrobat akan mengalikannya dua kali.
+
+**Cacat yang ditemukan dan pelajarannya:**
+
+1. **Simpan kedua menghapus FreeText.** `write_set` diam-diam membuang objek
+   tanpa metrik font di cache — dan objek hasil impor tidak pernah punya.
+   Sekarang galat, dan metrik disiapkan untuk semua objek dulu. **Pelajaran:**
+   "lewati yang tidak bisa ditulis" di jalur simpan = kehilangan data diam-diam.
+   Gagal keras.
+2. **"5 0 R7 0 R"** — referensi yang ditempel tanpa spasi membuat `/Annots`
+   tak terbaca; 0 dari 13 anotasi kembali. Selalu spasi di sekitar referensi.
+3. **Titik "belum disimpan" memakai `canUndo`.** Salah dua arah: dokumen yang
+   baru disimpan masih bisa di-undo (ditanya percuma), dan undo melewati titik
+   simpan membuat dokumen kotor lagi. Kini `dirty` dari backend (`revision !=
+   saved`). Test `closes a saved document without asking` terbukti gagal pada
+   aturan lama.
+4. **Autosave vs "Jangan Simpan".** Autosave yang jalan di antara membuang draf
+   dan menutup tab menulisnya lagi. `draft_discard` kini juga `mark_drafted`.
+5. **Ekspor ke berkas yang terbuka di tab lain** — rename gagal di Windows,
+   diam-diam sukses di tempat lain. Kini ditolak (`refuse_open_target`).
+
+**Alat ukur yang berguna, dan satu yang menipu:**
+
+- `python3` + `pikepdf`/`pypdf` (strict) untuk struktur; `pdftoppm` (poppler)
+  dan `mutool` (MuPDF) untuk **mesin render yang bukan PDFium** — Chrome dan
+  Edge memakai PDFium, jadi keduanya bukan bukti independen. Pasang lewat
+  `apt-get install poppler-utils mupdf-tools`.
+- Mata membaca screenshot yang diperkecil: saya sempat "melihat" latar dialog
+  tidak meredup; nilai piksel (255 → 178) membuktikan sebaliknya. **Ukur
+  piksel sebelum memperbaiki cacat visual.**
+- Tabel test Fase 3 di TESTING.md ternyata salah hitung (85/63 vs 67/48
+  sebenarnya, diverifikasi dengan menjalankan commit lama di worktree). Hitung
+  dari keluaran `cargo test`, jangan dari ingatan.
+
+**Frontend Fase 4:** logika di `src/app/fileActions.ts` (simpan, tutup dengan
+konfirmasi, draf, pantau berkas, ekspor) — komponen hanya memanggil.
+`PromptDialog` (tiga tombol; dialog platform hanya dua), `NoticeToast`,
+`ExportDialog` (rentang halaman lewat `src/state/pageRange.ts`, teruji),
+`FileBanner`. Pintasan: Ctrl+S, Ctrl+Shift+S, Ctrl+W bertanya dulu. Penjaga
+tutup jendela lewat `onCloseRequested` → butuh `core:window:allow-destroy`.
+Scene harness baru: `convert, export, close, draft, changed, exports`.
+
+**Belum dikerjakan / diketahui:** belum diuji di Acrobat/Edge sungguhan
+(langkahnya di TESTING.md "Hasil Fase 4"); font standard-14 tidak ditanam
+(pembaca lain memakai padanan); dokumen terenkripsi tidak bisa disimpan;
+`npm audit` 2 moderate di `vitest` (dev saja, sudah ada sebelumnya).
+
 ## Alur kerja proyek ini
 
-- Branch aktif: `claude/pdf-studio-izul-v7-fase-2`.
+- Branch per fase: `claude/pdf-studio-izul-v7-fase-4` (Langkah 0 + Fase 4,
+  PR #3) bercabang dari `claude/pdf-studio-izul-v7-fase-2`; Fase 5 dikerjakan
+  di `claude/pdf-studio-izul-v7-fase-5` yang bercabang dari fase-4, dan
+  seterusnya — satu draft PR per fase, base = branch fase sebelumnya. Pengguna mengizinkan
+  branch `claude/pdf-studio-izul-v7-fase-N` per fase, masing-masing bercabang
+  dari fase sebelumnya dengan draft PR ber-base fase sebelumnya, dan meminta
+  Fase 4–8 dikerjakan berturut-turut tanpa menunggu persetujuan (tetap wajib
+  laporan SPEC 18, CI hijau, dan CLAUDE.md diperbarui tiap akhir fase).
+- Sebelumnya: `claude/pdf-studio-izul-v7-fase-2`.
 - Trunk proyek ini **bukan** `main` — tidak ada branch `main`. Trunk-nya
   `claude/pdf-studio-izul-v7-atlas-r29mdh`, dan Fase 1 sudah di-merge ke sana
   lewat PR #1.
 - Dokumen rujukan: `SPEC.md` (jangan diubah tanpa dibahas). Progres per fase
   dicatat di `CHANGELOG.md`. Panduan pengguna di `PANDUAN.md`.
-- Setiap akhir fase: laporkan hasil + angka benchmark nyata, tunggu
-  persetujuan pengguna sebelum lanjut ke fase berikutnya (lihat SPEC.md
-  Bagian 0 dan 18).
+- Setiap akhir fase: laporkan hasil + angka benchmark nyata (SPEC 18). Untuk
+  Fase 4–8 pengguna **membebaskan** jeda persetujuan; tetap wajib laporan
+  SPEC 18, CI hijau, CHANGELOG, version.json, TESTING.md, dan bagian
+  "Keadaan Fase N" di berkas ini sebelum lanjut.
 - Total 9 fase (0–8). Fase 0 dan 1 selesai dan disetujui pengguna; Fase 2 dan
-  Fase 3 selesai dan menunggu persetujuan, keduanya di branch yang sama.
+  Fase 3 selesai (satu branch, PR #2); Langkah 0 dan Fase 4 selesai (PR #3).
+  Fase 5–8 dikerjakan berturut-turut tanpa menunggu persetujuan, atas
+  keputusan pengguna.
 - Panduan menjalankan & menguji aplikasi di Windows (untuk pemula) ada di
   `TESTING.md`, bagian "Menjalankan sendiri di Windows (langkah demi
   langkah)" — termasuk cara memasang alat, mengambil PDFium, menjalankan

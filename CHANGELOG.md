@@ -3,6 +3,132 @@
 Semua perubahan penting per fase. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/);
 versi mengikuti `version.json` sebagai sumber tunggal.
 
+## [7.0.0-alpha.4] — Langkah 0 (UI gaya WPS) + Fase 4: Tulis & Simpan
+
+Anotasi sekarang sampai ke berkas. Yang disimpan adalah **anotasi PDF standar**
+— pembaca lain menampilkannya apa adanya — ditambah metadata milik kita di satu
+kunci tambahan, sehingga v7 bisa menyunting ulang semuanya setelah berkas
+ditutup dan dibuka lagi. Kriteria lulus SPEC 17 ("tetap editable setelah
+simpan-buka, tampil benar di Acrobat, Chrome, Edge") dijawab di bagian Angka.
+
+### Langkah 0: kerangka UI gaya WPS Office (sebelum Fase 4)
+
+Diminta pengguna; SPEC Bagian 12 ditulis ulang bertanggal 23 September 2026.
+Bilah judul dengan tab dokumen dan tab Beranda tetap, pita bertab (Beranda,
+Edit, Komentar, dan sejak Fase 4 Konversi) dengan tombol ikon besar, rel ikon
+kiri, layar Beranda berbentuk tabel dengan panel Info Berkas, bilah bawah
+dengan navigasi halaman dan slider zoom, mode gelap yang benar-benar
+tersambung. Ikon: Fluent UI System Icons (MIT). Tab pita hanya muncul untuk
+fitur yang sudah bekerja. Harness screenshot `npm run ui:shots` (Vite + mock
+IPC + Chromium, ubin dirender PDFium sungguhan) — hasilnya di `docs/ui/`.
+
+### Bagaimana menyimpan bekerja
+
+1. Pekerja membuat **salinan kerja** dokumen, mengganti anotasi kita dengan
+   penanda kosong bernama `izul-<id>`, lalu PDFium menulis berkas utuh.
+2. Proses UI menambahkan **satu bagian pembaruan inkremental** di ujungnya
+   (`crates/izul-write`): tiap penanda didefinisikan ulang sebagai anotasi
+   standar lengkap dengan AP stream dari display list yang sama yang digambar
+   kanvas (SPEC 3.2), font standard-14 WinAnsi, ExtGState untuk opasitas, dan
+   gambar — JPEG diteruskan byte-per-byte, sisanya Flate RGB + SMask.
+3. Hasilnya ditulis ke berkas sementara **di samping** target, di-`fsync`,
+   **dibuka ulang oleh pekerja** untuk membuktikan ia PDF yang sehat dengan
+   jumlah halaman dan anotasi yang benar, baru kemudian di-rename menimpa target
+   (`MoveFileExW` + `WRITE_THROUGH` di Windows). Berkas lama tidak pernah
+   setengah tertimpa: kalau apa pun gagal, target tidak tersentuh.
+
+### Ditambahkan
+
+- **Simpan** (Ctrl+S), **Simpan Sebagai** (Ctrl+Shift+S) — menu Berkas, tombol
+  akses cepat, pita Konversi.
+- **Pita Konversi**: PDF ke Gambar (PNG/JPG, 72–600 DPI, rentang halaman),
+  Ekspor Halaman (PDF baru, anotasi tetap bisa disunting), Ekspor Rata (semua
+  anotasi menyatu ke halaman).
+- **Riwayat Ekspor** di Beranda, dengan ukuran dan berkas asal; hasil yang sudah
+  dipindah/dihapus tampil pudar.
+- **Tutup dengan pekerjaan belum disimpan** — tab maupun jendela (termasuk
+  Alt+F4) menanyakan Simpan / Jangan Simpan / Batal. Hanya "Jangan Simpan" yang
+  membuang pekerjaan.
+- **Autosave draf** ke SQLite tiap 20 detik dan saat jendela kehilangan fokus
+  (SPEC 8), ditawarkan untuk dipulihkan saat dokumennya dibuka lagi. Draf untuk
+  berkas yang sudah diubah program lain mengatakannya dan hanya diterapkan bila
+  diminta.
+- **Berkas diubah program lain / hilang**: pita peringatan di atas halaman dengan
+  Muat Ulang (anotasi yang belum disimpan dipasang kembali) atau Abaikan.
+- **Status simpan dan ukuran berkas** di bilah bawah; titik oranye di tab kini
+  mengikuti "belum disimpan" dari backend, bukan "bisa di-undo".
+- **Impor anotasi** dari berkas yang disimpan v7: dilepas dari halaman tampilan
+  saat pertama dimuat (supaya tidak tergambar dobel) dan dijadikan objek hidup.
+- `cargo run -p izul-bench --bin fase4-uji` membuat PDF uji 14 anotasi dan
+  versi ratanya untuk diperiksa di Acrobat, Chrome, Edge; `--bench` mengukur
+  jalur simpan pada fixture 500 halaman.
+- IPC: sebelas `Request` dan lima `Response` baru, semuanya di ujung enum;
+  `PROTOCOL_VERSION` 4 → 5.
+- Izin baru di `capabilities/default.json`: `dialog:allow-save`,
+  `core:window:allow-destroy`. `dialog:allow-confirm` dilepas karena tidak lagi
+  dipakai.
+
+### Diperbaiki
+
+- **Simpan kedua menghapus kotak teks.** Penulis membuang diam-diam objek yang
+  metrik fontnya belum ada di cache — dan cache itu kosong untuk objek hasil
+  impor. Sekarang metrik disiapkan untuk semua objek sebelum menulis, dan objek
+  tanpa metrik adalah galat, bukan objek yang hilang. Test integrasi
+  `save_round_trip` terbukti gagal pada kode lama (4 dari 5 anotasi kembali).
+- **Ekspor atau Simpan Sebagai ke berkas yang terbuka di tab lain** kini
+  ditolak dengan pesan. Di Windows rename-nya akan gagal di tengah jalan; di
+  sistem lain berhasil dan diam-diam mengganti isi dokumen yang sedang dibaca.
+- **"Jangan Simpan" bisa dibatalkan autosave.** Autosave yang kebetulan jalan
+  di antara membuang draf dan menutup tab akan menulis ulang draf yang baru
+  ditolak. `draft_discard` kini juga menandai perubahan itu sudah diputuskan.
+- Tabel xref pembaruan dibuka dengan subbagian objek 0, sehingga pypdf tidak
+  lagi memperingatkan "not zero-indexed".
+
+### Angka
+
+**Tetap editable setelah simpan-buka** — `open_annotate_save_reopen_and_edit_again` (test integrasi,
+pekerja sungguhan): buka → anotasi → simpan → tutup → buka → sunting → simpan
+lagi → buka; semua objek kembali dengan jenis, posisi, dan isi yang sama, gambar
+piksel-per-piksel termasuk alfa, dan simpan kedua tidak menggandakan apa pun. Plus
+`every_kind_survives_save_and_reopen_as_a_live_object` di `izul-pdf` untuk
+ketiga belas jenis.
+
+**Paritas layar vs berkas tersimpan** (SPEC 3.3, ambang 0,5 %): 22 kasus
+(sebelas jenis tanpa teks, tegak dan diputar) **0,000 %**. Pemeriksaan
+kewarasan: golden vs halaman putih polos 19,4 %, jadi nol itu identik, bukan
+dua gambar kosong.
+
+**Mesin lain:** poppler dan MuPDF menggambar keempat belas anotasi berkas uji di
+tempatnya. Selisih keduanya 1,61 % dengan anotasi hidup dan 1,59 % pada versi
+rata — perbedaan antialias antar mesin, bukan anotasi. Versi rata identik
+0,00 % dengan versi beranotasi. Rinciannya di `bench/results/phase4-parity.txt`.
+
+**Kecepatan jalur simpan** (build release, 280 anotasi di 20 halaman,
+`bench/results/phase4-linux.txt`):
+
+| Berkas | Ukuran | PDFium menulis | Anotasi (patch) | Verifikasi | Ratakan 20 hal. |
+|---|---|---|---|---|---|
+| text-500p | 1,0 MB | 22 ms | 13 ms | 13 ms | 27 ms |
+| mixed-500p | 50,0 MB | 1 110 ms | 14 ms | 26 ms | 156 ms |
+| scan-50mb-500p | 79,8 MB | 123 ms | 14 ms | 10 ms | 99 ms |
+
+Biaya terbesar adalah PDFium menulis ulang berkas utuh; bagian anotasi kita
+tetap belasan milidetik berapa pun besar berkasnya. SPEC tidak menetapkan
+target waktu simpan, jadi tidak ada angka "lulus/gagal" di sini.
+
+### Diketahui / belum
+
+- Belum diuji di Adobe Acrobat dan Edge — tidak ada di lingkungan
+  pengembangan. Pengganti yang dipakai: dua mesin PDF independen (poppler dan
+  MuPDF) dan dua pemeriksa struktur (qpdf lewat pikepdf, pypdf mode ketat).
+  Langkah memeriksanya sendiri ada di TESTING.md.
+- Dokumen terenkripsi tidak bisa disimpan (pesan jelas, bukan kegagalan diam).
+- Kotak teks, stempel, dan catatan memakai font standard-14 yang **tidak
+  ditanam**; pembaca lain menggantinya dengan padanan terdekat. Menanam font
+  datang bersama penyuntingan teks (Fase 7).
+- `npm audit`: dua peringatan "moderate" pada `vitest` (alat test, tidak ikut ke
+  aplikasi). Sudah ada sebelum fase ini; perbaikannya naik versi mayor.
+
 ## [7.0.0-alpha.3] — Fase 3: Mesin Anotasi & Paritas
 
 Fase ini membuat anotasi ada, dan membuat paritas antara yang terlihat di layar

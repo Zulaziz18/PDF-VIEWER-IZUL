@@ -86,6 +86,18 @@ impl Workspace {
         Some(removed)
     }
 
+    /// Moves a tab to a new file — what "save as" does to the tab it saved.
+    pub fn set_path(&mut self, doc: u64, path: String, file_id: i64) -> bool {
+        match self.docs.get_mut(&doc) {
+            Some(d) => {
+                d.path = path;
+                d.file_id = file_id;
+                true
+            }
+            None => false,
+        }
+    }
+
     pub fn get(&self, doc: u64) -> Option<&OpenDoc> {
         self.docs.get(&doc)
     }
