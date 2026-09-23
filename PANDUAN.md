@@ -4,11 +4,12 @@
 > fitur yang belum ada hanya akan menyesatkan, jadi bagian yang belum bisa
 > dipakai sengaja dikosongkan sampai fasenya selesai.
 
-## Status: Fase 3
+## Status: Fase 4
 
 Aplikasi ini sekarang bisa dipakai membaca beberapa dokumen sekaligus, mencari
-di dalamnya, dan **menganotasi** — dengan satu catatan penting: anotasi belum
-bisa disimpan ke berkas PDF. Itu datang di Fase 4.
+di dalamnya, menganotasi, dan **menyimpan** anotasi itu ke berkas PDF —
+sebagai anotasi biasa yang terlihat di pembaca PDF lain, dan tetap bisa
+disunting ulang di sini setelah berkasnya dibuka lagi.
 
 ### Membuka dan menggulir
 
@@ -170,15 +171,66 @@ bisa diklik tembus — berguna untuk stempel latar.
 Tab **Anotasi** di panel samping mendaftar semua anotasi dokumen, dikelompokkan
 per halaman dan bisa disaring per jenis. Mengkliknya melompat ke tempatnya.
 
+### Menyimpan
+
+- **Ctrl+S** atau ikon disket di kiri atas menyimpan ke berkas yang sama.
+  **Ctrl+Shift+S** (Simpan Sebagai) menyimpan ke nama atau folder lain; tab
+  ikut pindah ke berkas baru, berkas lama tidak berubah.
+- Titik oranye di tab dan tulisan "Belum disimpan" di bilah bawah berarti ada
+  perubahan yang belum ada di berkas.
+- Menyimpan tidak pernah merusak berkas lama. Aplikasi menulis salinan baru di
+  samping berkas Anda, memeriksanya dengan membukanya ulang, dan baru
+  menggantinya kalau pemeriksaan lulus. Kalau apa pun gagal — disk penuh,
+  listrik padam — berkas lama tetap utuh.
+- Menutup tab atau aplikasi dengan perubahan yang belum disimpan selalu
+  bertanya dulu: **Simpan**, **Jangan Simpan**, atau **Batal**.
+
+### Kalau aplikasi tertutup mendadak
+
+Setiap 20 detik, dan setiap kali Anda berpindah ke jendela lain, perubahan yang
+belum disimpan dicatat sebagai **draf** (bukan ke berkas PDF Anda). Kalau
+aplikasi tertutup paksa, saat berkas itu dibuka lagi muncul pertanyaan
+"Pulihkan pekerjaan yang belum disimpan?". **Pulihkan** mengembalikan
+anotasinya; simpan setelah itu untuk menuliskannya ke berkas. **Nanti**
+menyimpan drafnya untuk kesempatan berikutnya.
+
+Kalau berkasnya sudah diubah program lain sejak draf dibuat, pertanyaannya
+mengatakan itu — anotasi bisa berada di tempat yang salah bila halamannya
+bergeser, jadi periksa dulu sebelum menyimpan.
+
+### Kalau berkas diubah program lain
+
+Pita kuning di atas halaman muncul bila berkas yang sedang terbuka diubah atau
+dihapus oleh program lain. **Muat Ulang** membuka versi terbarunya dan
+memasang kembali anotasi yang belum disimpan. **Abaikan** tetap memakai yang
+terbuka — tetapi menyimpan nanti akan menimpa perubahan dari program lain itu.
+
+### Konversi dan ekspor
+
+Tab pita **Konversi**:
+
+- **PDF ke Gambar** — halaman jadi berkas PNG atau JPG di folder pilihan Anda.
+  Pilih semua halaman, halaman yang sedang dibuka, atau rentang seperti
+  `1-3, 5, 8-` (`8-` berarti halaman 8 sampai akhir). 150 DPI cukup untuk
+  layar dan dokumen biasa; 300 DPI untuk dicetak.
+- **Ekspor Halaman** — halaman tertentu jadi PDF baru. Anotasinya ikut dan
+  masih bisa disunting.
+- **Ekspor Rata** — PDF baru dengan semua anotasi menyatu ke halaman. Cocok
+  untuk dikirim ke orang lain bila anotasinya tidak boleh diubah atau
+  dihapus.
+
+Ekspor tidak pernah mengubah berkas yang sedang Anda buka, dan menolak menimpa
+berkas yang sedang terbuka di tab lain. Semua hasil ekspor tercatat di
+**Beranda → Riwayat Ekspor**.
+
 ### Yang perlu diketahui soal anotasi di fase ini
 
-**Anotasi belum disimpan ke berkas.** Semuanya hidup di memori aplikasi sampai
-tab ditutup atau aplikasi keluar. Menulisnya ke PDF, menyimpan otomatis, dan
-memulihkannya setelah crash adalah Fase 4. Sampai itu ada, jangan menganggap
-pekerjaan anotasi Anda aman.
-
-Yang **belum** dapat dilakukan selain itu: menyunting teks langsung di atas
-halaman (isinya diketik lewat panel properti), dan menyimpan atau mengekspor.
+- Kotak teks, stempel, dan catatan memakai font standar PDF (Helvetica, Times,
+  Courier) yang tidak ditanam ke berkas; pembaca lain menampilkannya dengan
+  font padanan terdekat, jadi bentuk hurufnya bisa sedikit berbeda.
+- Dokumen yang dilindungi kata sandi belum bisa disimpan.
+- Yang **belum** dapat dilakukan: menyunting teks asli dokumen langsung di atas
+  halaman (isi kotak teks diketik lewat panel properti).
 
 ## Persyaratan sistem
 

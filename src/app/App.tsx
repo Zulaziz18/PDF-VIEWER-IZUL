@@ -21,6 +21,10 @@
 import { useEffect } from "react";
 import { About } from "./About";
 import { BottomBar } from "./BottomBar";
+import { ExportDialog } from "./ExportDialog";
+import { FileBanner } from "./FileBanner";
+import { NoticeToast } from "./NoticeToast";
+import { PromptDialog } from "./PromptDialog";
 import { Home } from "./Home";
 import { PropertiesPanel } from "./PropertiesPanel";
 import { MenuBar, Ribbon } from "./Ribbon";
@@ -29,6 +33,7 @@ import { TitleBar } from "./TitleBar";
 import { Viewport } from "./Viewport";
 import { useArmedMarkup } from "./armedMarkup";
 import { useDropTarget } from "./dropTarget";
+import { installDraftOffer, useAutosave, useCloseGuard, useFileWatch } from "./fileActions";
 import { useOpenFilesFromOtherInstance } from "./openFiles";
 import { useShortcuts } from "./shortcuts";
 import { useDocument } from "@/state/documentStore";
@@ -36,6 +41,10 @@ import { useWorkspace } from "@/state/workspaceStore";
 import { t } from "@/i18n";
 
 let startupDone = false;
+
+// Before anything opens: the restored session's documents are the ones most
+// likely to have a draft waiting.
+installDraftOffer();
 
 export function App(): React.JSX.Element {
   const doc = useDocument((s) => s.doc);
@@ -45,6 +54,9 @@ export function App(): React.JSX.Element {
   useShortcuts();
   useArmedMarkup();
   useOpenFilesFromOtherInstance();
+  useCloseGuard();
+  useAutosave();
+  useFileWatch();
 
   useEffect(() => {
     // Once per run, not once per mount. React's development mode mounts every
@@ -78,6 +90,7 @@ export function App(): React.JSX.Element {
         <div className={showHome ? "hidden" : "flex-1 min-h-0 flex flex-col"}>
           <MenuBar />
           <Ribbon />
+          <FileBanner />
           <div
             className={[
               "flex-1 min-h-0 flex border-t border-[var(--izul-border)]",
@@ -93,6 +106,9 @@ export function App(): React.JSX.Element {
         </div>
       )}
       <About />
+      <ExportDialog />
+      <PromptDialog />
+      <NoticeToast />
     </div>
   );
 }

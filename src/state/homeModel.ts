@@ -35,9 +35,9 @@ export interface KnownFolder {
   readonly path: string;
 }
 
-export interface RecentGroup {
+export interface RecentGroup<T = RecentFile> {
   readonly key: "last30" | "earlier";
-  readonly files: readonly RecentFile[];
+  readonly files: readonly T[];
 }
 
 const DAY_SECONDS = 86_400;
@@ -48,11 +48,14 @@ const DAY_SECONDS = 86_400;
  * "what was I working on". Empty groups are dropped. Order inside a group is
  * the order given, which the backend already sorts by recency.
  */
-export function groupRecent(files: readonly RecentFile[], nowMs: number): RecentGroup[] {
+export function groupRecent<T extends { readonly last_opened: number | null }>(
+  files: readonly T[],
+  nowMs: number,
+): RecentGroup<T>[] {
   const cutoff = nowMs / 1000 - 30 * DAY_SECONDS;
   const last30 = files.filter((f) => (f.last_opened ?? 0) >= cutoff);
   const earlier = files.filter((f) => (f.last_opened ?? 0) < cutoff);
-  const groups: RecentGroup[] = [];
+  const groups: RecentGroup<T>[] = [];
   if (last30.length > 0) groups.push({ key: "last30", files: last30 });
   if (earlier.length > 0) groups.push({ key: "earlier", files: earlier });
   return groups;

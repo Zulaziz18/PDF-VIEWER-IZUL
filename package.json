@@ -1,7 +1,7 @@
 {
   "name": "pdf-studio-izul",
   "private": true,
-  "version": "7.0.0-alpha.3",
+  "version": "7.0.0-alpha.4",
   "type": "module",
   "scripts": {
     "dev": "npm run worker && vite",

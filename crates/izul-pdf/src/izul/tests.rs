@@ -244,6 +244,9 @@ fn a_saved_annotation_renders_like_its_golden_appearance() {
                 }
             }
             let diff = differing_fraction(&golden, &actual);
+            // Printed for the phase report: `--nocapture` shows the margin,
+            // not just that it passed.
+            eprintln!("paritas {kind:?} diputar={rotated}: {:.3} %", diff * 100.0);
             assert!(
                 diff < MAX_DIFFERING_FRACTION,
                 "{kind:?} (diputar: {rotated}): {:.3} % piksel berbeda dari golden",

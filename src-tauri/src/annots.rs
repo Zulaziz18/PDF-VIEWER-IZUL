@@ -323,6 +323,13 @@ impl AnnotState {
         });
     }
 
+    /// The current edits are accounted for by a draft decision — written,
+    /// or deliberately thrown away — so autosave leaves them alone until the
+    /// next edit.
+    pub fn mark_drafted(&self, doc: u64) {
+        self.with(doc, |e| e.drafted = e.revision);
+    }
+
     pub fn is_imported(&self, doc: u64, page: u32) -> bool {
         self.with(doc, |e| e.imported.contains(&page))
     }

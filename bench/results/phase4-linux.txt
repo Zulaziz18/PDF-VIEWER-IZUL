@@ -1,0 +1,5 @@
+Fase 4 — jalur simpan, 20 x 14 anotasi, linux (x86_64)
+berkas                            MB     buka ms   PDFium ms    patch ms    verif ms     rata ms         +KB
+text-500p.pdf                    1.0         0.2        22.5        13.0        12.5        27.1       328.0
+mixed-500p.pdf                  50.0         0.4      1110.4        13.9        26.0       155.7       341.9
+scan-50mb-500p.pdf              79.8         0.4       123.3        13.9        10.4        99.4       320.8

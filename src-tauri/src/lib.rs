@@ -294,6 +294,7 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
             save_commands::draft_restore,
             save_commands::draft_discard,
             save_commands::file_status,
+            save_commands::file_acknowledge,
         ])
         .run(tauri::generate_context!());
 

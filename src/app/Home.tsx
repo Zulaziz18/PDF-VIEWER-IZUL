@@ -18,7 +18,7 @@ import { Icon, type IconName, type Tone } from "@/design/Icon";
 import { IconButton } from "@/design/controls";
 import { FileBadge } from "@/design/FileBadge";
 import { t, type StringKey } from "@/i18n";
-import { useHome, type HomeView } from "@/state/homeStore";
+import { useHome, type ExportRecord, type HomeView } from "@/state/homeStore";
 import {
   baseName,
   breakablePath,
@@ -93,6 +93,7 @@ function Navigation(props: { view: HomeView; recent: readonly RecentFile[]; know
       </button>
       <NavItem icon="recent" tone="blue" label={t("home.recent")} view={{ kind: "recent" }} current={props.view} />
       <NavItem icon="star" tone="amber" label={t("home.starred")} view={{ kind: "starred" }} current={props.view} />
+      <NavItem icon="exportFile" tone="teal" label={t("home.exports")} view={{ kind: "exports" }} current={props.view} />
 
       <h2 className="mt-4 mb-1 px-3 text-[12px] font-semibold text-[var(--izul-text-dim)]">{t("home.local")}</h2>
       <NavItem icon="pc" tone="neutral" label={t("home.thisPc")} view={{ kind: "pc" }} current={props.view} />
@@ -149,7 +150,8 @@ function openRow(row: Row): void {
     void useHome.getState().navigate({ kind: "folder", path: row.path });
     return;
   }
-  if (!row.available) return;
+  // An exported image is listed so it can be found again, not opened here.
+  if (!row.available || !/\.pdf$/i.test(row.path)) return;
   void useWorkspace.getState().openFile(row.path);
 }
 
@@ -247,8 +249,35 @@ function entryRow(e: FolderEntry, pinned: ReadonlySet<string>): Row {
   };
 }
 
-function Details(props: { file: RecentFile | null; entry: FolderEntry | null; home: string | null }): JSX.Element {
-  const { file, entry } = props;
+const EXPORT_KIND: Record<string, { icon: IconName; tone: Tone; label: StringKey }> = {
+  flat: { icon: "flatten", tone: "violet", label: "convert.flat" },
+  pages: { icon: "extractPages", tone: "blue", label: "convert.pages" },
+  png: { icon: "toImages", tone: "teal", label: "export.png" },
+  jpg: { icon: "toImages", tone: "teal", label: "export.jpg" },
+};
+
+function exportRow(e: ExportRecord, home: string | null): Row {
+  const kind = EXPORT_KIND[e.kind];
+  return {
+    path: e.out_path,
+    name: baseName(e.out_path),
+    isDir: false,
+    folder: displayFolder(e.out_path, home),
+    modified: e.created_at,
+    size: e.size,
+    pinned: false,
+    available: e.exists,
+    ...(kind && kind.icon !== "extractPages" && kind.icon !== "flatten" ? { icon: kind.icon, tone: kind.tone } : {}),
+  };
+}
+
+function Details(props: {
+  file: RecentFile | null;
+  entry: FolderEntry | null;
+  exported: ExportRecord | null;
+  home: string | null;
+}): JSX.Element {
+  const { file, entry, exported } = props;
   if (!file && !entry) {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-3 p-6 text-center text-[var(--izul-text-dim)]">
@@ -264,10 +293,17 @@ function Details(props: { file: RecentFile | null; entry: FolderEntry | null; ho
   const facts: Array<[StringKey, string]> = [
     ["home.col.location", parentFolder(path)],
     ["home.col.size", formatBytes(size)],
-    ["home.col.modified", formatDateTime(modified)],
+    [exported ? "home.col.exported" : "home.col.modified", formatDateTime(modified)],
   ];
   if (file?.last_opened) facts.push(["home.lastOpened", formatDateTime(file.last_opened)]);
-  const available = file ? file.available : true;
+  if (exported) {
+    const kind = EXPORT_KIND[exported.kind];
+    if (kind) facts.push(["home.exportKind", t(kind.label)]);
+    facts.push(["home.exportSource", exported.source]);
+  }
+  const available = file ? file.available : exported ? exported.exists : true;
+  // Only a PDF opens here; an exported picture is listed so it can be found.
+  const openable = available && /\.pdf$/i.test(path);
   return (
     <div className="h-full flex flex-col gap-4 p-4 overflow-y-auto">
       <div className="aspect-[4/3] rounded-[8px] bg-[var(--izul-canvas)] border border-[var(--izul-border)] grid place-items-center overflow-hidden">
@@ -290,7 +326,7 @@ function Details(props: { file: RecentFile | null; entry: FolderEntry | null; ho
       <div className="flex gap-2">
         <button
           type="button"
-          disabled={!available}
+          disabled={!openable}
           onClick={() => void useWorkspace.getState().openFile(path)}
           className="flex-1 h-9 rounded-[8px] bg-[var(--izul-accent)] text-[var(--izul-on-accent)] font-medium disabled:opacity-40"
         >
@@ -315,6 +351,7 @@ function Details(props: { file: RecentFile | null; entry: FolderEntry | null; ho
 export function Home(props: { dropping: boolean }): JSX.Element {
   const view = useHome((s) => s.view);
   const recent = useHome((s) => s.recent);
+  const exports = useHome((s) => s.exports);
   const known = useHome((s) => s.known);
   const entries = useHome((s) => s.entries);
   const selected = useHome((s) => s.selected);
@@ -348,6 +385,25 @@ export function Home(props: { dropping: boolean }): JSX.Element {
             <GroupBlock key={g.key} label={g.key === "all" ? null : t(g.key === "last30" ? "home.last30" : "home.earlier")}>
               {g.files.map((f) => (
                 <FileRow key={f.path} row={recentRow(f, homeDir)} selected={selected === f.path} pinnable />
+              ))}
+            </GroupBlock>
+          ))}
+        </Table>
+      );
+  } else if (view.kind === "exports") {
+    title = t("home.exports");
+    body =
+      exports.length === 0 ? (
+        <Empty text={t("home.noExports")} />
+      ) : (
+        <Table dateLabel="home.col.exported">
+          {groupRecent(
+            exports.map((e) => ({ ...e, last_opened: e.created_at })),
+            Date.now(),
+          ).map((g) => (
+            <GroupBlock key={g.key} label={t(g.key === "last30" ? "home.last30" : "home.earlier")}>
+              {g.files.map((e) => (
+                <FileRow key={e.out_path} row={exportRow(e, homeDir)} selected={selected === e.out_path} pinnable={false} />
               ))}
             </GroupBlock>
           ))}
@@ -396,7 +452,12 @@ export function Home(props: { dropping: boolean }): JSX.Element {
   }
 
   const selectedFile = recent.find((f) => f.path === selected) ?? null;
-  const selectedEntry = selectedFile ? null : (entries.find((e) => e.path === selected && !e.is_dir) ?? null);
+  const exported = (view.kind === "exports" ? exports.find((e) => e.out_path === selected) : undefined) ?? null;
+  const selectedEntry = selectedFile
+    ? null
+    : exported
+      ? { name: baseName(exported.out_path), path: exported.out_path, is_dir: false, size: exported.size, modified: exported.created_at }
+      : (entries.find((e) => e.path === selected && !e.is_dir) ?? null);
   const parent = view.kind === "folder" ? parentFolder(view.path) : null;
 
   return (
@@ -434,7 +495,7 @@ export function Home(props: { dropping: boolean }): JSX.Element {
         >
           <h2 className="h-14 shrink-0 px-4 flex items-center text-[15px] font-semibold">{t("home.fileInfo")}</h2>
           <div className="flex-1 min-h-0">
-            <Details file={selectedFile} entry={selectedEntry} home={homeDir} />
+            <Details file={selectedFile} entry={selectedEntry} exported={exported} home={homeDir} />
           </div>
         </aside>
       </main>
@@ -447,7 +508,7 @@ async function refresh(view: HomeView): Promise<void> {
   if (view.kind === "folder") await useHome.getState().navigate(view);
 }
 
-function Table(props: { children: React.ReactNode }): JSX.Element {
+function Table(props: { children: React.ReactNode; dateLabel?: StringKey }): JSX.Element {
   return (
     <table className="w-full table-fixed border-collapse">
       <colgroup>
@@ -460,7 +521,7 @@ function Table(props: { children: React.ReactNode }): JSX.Element {
         <tr className="h-9 text-left text-[12px] text-[var(--izul-text-dim)]">
           <th scope="col" className="pl-4 pr-2 font-normal">{t("home.col.name")}</th>
           <th scope="col" className="px-2 font-normal">{t("home.col.location")}</th>
-          <th scope="col" className="px-2 font-normal">{t("home.col.modified")}</th>
+          <th scope="col" className="px-2 font-normal">{t(props.dateLabel ?? "home.col.modified")}</th>
           <th scope="col" className="pl-2 pr-4 font-normal text-right">{t("home.col.size")}</th>
         </tr>
       </thead>

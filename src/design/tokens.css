@@ -29,6 +29,8 @@
   /* One accent for the whole application. Other colours are status only. */
   --izul-accent: #2f6feb;
   --izul-accent-soft: #e8f0fe;
+  /* The strip that says the file on disk changed: a warning, not an error. */
+  --izul-warning-soft: #fff4e0;
   /* Text on an accent-filled button: 4.5:1 or better in both themes (SPEC 14). */
   --izul-on-accent: #ffffff;
   --izul-danger: #d1343c;
@@ -78,6 +80,7 @@
   --izul-text-dim: #a2a2aa;
   --izul-accent: #6f9dff;
   --izul-accent-soft: #24324d;
+  --izul-warning-soft: #3d3020;
   --izul-on-accent: #0b1a33;
   --izul-brand: #ff6b6b;
 

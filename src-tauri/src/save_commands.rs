@@ -31,6 +31,42 @@ fn doc_path(state: &AppState, doc: u64) -> CmdResult<(String, i64, u32)> {
     Ok((open.path.clone(), open.file_id, open.page_count))
 }
 
+/// Whether two paths name the same existing file. A target that does not
+/// exist yet cannot be a file some tab has open, so it is never "the same".
+fn same_file(a: &std::path::Path, b: &std::path::Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(x), Ok(y)) => x == y,
+        _ => false,
+    }
+}
+
+/// Refuses a write over a file another tab has open (`except` is the tab
+/// doing the writing, whose own file a plain save may replace).
+///
+/// On Windows the rename would fail halfway, because the other tab's worker
+/// holds the file mapped; elsewhere it would succeed and silently change the
+/// pages of a document someone is reading. Either is worse than asking for
+/// another name.
+fn refuse_open_target(state: &AppState, target: &str, except: Option<u64>) -> CmdResult<()> {
+    let target = PathBuf::from(target);
+    let ws = state.workspace.lock();
+    for tab in ws.tabs() {
+        if Some(tab.doc) == except {
+            continue;
+        }
+        if same_file(&target, &PathBuf::from(&tab.path)) {
+            let name = PathBuf::from(&tab.path)
+                .file_name()
+                .map(|n| n.to_string_lossy().to_string())
+                .unwrap_or_default();
+            return Err(format!(
+                "{name} sedang terbuka di tab lain. Tutup tab itu dulu, atau pilih nama lain."
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Makes sure every face the objects draw text in has metrics cached, so the
 /// display lists the writer serialises are the ones the canvas drew.
 async fn prepare_all_fonts(state: &AppState, doc: u64) -> CmdResult<()> {
@@ -46,6 +82,9 @@ pub async fn save_document(
     target: Option<String>,
 ) -> CmdResult<SaveReport> {
     let (path, file_id, page_count) = doc_path(&state, doc)?;
+    if let Some(target) = &target {
+        refuse_open_target(&state, target, Some(doc))?;
+    }
     prepare_all_fonts(&state, doc).await?;
     let report = saving::save(
         &state.pool,
@@ -89,6 +128,15 @@ pub async fn export_document(
     spec: Export,
 ) -> CmdResult<Vec<String>> {
     let (path, file_id, _) = doc_path(&state, doc)?;
+    // An export never replaces the file it was made from, either: that is
+    // what "Simpan" is for, and an export that did it would leave the tab
+    // showing pages its file no longer has.
+    match &spec {
+        Export::Flat { target } | Export::Pages { target, .. } => {
+            refuse_open_target(&state, target, None)?;
+        }
+        Export::Images { .. } => {}
+    }
     prepare_all_fonts(&state, doc).await?;
     let kind = match &spec {
         Export::Flat { .. } => "flat",
@@ -116,6 +164,8 @@ pub struct ExportOut {
     pub created_at: i64,
     /// False when the file has been moved or deleted since.
     pub exists: bool,
+    /// Bytes on disk now; `None` when it is gone.
+    pub size: Option<u64>,
 }
 
 #[tauri::command]
@@ -124,12 +174,19 @@ pub fn export_history(state: tauri::State<'_, AppState>) -> CmdResult<Vec<Export
     let rows = exports::recent(&conn, 100).map_err(|e| format!("basis data: {e}"))?;
     Ok(rows
         .into_iter()
-        .map(|r| ExportOut {
-            exists: PathBuf::from(&r.out_path).exists(),
-            source: r.source,
-            out_path: r.out_path,
-            kind: r.kind,
-            created_at: r.created_at,
+        .map(|r| {
+            let size = std::fs::metadata(&r.out_path)
+                .ok()
+                .filter(|m| m.is_file())
+                .map(|m| m.len());
+            ExportOut {
+                exists: size.is_some(),
+                size,
+                source: r.source,
+                out_path: r.out_path,
+                kind: r.kind,
+                created_at: r.created_at,
+            }
         })
         .collect())
 }
@@ -242,11 +299,28 @@ pub fn draft_restore(
     Ok(state.annots.edit_state(doc))
 }
 
+/// Throws the draft away — the "don't save" answer when a tab closes.
+///
+/// Also marks the current edits as drafted: autosave runs on a timer, and one
+/// that fired between this and the tab closing would write the edits the user
+/// just declined straight back, to be offered for recovery next time.
 #[tauri::command]
 pub fn draft_discard(state: tauri::State<'_, AppState>, doc: u64) -> CmdResult<()> {
     let (_, file_id, _) = doc_path(&state, doc)?;
+    state.annots.mark_drafted(doc);
     let conn = state.db()?;
     drafts::delete(&conn, files::FileId(file_id)).map_err(|e| e.to_string())
+}
+
+/// "Ignore": the user has seen that another program changed the file and
+/// keeps working on what they have. The file as it is now becomes the one
+/// the tab is measured against, so the warning does not come straight back.
+#[tauri::command]
+pub fn file_acknowledge(state: tauri::State<'_, AppState>, doc: u64) -> CmdResult<()> {
+    let (path, _, _) = doc_path(&state, doc)?;
+    let stamp = FileStamp::of(&PathBuf::from(path)).map_err(|e| e.to_string())?;
+    state.stamps.lock().insert(doc, stamp);
+    Ok(())
 }
 
 #[derive(Debug, Serialize)]
@@ -270,4 +344,26 @@ pub fn file_status(state: tauri::State<'_, AppState>, doc: u64) -> CmdResult<Fil
         dirty: state.annots.is_dirty(doc),
         size: now.map_or(0, |s| s.size),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::same_file;
+
+    #[test]
+    fn same_file_sees_through_spelling_and_ignores_missing_targets() {
+        let dir = std::env::temp_dir().join(format!("izul-same-{}", std::process::id()));
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        let a = dir.join("a.pdf");
+        std::fs::write(&a, b"%PDF").unwrap();
+        // The same file reached another way round.
+        assert!(same_file(&a, &dir.join("sub").join("..").join("a.pdf")));
+        assert!(
+            !same_file(&a, &dir.join("b.pdf")),
+            "a new name is never open"
+        );
+        std::fs::write(dir.join("b.pdf"), b"%PDF").unwrap();
+        assert!(!same_file(&a, &dir.join("b.pdf")));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

@@ -16,8 +16,16 @@
 //!
 //! Nothing here goes through a worker process; the functions are the ones the
 //! worker and the UI process call.
+//!
+//! With `--bench`, it instead times that save path on the 500-page fixtures
+//! (`bench/make_fixtures.py`): the fourteen annotations on each of twenty
+//! pages, then every stage the application runs — PDFium's full save, the
+//! incremental section, reopening to verify, flattening — and writes the
+//! numbers to `bench/results/phase4-<os>.txt`.
 
+use std::fmt::Write as _;
 use std::path::PathBuf;
+use std::time::Instant;
 
 use izul_model::annot::{
     AnnotId, AnnotKind, AnnotObject, AnnotPayload, FontSpec, NoteIcon, ShapeStyle, TextAlign,
@@ -331,10 +339,124 @@ impl izul_write::save::Assets for Assets<'_> {
     }
 }
 
+/// Pages the benchmark annotates: twenty, spread through the document.
+const BENCH_PAGES: u32 = 20;
+
+fn ms(since: Instant) -> f64 {
+    since.elapsed().as_secs_f64() * 1000.0
+}
+
+fn bench(engine: &'static Engine, fonts: &StandardFonts) {
+    let fixtures = repo_root().join("test-fixtures");
+    let objs = objects();
+    let lists: Vec<_> = objs
+        .iter()
+        .map(|o| display_list(o, fonts).expect("display list"))
+        .collect();
+    let assets = Assets {
+        fonts,
+        picture: picture(),
+    };
+    let mut report = String::new();
+    let _ = writeln!(
+        report,
+        "Fase 4 — jalur simpan, {} x 14 anotasi, {} ({})",
+        BENCH_PAGES,
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    );
+    let _ = writeln!(
+        report,
+        "{:<26} {:>9} {:>11} {:>11} {:>11} {:>11} {:>11} {:>11}",
+        "berkas", "MB", "buka ms", "PDFium ms", "patch ms", "verif ms", "rata ms", "+KB"
+    );
+    for name in ["text-500p.pdf", "mixed-500p.pdf", "scan-50mb-500p.pdf"] {
+        let path = fixtures.join(name);
+        let Ok(meta) = std::fs::metadata(&path) else {
+            let _ = writeln!(
+                report,
+                "{name:<26} (tidak ada — jalankan bench/make_fixtures.py)"
+            );
+            continue;
+        };
+        let t = Instant::now();
+        let doc = engine.open(&path, None).expect("buka");
+        doc.set_strip_izul(false);
+        let open_ms = ms(t);
+        let pages = doc.page_count();
+        let step = (pages / BENCH_PAGES).max(1);
+        let mut placed: Vec<AnnotObject> = Vec::new();
+        let t = Instant::now();
+        for k in 0..BENCH_PAGES.min(pages) {
+            let page = k * step;
+            let ids: Vec<u64> = objs.iter().map(|o| u64::from(k) * 100 + o.id.0).collect();
+            doc.put_placeholders(page, &ids).expect("placeholder");
+            for o in &objs {
+                let mut copy = o.clone();
+                copy.id = AnnotId(u64::from(k) * 100 + o.id.0);
+                copy.page = page;
+                placed.push(copy);
+            }
+        }
+        let bytes = doc.save_to_vec().expect("simpan PDFium");
+        let pdfium_ms = ms(t);
+        drop(doc);
+        let writes: Vec<AnnotWrite<'_>> = placed
+            .iter()
+            .zip(lists.iter().cycle())
+            .map(|(obj, list)| AnnotWrite { obj, list })
+            .collect();
+        let t = Instant::now();
+        let saved = patch(bytes, &writes, &assets).expect("patch");
+        let patch_ms = ms(t);
+        let grown_kb = (saved.len() as f64 - meta.len() as f64) / 1024.0;
+
+        // What `VerifyFile` does before the rename: reopen, count ours back.
+        let t = Instant::now();
+        let check = engine
+            .open_bytes(saved, None::<&str>, None)
+            .expect("buka ulang");
+        check.set_strip_izul(false);
+        let mut found = 0;
+        for k in 0..BENCH_PAGES.min(pages) {
+            found += check.count_izul(k * step).expect("hitung");
+        }
+        let verify_ms = ms(t);
+        assert_eq!(
+            found as usize,
+            placed.len(),
+            "semua anotasi terbaca kembali"
+        );
+
+        let t = Instant::now();
+        for k in 0..BENCH_PAGES.min(pages) {
+            check.flatten_page(k * step).expect("ratakan");
+        }
+        let _flat = check.save_to_vec().expect("simpan rata");
+        let flat_ms = ms(t);
+
+        let _ = writeln!(
+            report,
+            "{name:<26} {:>9.1} {open_ms:>11.1} {pdfium_ms:>11.1} {patch_ms:>11.1} {verify_ms:>11.1} {flat_ms:>11.1} {grown_kb:>11.1}",
+            meta.len() as f64 / 1_048_576.0
+        );
+    }
+    print!("{report}");
+    let out = repo_root()
+        .join("bench/results")
+        .join(format!("phase4-{}.txt", std::env::consts::OS));
+    std::fs::write(&out, report).expect("tulis hasil");
+    println!("ditulis ke {}", out.display());
+}
+
 fn main() {
     let engine = Engine::load_from(pdfium()).expect("PDFium (jalankan vendor/pdfium/fetch.sh)");
     let metrics = metrics_document(engine).expect("dokumen metrik");
     let fonts = StandardFonts::new(engine, metrics.handle());
+    if std::env::args().any(|a| a == "--bench") {
+        bench(engine, &fonts);
+        return;
+    }
     let labels = [
         "1. Stabilo (Highlight)",
         "2. Garis bawah (Underline)",

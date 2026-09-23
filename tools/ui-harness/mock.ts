@@ -43,6 +43,22 @@ export interface HarnessData {
   readonly session: string[];
   readonly active: string | null;
   readonly folders: Record<string, unknown>;
+  /** Phase 4 states a scene wants to show. */
+  readonly flags: HarnessFlags;
+  readonly exports: unknown[];
+  /** Seconds since the epoch, as the frozen clock reads it. */
+  readonly now: number;
+}
+
+export interface HarnessFlags {
+  /** Every open document has unsaved edits. */
+  readonly dirty?: boolean;
+  /** The first document has a draft waiting. */
+  readonly draft?: boolean;
+  /** Another program changed the files on disk. */
+  readonly diskChanged?: boolean;
+  /** The export history has rows. */
+  readonly exports?: boolean;
 }
 
 declare global {
@@ -55,6 +71,9 @@ declare global {
 export function installMocks(data: HarnessData): void {
   mockWindows("main");
   const byPath = new Map(data.docs.map((d) => [d.path, d]));
+  const sizeOf = new Map(data.recent.map((r) => [r.path, r.size ?? 0]));
+  const pathOf = new Map(data.docs.map((d) => [d.doc, d.path]));
+  const flags = data.flags;
 
   mockIPC(
     async (cmd, raw) => {
@@ -109,6 +128,19 @@ export function installMocks(data: HarnessData): void {
         case "annot_list":
         case "annot_display_lists":
           return window.__harnessBackend ? window.__harnessBackend(cmd, args) : [];
+        case "file_status":
+          return {
+            changed_on_disk: flags.diskChanged === true,
+            missing: false,
+            dirty: flags.dirty === true,
+            size: sizeOf.get(pathOf.get(Number(args["doc"])) ?? "") ?? 0,
+          };
+        case "draft_status":
+          return flags.draft === true && args["doc"] === 1
+            ? { updated_at: data.now - 47 * 60, objects: 4, matches_file: true }
+            : null;
+        case "export_history":
+          return flags.exports === true ? data.exports : [];
         case "plugin:window|is_maximized":
         case "plugin:window|is_fullscreen":
           return false;

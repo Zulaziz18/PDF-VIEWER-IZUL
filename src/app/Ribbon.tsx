@@ -6,9 +6,10 @@
  * and under them one ribbon panel of large and small buttons in groups.
  *
  * **A ribbon tab exists only when every button on it works.** SPEC 0 forbids
- * stubs and dead controls, so WPS's "Halaman", "Lindungi", "Konversi" and
- * "Isi & Tanda Tangan" tabs are absent until the phase that builds them adds
- * them here — together with their entry in `RibbonTab`.
+ * stubs and dead controls, so WPS's "Halaman", "Lindungi" and "Isi & Tanda
+ * Tangan" tabs are absent until the phase that builds them adds them here —
+ * together with their entry in `RibbonTab`. "Konversi" arrived with Phase 4,
+ * carrying the three conversions that phase can do without a network.
  *
  * The ribbon replaces the old contextual toolbar: "Beranda" is reading and
  * navigation, "Edit" and "Komentar" carry the annotation tools. That is the
@@ -32,12 +33,14 @@ import { useDocument } from "@/state/documentStore";
 import { useUi, type MarkupKind, type RibbonTab } from "@/state/uiStore";
 import { useWorkspace } from "@/state/workspaceStore";
 import type { ViewMode } from "@/viewport/layout";
-import { closeActiveTab, insertImage, markupSelection, pickAndOpen } from "./actions";
+import { insertImage, markupSelection, pickAndOpen } from "./actions";
+import { exportFlat, requestCloseAll, requestCloseTab, saveDocument } from "./fileActions";
 
 const TABS: ReadonlyArray<{ id: RibbonTab; label: StringKey }> = [
   { id: "home", label: "ribbon.home" },
   { id: "edit", label: "ribbon.edit" },
   { id: "comment", label: "ribbon.comment" },
+  { id: "convert", label: "ribbon.convert" },
 ];
 
 // ---------------------------------------------------------------------------
@@ -45,21 +48,55 @@ const TABS: ReadonlyArray<{ id: RibbonTab; label: StringKey }> = [
 // ---------------------------------------------------------------------------
 
 function fileMenu(): MenuItem[] {
+  const none = useWorkspace.getState().activeDoc === null;
   return [
     { label: t("menu.open"), icon: "open", tone: "amber", shortcut: "Ctrl+O", onSelect: () => void pickAndOpen() },
     { label: t("menu.home"), icon: "home", tone: "blue", onSelect: () => useWorkspace.getState().showHome() },
+    {
+      label: t("menu.save"),
+      icon: "save",
+      tone: "blue",
+      shortcut: "Ctrl+S",
+      separator: true,
+      disabled: none,
+      onSelect: () => void saveDocument(),
+    },
+    {
+      label: t("menu.saveAs"),
+      icon: "saveAs",
+      tone: "blue",
+      shortcut: "Ctrl+Shift+S",
+      disabled: none,
+      onSelect: () => void saveDocument(undefined, "saveAs"),
+    },
+    {
+      label: t("convert.toImages"),
+      icon: "toImages",
+      tone: "teal",
+      separator: true,
+      disabled: none,
+      onSelect: () => useUi.getState().setExporting("images"),
+    },
+    {
+      label: t("convert.pages"),
+      icon: "extractPages",
+      tone: "blue",
+      disabled: none,
+      onSelect: () => useUi.getState().setExporting("pages"),
+    },
+    { label: t("convert.flat"), icon: "flatten", tone: "violet", disabled: none, onSelect: () => void exportFlat() },
     {
       label: t("menu.closeTab"),
       icon: "dismiss",
       shortcut: "Ctrl+W",
       separator: true,
-      disabled: useWorkspace.getState().activeDoc === null,
-      onSelect: closeActiveTab,
+      disabled: none,
+      onSelect: () => void requestCloseTab(),
     },
     {
       label: t("menu.closeAll"),
       disabled: useWorkspace.getState().tabs.length === 0,
-      onSelect: () => void useWorkspace.getState().closeAll(),
+      onSelect: () => void requestCloseAll(),
     },
     {
       label: t("menu.about"),
@@ -76,6 +113,8 @@ export function MenuBar(): JSX.Element {
   const canUndo = useDocument((s) => s.canUndo);
   const canRedo = useDocument((s) => s.canRedo);
   const searchOpen = useDocument((s) => s.search.open);
+  const dirty = useDocument((s) => s.dirty);
+  const saving = useDocument((s) => s.file.saving);
   const store = useDocument.getState;
 
   return (
@@ -90,6 +129,14 @@ export function MenuBar(): JSX.Element {
       </MenuButton>
       <span aria-hidden="true" className="w-px h-4 mx-1 bg-[var(--izul-border)]" />
       <IconButton icon="open" tone="amber" label={t("menu.open")} hint={`${t("menu.open")} (Ctrl+O)`} onClick={() => void pickAndOpen()} />
+      <IconButton
+        icon="save"
+        tone="blue"
+        label={t("menu.save")}
+        hint={`${t("menu.save")} (Ctrl+S)`}
+        disabled={!dirty || saving}
+        onClick={() => void saveDocument()}
+      />
       <IconButton
         icon="undo"
         label={t("annot.undo")}
@@ -378,6 +425,38 @@ function CommentPanel(): JSX.Element {
   );
 }
 
+/**
+ * "Konversi": the three conversions that need nothing but the PDF engine.
+ * WPS's converters to Word, Excel and PowerPoint are absent — they are not
+ * something PDFium can do, and SPEC 2 rules out sending the file anywhere
+ * that could.
+ */
+function ConvertPanel(): JSX.Element {
+  const ui = useUi.getState;
+  return (
+    <>
+      <RibbonButton
+        icon="toImages"
+        tone="teal"
+        label={t("convert.toImages")}
+        hint={t("convert.toImagesHint")}
+        onClick={() => ui().setExporting("images")}
+      />
+      <RibbonDivider />
+      <RibbonButton
+        icon="extractPages"
+        tone="blue"
+        label={t("convert.pages")}
+        hint={t("convert.pagesHint")}
+        onClick={() => ui().setExporting("pages")}
+      />
+      <RibbonButton icon="flatten" tone="violet" label={t("convert.flat")} hint={t("convert.flatHint")} onClick={() => void exportFlat()} />
+      <RibbonDivider />
+      <RibbonButton icon="saveAs" tone="blue" label={t("menu.saveAs")} hint={`${t("menu.saveAs")} (Ctrl+Shift+S)`} onClick={() => void saveDocument(undefined, "saveAs")} />
+    </>
+  );
+}
+
 export function Ribbon(): JSX.Element {
   const ribbon = useUi((s) => s.ribbon);
   const error = useDocument((s) => s.annotError);
@@ -390,7 +469,15 @@ export function Ribbon(): JSX.Element {
         aria-labelledby={`ribbon-tab-${ribbon}`}
         className="h-[70px] flex items-center gap-0.5 px-2 rounded-[8px] bg-[var(--izul-surface)] border border-[var(--izul-border)] overflow-x-auto overflow-y-hidden"
       >
-        {ribbon === "home" ? <HomePanel /> : ribbon === "edit" ? <EditPanel /> : <CommentPanel />}
+        {ribbon === "home" ? (
+          <HomePanel />
+        ) : ribbon === "edit" ? (
+          <EditPanel />
+        ) : ribbon === "comment" ? (
+          <CommentPanel />
+        ) : (
+          <ConvertPanel />
+        )}
       </div>
       {(error !== null || markup !== null) && (
         <p

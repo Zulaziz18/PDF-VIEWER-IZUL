@@ -1917,7 +1917,7 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "izul-app"
-version = "7.0.0-alpha.3"
+version = "7.0.0-alpha.4"
 dependencies = [
  "image",
  "izul-ipc",
@@ -1946,7 +1946,7 @@ dependencies = [
 
 [[package]]
 name = "izul-bench"
-version = "7.0.0-alpha.3"
+version = "7.0.0-alpha.4"
 dependencies = [
  "image",
  "izul-ipc",
@@ -1964,7 +1964,7 @@ dependencies = [
 
 [[package]]
 name = "izul-integration-tests"
-version = "7.0.0-alpha.3"
+version = "7.0.0-alpha.4"
 dependencies = [
  "izul-ipc",
  "izul-model",
@@ -1975,7 +1975,7 @@ dependencies = [
 
 [[package]]
 name = "izul-ipc"
-version = "7.0.0-alpha.3"
+version = "7.0.0-alpha.4"
 dependencies = [
  "izul-model",
  "libc",
@@ -1990,7 +1990,7 @@ dependencies = [
 
 [[package]]
 name = "izul-model"
-version = "7.0.0-alpha.3"
+version = "7.0.0-alpha.4"
 dependencies = [
  "postcard",
  "serde",
@@ -1999,7 +1999,7 @@ dependencies = [
 
 [[package]]
 name = "izul-pdf"
-version = "7.0.0-alpha.3"
+version = "7.0.0-alpha.4"
 dependencies = [
  "image",
  "izul-model",
@@ -2014,7 +2014,7 @@ dependencies = [
 
 [[package]]
 name = "izul-render"
-version = "7.0.0-alpha.3"
+version = "7.0.0-alpha.4"
 dependencies = [
  "izul-ipc",
  "izul-model",
@@ -2027,7 +2027,7 @@ dependencies = [
 
 [[package]]
 name = "izul-store"
-version = "7.0.0-alpha.3"
+version = "7.0.0-alpha.4"
 dependencies = [
  "blake3",
  "rusqlite",
@@ -2040,7 +2040,7 @@ dependencies = [
 
 [[package]]
 name = "izul-worker"
-version = "7.0.0-alpha.3"
+version = "7.0.0-alpha.4"
 dependencies = [
  "image",
  "izul-ipc",
@@ -2055,7 +2055,7 @@ dependencies = [
 
 [[package]]
 name = "izul-write"
-version = "7.0.0-alpha.3"
+version = "7.0.0-alpha.4"
 dependencies = [
  "flate2",
  "image",

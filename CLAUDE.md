@@ -531,10 +531,87 @@ pembaca di paling atas mengharapkan tetap di atas. Diperbaiki dengan
 tanpa tepi hilang di kanvas terang — kini ada garis tepi + bayangan tipis.
 (3) Kontras tombol aksen di mode gelap 2,6:1 — token `--izul-on-accent`.
 
+## Keadaan Fase 4 (Tulis & Simpan, 23 September 2026)
+
+Selesai di branch `claude/pdf-studio-izul-v7-fase-4` (PR #3, base
+`claude/pdf-studio-izul-v7-fase-2`). Laporan SPEC 18 ada di badan PR #3.
+
+**Arsitektur simpan** (rincian di kepala `src-tauri/src/saving.rs`):
+pekerja membuka **salinan kerja**, menaruh penanda `/NM (izul-<id>)`, PDFium
+menulis berkas utuh (`FPDF_SaveAsCopy`, `FPDF_NO_INCREMENTAL`), proses UI
+menambah **satu bagian pembaruan inkremental** (`crates/izul-write`) berisi
+anotasi standar + AP dari display list + `/IzulObj` (JSON ASCII, versi 1).
+Ditulis ke temp di samping target, `fsync`, **diverifikasi pekerja**, baru
+di-rename. Dokumen tampilan **melepas** anotasi Izul saat halaman pertama
+dimuat (`strip_izul`), lalu editor menggambarnya dari objek — kalau tidak,
+tergambar dua kali.
+
+**Temuan terukur tentang PDFium (jangan ditebak ulang):**
+
+- `FPDFAnnot_SetAP` hanya menulis `/GS` dari opasitas dengan BM Normal — tidak
+  cukup untuk AP kita, makanya AP ditulis sendiri di bagian inkremental.
+- Simpan penuh PDFium **selalu** xref klasik dengan trailer langsung, dan
+  **mempertahankan nomor objek lama**. Anotasi baru ditulis **inline** di
+  `/Annots` halaman (bukan objek tak langsung) — `Placement::Inline` ada karena
+  ini; versi pertama gagal membuka halaman 0 karena menganggap semuanya objek.
+- `FPDFImageObj_GetImageDataRaw` = byte stream mentah (JPEG asli utuh);
+  `GetRenderedBitmap` setelah `SetMatrix(w,0,0,h)` = BGRA alfa lurus.
+- Windows **menolak mengganti berkas yang sedang di-mmap** → `Pool::release`
+  (Close) sebelum rename, `Pool::reload` sesudahnya.
+- Jangan tulis `/CA` pada kamus anotasi: opasitas sudah dibakar ke AP, dan
+  Acrobat akan mengalikannya dua kali.
+
+**Cacat yang ditemukan dan pelajarannya:**
+
+1. **Simpan kedua menghapus FreeText.** `write_set` diam-diam membuang objek
+   tanpa metrik font di cache — dan objek hasil impor tidak pernah punya.
+   Sekarang galat, dan metrik disiapkan untuk semua objek dulu. **Pelajaran:**
+   "lewati yang tidak bisa ditulis" di jalur simpan = kehilangan data diam-diam.
+   Gagal keras.
+2. **"5 0 R7 0 R"** — referensi yang ditempel tanpa spasi membuat `/Annots`
+   tak terbaca; 0 dari 13 anotasi kembali. Selalu spasi di sekitar referensi.
+3. **Titik "belum disimpan" memakai `canUndo`.** Salah dua arah: dokumen yang
+   baru disimpan masih bisa di-undo (ditanya percuma), dan undo melewati titik
+   simpan membuat dokumen kotor lagi. Kini `dirty` dari backend (`revision !=
+   saved`). Test `closes a saved document without asking` terbukti gagal pada
+   aturan lama.
+4. **Autosave vs "Jangan Simpan".** Autosave yang jalan di antara membuang draf
+   dan menutup tab menulisnya lagi. `draft_discard` kini juga `mark_drafted`.
+5. **Ekspor ke berkas yang terbuka di tab lain** — rename gagal di Windows,
+   diam-diam sukses di tempat lain. Kini ditolak (`refuse_open_target`).
+
+**Alat ukur yang berguna, dan satu yang menipu:**
+
+- `python3` + `pikepdf`/`pypdf` (strict) untuk struktur; `pdftoppm` (poppler)
+  dan `mutool` (MuPDF) untuk **mesin render yang bukan PDFium** — Chrome dan
+  Edge memakai PDFium, jadi keduanya bukan bukti independen. Pasang lewat
+  `apt-get install poppler-utils mupdf-tools`.
+- Mata membaca screenshot yang diperkecil: saya sempat "melihat" latar dialog
+  tidak meredup; nilai piksel (255 → 178) membuktikan sebaliknya. **Ukur
+  piksel sebelum memperbaiki cacat visual.**
+- Tabel test Fase 3 di TESTING.md ternyata salah hitung (85/63 vs 67/48
+  sebenarnya, diverifikasi dengan menjalankan commit lama di worktree). Hitung
+  dari keluaran `cargo test`, jangan dari ingatan.
+
+**Frontend Fase 4:** logika di `src/app/fileActions.ts` (simpan, tutup dengan
+konfirmasi, draf, pantau berkas, ekspor) — komponen hanya memanggil.
+`PromptDialog` (tiga tombol; dialog platform hanya dua), `NoticeToast`,
+`ExportDialog` (rentang halaman lewat `src/state/pageRange.ts`, teruji),
+`FileBanner`. Pintasan: Ctrl+S, Ctrl+Shift+S, Ctrl+W bertanya dulu. Penjaga
+tutup jendela lewat `onCloseRequested` → butuh `core:window:allow-destroy`.
+Scene harness baru: `convert, export, close, draft, changed, exports`.
+
+**Belum dikerjakan / diketahui:** belum diuji di Acrobat/Edge sungguhan
+(langkahnya di TESTING.md "Hasil Fase 4"); font standard-14 tidak ditanam
+(pembaca lain memakai padanan); dokumen terenkripsi tidak bisa disimpan;
+`npm audit` 2 moderate di `vitest` (dev saja, sudah ada sebelumnya).
+
 ## Alur kerja proyek ini
 
-- Branch aktif: `claude/pdf-studio-izul-v7-fase-4` (Langkah 0 + Fase 4),
-  bercabang dari `claude/pdf-studio-izul-v7-fase-2`. Pengguna mengizinkan
+- Branch per fase: `claude/pdf-studio-izul-v7-fase-4` (Langkah 0 + Fase 4,
+  PR #3) bercabang dari `claude/pdf-studio-izul-v7-fase-2`; Fase 5 dikerjakan
+  di `claude/pdf-studio-izul-v7-fase-5` yang bercabang dari fase-4, dan
+  seterusnya — satu draft PR per fase, base = branch fase sebelumnya. Pengguna mengizinkan
   branch `claude/pdf-studio-izul-v7-fase-N` per fase, masing-masing bercabang
   dari fase sebelumnya dengan draft PR ber-base fase sebelumnya, dan meminta
   Fase 4–8 dikerjakan berturut-turut tanpa menunggu persetujuan (tetap wajib
@@ -545,11 +622,14 @@ tanpa tepi hilang di kanvas terang — kini ada garis tepi + bayangan tipis.
   lewat PR #1.
 - Dokumen rujukan: `SPEC.md` (jangan diubah tanpa dibahas). Progres per fase
   dicatat di `CHANGELOG.md`. Panduan pengguna di `PANDUAN.md`.
-- Setiap akhir fase: laporkan hasil + angka benchmark nyata, tunggu
-  persetujuan pengguna sebelum lanjut ke fase berikutnya (lihat SPEC.md
-  Bagian 0 dan 18).
+- Setiap akhir fase: laporkan hasil + angka benchmark nyata (SPEC 18). Untuk
+  Fase 4–8 pengguna **membebaskan** jeda persetujuan; tetap wajib laporan
+  SPEC 18, CI hijau, CHANGELOG, version.json, TESTING.md, dan bagian
+  "Keadaan Fase N" di berkas ini sebelum lanjut.
 - Total 9 fase (0–8). Fase 0 dan 1 selesai dan disetujui pengguna; Fase 2 dan
-  Fase 3 selesai dan menunggu persetujuan, keduanya di branch yang sama.
+  Fase 3 selesai (satu branch, PR #2); Langkah 0 dan Fase 4 selesai (PR #3).
+  Fase 5–8 dikerjakan berturut-turut tanpa menunggu persetujuan, atas
+  keputusan pengguna.
 - Panduan menjalankan & menguji aplikasi di Windows (untuk pemula) ada di
   `TESTING.md`, bagian "Menjalankan sendiri di Windows (langkah demi
   langkah)" — termasuk cara memasang alat, mengambil PDFium, menjalankan

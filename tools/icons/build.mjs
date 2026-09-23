@@ -98,6 +98,16 @@ const ICONS = {
   more: "more_horizontal",
   menu: "navigation",
   edit: "document_edit",
+  // Phase 4: saving, exporting, and what happens around them.
+  exportFile: "arrow_export_ltr",
+  toImages: "image_multiple",
+  flatten: "layer",
+  extractPages: "document_arrow_right",
+  warning: "warning",
+  reload: "arrow_sync",
+  draft: "document_sync",
+  checkmark: "checkmark",
+  error: "error_circle",
 };
 const SIZES = [20, 24];
 

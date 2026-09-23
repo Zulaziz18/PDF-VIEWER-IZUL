@@ -1,8 +1,9 @@
 /**
  * The bottom bar (SPEC 12, revised 2026-09-23), after WPS Office's: page
  * navigation at the left, view modes and the zoom slider at the right, and
- * between them the status SPEC 12 asks for — render state, the worker pool and
- * the cache.
+ * between them the status SPEC 12 asks for — render state, the worker pool,
+ * the cache, and since Phase 4 whether the file holds every edit and how big
+ * it is.
  *
  * The worker count is shown because a crashed and restarted worker is a
  * visible event, and hiding it would make the crash-isolation behaviour
@@ -15,6 +16,7 @@ import { IconButton, MenuButton } from "@/design/controls";
 import { Icon, type IconName } from "@/design/Icon";
 import { t, type StringKey } from "@/i18n";
 import { useDocument } from "@/state/documentStore";
+import { formatBytes } from "@/state/homeModel";
 import { sliderToZoom, zoomToSlider } from "@/viewport/geometry";
 import type { ViewMode } from "@/viewport/layout";
 import { goToPage } from "./actions";
@@ -46,6 +48,21 @@ const VIEW_MODES: ReadonlyArray<{ mode: ViewMode; icon: IconName; label: StringK
 ];
 
 const ZOOM_PRESETS = [0.5, 0.75, 1, 1.25, 1.5, 2, 3, 4];
+
+/** "Belum disimpan" or "Tersimpan", and the file's size. */
+function SaveState(): JSX.Element {
+  const dirty = useDocument((s) => s.dirty);
+  const saving = useDocument((s) => s.file.saving);
+  const size = useDocument((s) => s.file.size);
+  const label = saving ? t("status.saving") : dirty ? t("status.unsaved") : t("status.saved");
+  return (
+    <span className="flex items-center gap-1.5 px-1 whitespace-nowrap" aria-live="polite">
+      {dirty && !saving && <span aria-hidden="true" className="w-2 h-2 rounded-full bg-[var(--izul-unsaved)]" />}
+      {label}
+      {size !== null && <span className="max-[1100px]:hidden">· {formatBytes(size)}</span>}
+    </span>
+  );
+}
 
 function PageBox(props: { page: number; pageCount: number }): JSX.Element {
   const [draft, setDraft] = useState<string | null>(null);
@@ -123,6 +140,8 @@ export function BottomBar(): JSX.Element {
         />
         {working ? t("status.rendering") : t("status.ready")}
       </span>
+      <span aria-hidden="true" className="w-px h-4 mx-1 bg-[var(--izul-border)]" />
+      <SaveState />
       {encrypted && <span className="px-1">{t("status.encrypted")}</span>}
       {health && (
         <span

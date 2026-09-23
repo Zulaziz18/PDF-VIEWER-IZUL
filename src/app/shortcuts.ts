@@ -1,7 +1,7 @@
 /**
  * Keyboard shortcuts (SPEC 12).
  *
- * Only the ones Phase 1 can honour. They live in one place rather than on the
+ * Only the ones the current phase can honour. They live in one place rather than on the
  * controls themselves so that Phase 8 can make them user-editable by changing
  * this table and nothing else, and so that the list in the manual is derived
  * from the same source as the behaviour.
@@ -15,7 +15,8 @@ import { useEffect } from "react";
 import { useDocument } from "@/state/documentStore";
 import { useUi } from "@/state/uiStore";
 import { useWorkspace } from "@/state/workspaceStore";
-import { closeActiveTab, goToPage, pickAndOpen } from "./actions";
+import { goToPage, pickAndOpen } from "./actions";
+import { requestCloseTab, saveDocument } from "./fileActions";
 
 export function useShortcuts(): void {
   useEffect(() => {
@@ -29,6 +30,13 @@ export function useShortcuts(): void {
         (target instanceof HTMLElement && target.isContentEditable);
 
       if (e.ctrlKey || e.metaKey) {
+        // Shift turns "s" into "S"; Ctrl+S and Ctrl+Shift+S are the same key.
+        if (e.key.toLowerCase() === "s") {
+          e.preventDefault();
+          // Saving while typing in a text box is exactly when people press it.
+          void saveDocument(undefined, e.shiftKey ? "saveAs" : "save");
+          return;
+        }
         switch (e.key) {
           case "o":
             e.preventDefault();
@@ -38,7 +46,7 @@ export function useShortcuts(): void {
             e.preventDefault();
             // Closes the tab, not the window: with tabs, Ctrl+W meaning "quit"
             // would throw away every other document the user has open.
-            closeActiveTab();
+            void requestCloseTab();
             return;
           case "f":
             e.preventDefault();

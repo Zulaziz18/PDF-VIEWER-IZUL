@@ -245,7 +245,71 @@ const SCENES = {
       await izul(page, (z) => z.sidebar("annots"));
     },
   },
+  // Phase 4 ------------------------------------------------------------------
+  convert: {
+    session: OPEN_ALL,
+    flags: { dirty: true },
+    async steps(page) {
+      await page.getByRole("tab", { name: "Konversi", exact: true }).click();
+    },
+  },
+  export: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await page.getByRole("tab", { name: "Konversi", exact: true }).click();
+      await page.getByRole("button", { name: "PDF ke Gambar", exact: true }).click();
+      await page.getByRole("radio", { name: "JPG" }).click();
+      await page.getByRole("radio", { name: /Pilih halaman/ }).click();
+      await page.getByRole("textbox", { name: "Pilih halaman" }).fill("1-3, 7");
+    },
+  },
+  close: {
+    session: OPEN_ALL,
+    flags: { dirty: true },
+    async steps(page) {
+      await page.getByRole("button", { name: /^Tutup tab — / }).first().click();
+      await page.getByRole("dialog").waitFor();
+    },
+  },
+  draft: {
+    session: OPEN_ALL.slice(0, 1),
+    flags: { draft: true },
+    async steps(page) {
+      await page.getByRole("dialog").waitFor();
+    },
+  },
+  changed: {
+    session: OPEN_ALL,
+    flags: { dirty: true, diskChanged: true },
+    async steps(page) {
+      await page.getByRole("alert").first().waitFor();
+    },
+  },
+  exports: {
+    session: [],
+    flags: { exports: true },
+    async steps(page) {
+      await page.getByRole("button", { name: "Riwayat Ekspor" }).click();
+      await page.getByRole("row", { name: /-rata\.pdf/ }).first().click();
+    },
+  },
 };
+
+/** Export history rows for the "exports" scene, from the sample files. */
+const EXPORTS = (() => {
+  const [a, b] = SAMPLE_FILES;
+  const at = (hoursAgo) => Math.floor((NOW - hoursAgo * 3600 * 1000) / 1000);
+  const stem = (f) => f.name.replace(/\.pdf$/i, "");
+  const rows = [
+    { source: `${a.folder}\\${a.name}`, out_path: `${a.folder}\\${stem(a)}-rata.pdf`, kind: "flat", created_at: at(2), exists: true, size: 412_338 },
+    { source: `${a.folder}\\${a.name}`, out_path: `${a.folder}\\${stem(a)}-hal 1-3.pdf`, kind: "pages", created_at: at(5), exists: true, size: 96_120 },
+  ];
+  for (let n = 1; n <= 3; n++) {
+    rows.push({ source: `${b.folder}\\${b.name}`, out_path: `${b.folder}\\${stem(b)}-${n}.jpg`, kind: "jpg", created_at: at(26), exists: true, size: 180_000 + n * 7_311 });
+  }
+  rows.push({ source: `${b.folder}\\${b.name}`, out_path: `${b.folder}\\lama-${stem(b)}-rata.pdf`, kind: "flat", created_at: at(24 * 40), exists: false, size: null });
+  return rows;
+})();
 
 // ---------------------------------------------------------------------------
 // Run
@@ -278,7 +342,17 @@ async function newPage({ width, height, theme, scale, scene }) {
     if (m.type() === "error") console.error(`  [konsol] ${m.text()}`);
   });
   await page.clock.setFixedTime(new Date(NOW));
-  const data = { version, docs, recent, session: SCENES[scene].session, active: SCENES[scene].session[0] ?? null, folders };
+  const data = {
+    version,
+    docs,
+    recent,
+    session: SCENES[scene].session,
+    active: SCENES[scene].session[0] ?? null,
+    folders,
+    flags: SCENES[scene].flags ?? {},
+    exports: EXPORTS,
+    now: Math.floor(NOW / 1000),
+  };
   await page.addInitScript((d) => {
     window.__HARNESS__ = d;
   }, data);

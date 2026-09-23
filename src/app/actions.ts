@@ -37,12 +37,6 @@ export function goToPage(target: number): void {
   viewport()?.goToPage(clamped);
 }
 
-/** Closes the tab in front, if there is one. */
-export function closeActiveTab(): void {
-  const active = useWorkspace.getState().activeDoc;
-  if (active !== null) void useWorkspace.getState().closeTab(active);
-}
-
 /**
  * Marks up the current text selection on the page. Returns whether something
  * was drawn; a selection outside the page's text layer draws nothing.

@@ -13,7 +13,9 @@
  * granted, silently (CLAUDE.md, bug #1). `core:window:allow-minimize`,
  * `allow-toggle-maximize`, `allow-close`, `allow-start-dragging` and
  * `allow-is-maximized` are in `src-tauri/capabilities/default.json` for
- * exactly this reason.
+ * exactly this reason, and `allow-destroy` since Phase 4: the close button
+ * asks the window to close, `useCloseGuard` settles unsaved work, and only
+ * then is the window destroyed.
  *
  * Tabs are reordered with the HTML5 drag API rather than pointer maths: it is
  * two dozen lines instead of two hundred, and a tab strip is not a canvas.
@@ -23,13 +25,13 @@ import { useEffect, useState, type JSX } from "react";
 import { useStore } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
-import { confirm } from "@tauri-apps/plugin-dialog";
 import { FileBadge } from "@/design/FileBadge";
 import { Icon } from "@/design/Icon";
 import { Logo } from "@/design/Logo";
 import type { DocumentStore } from "@/state/documentSession";
 import { useWorkspace, type Tab } from "@/state/workspaceStore";
 import { t } from "@/i18n";
+import { requestCloseTab } from "./fileActions";
 
 interface VersionInfo {
   name: string;
@@ -47,7 +49,7 @@ const TAB_IDLE = "text-[var(--izul-text-dim)] hover:bg-[var(--izul-chrome-hover)
 
 /** The orange dot for edits that closing would lose (SPEC 10). */
 function UnsavedDot(props: { store: DocumentStore }): JSX.Element | null {
-  const dirty = useStore(props.store, (s) => s.canUndo);
+  const dirty = useStore(props.store, (s) => s.dirty);
   if (!dirty) return null;
   return (
     <span
@@ -90,7 +92,7 @@ function DocTab(props: {
       onAuxClick={(e) => {
         if (e.button === 1) {
           e.preventDefault();
-          void workspace().closeTab(tab.doc);
+          void requestCloseTab(tab.doc);
         }
       }}
       title={tab.path}
@@ -110,7 +112,7 @@ function DocTab(props: {
         title={t("tabs.close")}
         onClick={(e) => {
           e.stopPropagation();
-          void workspace().closeTab(tab.doc);
+          void requestCloseTab(tab.doc);
         }}
         className={[
           "shrink-0 w-5 h-5 grid place-items-center rounded-[4px] hover:bg-[var(--izul-chrome-hover)]",
@@ -170,20 +172,6 @@ export function TitleBar(): JSX.Element {
     if (fromIndex < 0 || toIndex < 0) return;
     order.splice(toIndex, 0, ...order.splice(fromIndex, 1));
     void useWorkspace.getState().reorder(order);
-  }
-
-  /**
-   * Closes the window, asking first when there is work that closing would lose.
-   */
-  async function close(): Promise<void> {
-    if (useWorkspace.getState().hasEdits()) {
-      const go = await confirm(t("window.unsavedBody"), {
-        title: t("window.unsavedTitle"),
-        kind: "warning",
-      });
-      if (!go) return;
-    }
-    await getCurrentWindow().close();
   }
 
   const homeActive = home || activeDoc === null;
@@ -270,7 +258,9 @@ export function TitleBar(): JSX.Element {
           type="button"
           aria-label={t("window.close")}
           title={t("window.close")}
-          onClick={() => void close()}
+          // A request, not a destroy: it arrives at `useCloseGuard` exactly
+          // as Alt+F4 does, and unsaved work is settled there for both.
+          onClick={() => void getCurrentWindow().close()}
           className="w-[46px] grid place-items-center hover:bg-[var(--izul-danger)] hover:text-white"
         >
           <Icon name="dismiss" size={16} />
