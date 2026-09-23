@@ -40,6 +40,7 @@ pub mod commands;
 pub mod folders;
 pub mod indexing;
 pub mod logging;
+pub mod pagemap;
 pub mod protocol;
 pub mod render;
 pub mod save_commands;
@@ -112,6 +113,11 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
         }
     }
 
+    let swept = pagemap::sweep_sources(&data_dir);
+    if swept > 0 {
+        tracing::info!(swept, "salinan sumber halaman lama dihapus");
+    }
+
     let rt = tokio::runtime::Builder::new_multi_thread()
         .enable_all()
         .build()
@@ -179,6 +185,7 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
         startup_files: pdf_arguments(std::env::args().skip(1)),
         annots: Arc::new(annots::AnnotState::new()),
         stamps: parking_lot::Mutex::new(std::collections::HashMap::new()),
+        hidden: pagemap::HiddenSources::default(),
     };
 
     let title = version::title_bar_text(&v);
@@ -295,6 +302,10 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
             save_commands::draft_discard,
             save_commands::file_status,
             save_commands::file_acknowledge,
+            pagemap::pages_state,
+            pagemap::pages_apply,
+            pagemap::pages_insert_file,
+            pagemap::pages_copy_from,
         ])
         .run(tauri::generate_context!());
 

@@ -87,6 +87,13 @@ impl Workspace {
     }
 
     /// Moves a tab to a new file — what "save as" does to the tab it saved.
+    /// A save changed how many pages the file has.
+    pub fn set_page_count(&mut self, doc: u64, page_count: u32) {
+        if let Some(d) = self.docs.get_mut(&doc) {
+            d.page_count = page_count;
+        }
+    }
+
     pub fn set_path(&mut self, doc: u64, path: String, file_id: i64) -> bool {
         match self.docs.get_mut(&doc) {
             Some(d) => {

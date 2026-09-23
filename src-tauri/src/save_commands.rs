@@ -100,6 +100,28 @@ pub async fn save_document(
     if let Ok(stamp) = FileStamp::of(&saved) {
         state.stamps.lock().insert(doc, stamp);
     }
+    if let Some(sizes) = &report.restructured {
+        // The file has new pages. Everything that knew the old ones — the
+        // tile cache, the render registry, the tab's page count, the hidden
+        // documents the map drew from, the text index — starts again.
+        state.render.forget(doc);
+        state.render.register(
+            doc,
+            crate::render::DocInfo {
+                path: report.path.clone(),
+                page_sizes: sizes.clone(),
+                generation: 0,
+            },
+        );
+        state
+            .workspace
+            .lock()
+            .set_page_count(doc, sizes.len() as u32);
+        for hidden in state.hidden.take(doc) {
+            crate::pagemap::close_hidden(&state, hidden).await;
+        }
+        state.indexer.forget(doc);
+    }
     if let Ok(conn) = state.db() {
         if file_id > 0 {
             let _ = drafts::delete(&conn, files::FileId(file_id));
@@ -114,6 +136,18 @@ pub async fn save_document(
                     state.save_session();
                 }
             }
+        }
+    }
+    if let Some(sizes) = &report.restructured {
+        let file_id = state.workspace.lock().get(doc).map_or(0, |d| d.file_id);
+        if file_id > 0 {
+            state.indexer.start(crate::indexing::Job {
+                doc,
+                file_id,
+                page_count: sizes.len() as u32,
+                data_dir: state.data_dir.clone(),
+                pool: std::sync::Arc::clone(&state.pool),
+            });
         }
     }
     tracing::info!(doc, path = %report.path, bytes = report.bytes, annots = report.annotations, "dokumen disimpan");
@@ -135,12 +169,23 @@ pub async fn export_document(
         Export::Flat { target } | Export::Pages { target, .. } => {
             refuse_open_target(&state, target, None)?;
         }
+        Export::Split {
+            folder,
+            stem,
+            ranges,
+        } => {
+            for k in 0..ranges.len() {
+                let out = PathBuf::from(folder).join(format!("{stem}-{}.pdf", k + 1));
+                refuse_open_target(&state, &out.to_string_lossy(), None)?;
+            }
+        }
         Export::Images { .. } => {}
     }
     prepare_all_fonts(&state, doc).await?;
     let kind = match &spec {
         Export::Flat { .. } => "flat",
         Export::Pages { .. } => "pages",
+        Export::Split { .. } => "split",
         Export::Images {
             jpeg_quality: None, ..
         } => "png",

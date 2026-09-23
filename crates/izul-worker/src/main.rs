@@ -528,7 +528,8 @@ where
         | Request::WorkClose { .. }
         | Request::BlobRead { .. }
         | Request::BlobDrop { .. }
-        | Request::VerifyFile { .. }) => {
+        | Request::VerifyFile { .. }
+        | Request::WorkArrange { .. }) => {
             let engine = sess.engine();
             let viewing =
                 |doc: DocId, page: u32| sess.get(doc).map(|open| open.doc.izul_annots(page));

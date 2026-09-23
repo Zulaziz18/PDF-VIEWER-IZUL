@@ -189,7 +189,7 @@ impl Engine {
             Ok(Document {
                 handle,
                 engine: self,
-                page_count,
+                page_count: Cell::new(page_count),
                 origin,
                 pages: RefCell::new(HashMap::new()),
                 strip_izul: Cell::new(true),
@@ -366,7 +366,7 @@ pub struct Document {
     pub(crate) izul: RefCell<HashMap<u32, Vec<crate::izul::IzulAnnot>>>,
     handle: FPDF_DOCUMENT,
     engine: &'static Engine,
-    page_count: u32,
+    page_count: Cell<u32>,
     origin: Option<PathBuf>,
     _bytes: Backing,
 }
@@ -374,7 +374,7 @@ pub struct Document {
 impl std::fmt::Debug for Document {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Document")
-            .field("page_count", &self.page_count)
+            .field("page_count", &self.page_count.get())
             .field("origin", &self.origin)
             .field("pages_loaded", &self.pages.borrow().len())
             .field("bytes", &self._bytes.len())
@@ -516,7 +516,17 @@ impl PageGeometry {
 
 impl Document {
     pub fn page_count(&self) -> u32 {
-        self.page_count
+        self.page_count.get()
+    }
+
+    /// Re-reads the page count after the page tree changed underneath
+    /// (`arrange`), and forgets every cached page handle, whose indices no
+    /// longer mean what they did.
+    pub(crate) fn reload_page_tree(&self) {
+        self.release_all_pages();
+        // SAFETY: `handle` is a live document.
+        let n = unsafe { self.engine.bindings().FPDF_GetPageCount(self.handle) };
+        self.page_count.set(u32::try_from(n).unwrap_or(0));
     }
 
     pub fn origin(&self) -> Option<&Path> {
@@ -543,7 +553,7 @@ impl Document {
         Document {
             handle,
             engine,
-            page_count: 0,
+            page_count: Cell::new(0),
             origin: None,
             pages: RefCell::new(HashMap::new()),
             strip_izul: Cell::new(false),
@@ -557,10 +567,10 @@ impl Document {
     }
 
     pub(crate) fn check_page(&self, page: u32) -> Result<()> {
-        if page >= self.page_count {
+        if page >= self.page_count.get() {
             return Err(PdfError::PageOutOfRange {
                 page,
-                page_count: self.page_count,
+                page_count: self.page_count.get(),
             });
         }
         Ok(())
@@ -701,8 +711,8 @@ impl Document {
     /// second the load-every-page approach took in the spike.
     pub fn page_sizes(&self) -> Result<Vec<PageSize>> {
         guard("page_sizes", || {
-            let mut out = Vec::with_capacity(self.page_count as usize);
-            for i in 0..self.page_count {
+            let mut out = Vec::with_capacity(self.page_count.get() as usize);
+            for i in 0..self.page_count.get() {
                 out.push(self.page_size_fast(i)?);
             }
             Ok(out)
@@ -713,8 +723,8 @@ impl Document {
     /// path that reflects a page's real geometry when the page tree disagrees
     /// with the page itself, and because the benchmark compares the two.
     pub fn page_sizes_by_loading(&self) -> Result<Vec<PageSize>> {
-        let mut out = Vec::with_capacity(self.page_count as usize);
-        for i in 0..self.page_count {
+        let mut out = Vec::with_capacity(self.page_count.get() as usize);
+        for i in 0..self.page_count.get() {
             let already_loaded = self.pages.borrow().contains_key(&i);
             out.push(self.page_size(i)?);
             if !already_loaded {

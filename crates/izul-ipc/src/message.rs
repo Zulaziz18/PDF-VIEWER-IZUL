@@ -21,7 +21,7 @@ use izul_model::geom::{PdfRectF, RotationQuarter};
 /// So the worker announces this number the moment it connects, and the
 /// supervisor refuses a worker that does not match. Bump it whenever anything
 /// in [`Request`] or [`Response`] changes shape.
-pub const PROTOCOL_VERSION: u32 = 5;
+pub const PROTOCOL_VERSION: u32 = 6;
 
 /// Identifies one open document within a worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -239,6 +239,36 @@ pub enum Request {
     VerifyFile {
         path: String,
         pages: Vec<u32>,
+    },
+    // ---- Phase 5 (appended; see `PROTOCOL_VERSION`). ---------------------
+    /// On the working copy: makes its pages exactly `pages`, in order —
+    /// deleted, moved, duplicated, turned, blank pages added, pages copied in
+    /// from other files. Applied in place, so the document's bookmarks and
+    /// metadata survive (`izul-pdf`'s `arrange`). `sources[0]` is the file
+    /// the working copy was opened from; the others are the files pages came
+    /// from. Answered with `WorkReady`.
+    WorkArrange {
+        doc: DocId,
+        pages: Vec<ArrangePage>,
+        sources: Vec<String>,
+    },
+}
+
+/// One page of a [`Request::WorkArrange`].
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum ArrangePage {
+    /// Page `page` of `sources[source]`, turned `rotation` quarter turns
+    /// further than its own `/Rotate`.
+    Page {
+        source: u32,
+        page: u32,
+        rotation: u8,
+    },
+    /// A new empty page, in points.
+    Blank {
+        width: f32,
+        height: f32,
+        rotation: u8,
     },
 }
 
@@ -480,6 +510,28 @@ mod tests {
         assert_eq!(
             index(postcard::to_allocvec(&Response::BlobReady { blob: 1, len: 2 }).unwrap()),
             13
+        );
+        // Phase 4's last variant, pinned when Phase 5 appended after it.
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Request::VerifyFile {
+                    path: String::new(),
+                    pages: vec![]
+                })
+                .unwrap()
+            ),
+            22
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Request::WorkArrange {
+                    doc: DocId(1),
+                    pages: vec![],
+                    sources: vec![]
+                })
+                .unwrap()
+            ),
+            23
         );
     }
 

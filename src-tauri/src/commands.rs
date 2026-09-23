@@ -48,6 +48,9 @@ pub struct AppState {
     /// at open, and after each save — so a change made by another program is
     /// noticed (SPEC 8: "deteksi berkas yang berubah di disk").
     pub stamps: Mutex<std::collections::HashMap<u64, izul_store::FileStamp>>,
+    /// Worker documents that render pages brought in from other files
+    /// (Phase 5, `pagemap.rs`).
+    pub hidden: crate::pagemap::HiddenSources,
 }
 
 impl std::fmt::Debug for AppState {
@@ -257,6 +260,7 @@ pub async fn open_document(
             generation: 0,
         },
     );
+    state.annots.set_own_pages(doc.0, page_sizes.clone());
 
     // Recording the open and reading back the last position are one step: a
     // document the user has seen before must come back where they left it
@@ -376,6 +380,9 @@ pub async fn close_document(state: tauri::State<'_, AppState>, doc: u64) -> CmdR
         let _ = Pool::ask(&worker, Request::Close { doc: DocId(doc) }).await;
     }
     state.render.forget(doc);
+    for hidden in state.hidden.take(doc) {
+        crate::pagemap::close_hidden(&state, hidden).await;
+    }
     state.annots.forget(doc);
     state.stamps.lock().remove(&doc);
     state.workspace.lock().remove(doc);
