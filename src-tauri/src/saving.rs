@@ -20,7 +20,11 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use izul_ipc::message::{ArrangePage, DocId, Request, Response, BLOB_CHUNK};
+use std::collections::BTreeSet;
+
+use izul_ipc::message::{
+    ArrangePage, DocId, RedactPageWire, RedactedPageWire, Request, Response, BLOB_CHUNK,
+};
 use izul_model::PageEntry;
 use izul_write::atomic::{sweep_stale, PendingWrite};
 use izul_write::AnnotWrite;
@@ -86,20 +90,63 @@ async fn expect_work(worker: &Worker, req: Request) -> Out<u32> {
     }
 }
 
+/// Applying redaction marks (Phase 6): the areas per page, in display space,
+/// and the editor objects that go with them.
+#[derive(Debug, Clone)]
+pub struct Redaction {
+    pub pages: Vec<RedactPageWire>,
+    pub doomed: BTreeSet<u64>,
+}
+
+/// What a redaction took out, summed over its pages, for the user.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct RedactionSummary {
+    pub pages: u32,
+    pub glyphs: u32,
+    pub images_removed: u32,
+    pub images_cleared: u32,
+    pub images_unsupported: u32,
+    pub paths: u32,
+    pub annotations: u32,
+}
+
+impl RedactionSummary {
+    fn of(pages: &[RedactedPageWire]) -> Self {
+        let mut s = RedactionSummary {
+            pages: pages.len() as u32,
+            ..Default::default()
+        };
+        for p in pages {
+            s.glyphs += p.glyphs;
+            s.images_removed += p.images_removed;
+            s.images_cleared += p.images_cleared;
+            s.images_unsupported += p.images_unsupported;
+            s.paths += p.paths;
+            s.annotations += p.annotations;
+        }
+        s
+    }
+}
+
 /// The document as it is in the editor — the file plus every annotation —
 /// as finished PDF bytes. `source` is the file on disk.
 ///
-/// Returns the bytes, the pages the editor owns, and how many annotations
-/// those pages carry, for verification.
+/// Returns the bytes, the pages the editor owns, how many annotations those
+/// pages carry, for verification, and — when `redaction` is given — what the
+/// redaction took out of each page.
+#[allow(clippy::type_complexity)]
 pub async fn build_current(
     pool: &Arc<RwLock<Pool>>,
     annots: &AnnotState,
     doc: u64,
     source: &str,
-) -> Out<(Vec<u8>, Vec<u32>, u32)> {
+    redaction: Option<&Redaction>,
+) -> Out<(Vec<u8>, Vec<u32>, u32, Option<Vec<RedactedPageWire>>)> {
     let worker = worker_of(pool, doc).await?;
     annots.ensure_all_metrics(pool, doc).await?;
-    let (pages, objects) = annots.write_set(doc)?;
+    let empty = BTreeSet::new();
+    let (pages, objects) =
+        annots.write_set_without(doc, redaction.map_or(&empty, |r| &r.doomed))?;
     let placeholders: Vec<(u32, u64)> = objects.iter().map(|(o, _)| (o.page, o.id.0)).collect();
 
     expect_work(
@@ -150,6 +197,25 @@ pub async fn build_current(
             )
             .await?;
         }
+        // After the pages are in their final order (the marks are on display
+        // pages), and before our annotations go in: what is written after
+        // this point is written over redacted content, never under it.
+        let redacted = match redaction {
+            Some(r) => match ask(
+                &worker,
+                Request::WorkRedact {
+                    doc: DocId(doc),
+                    pages: r.pages.clone(),
+                },
+            )
+            .await
+            {
+                Ok(Response::WorkRedacted { pages, .. }) => Some(pages),
+                Ok(other) => return Err(format!("balasan tak terduga: {other:?}")),
+                Err(e) => return Err(redaction_refused(&e)),
+            },
+            None => None,
+        };
         expect_work(
             &worker,
             Request::WorkPlaceholders {
@@ -159,11 +225,12 @@ pub async fn build_current(
             },
         )
         .await?;
-        expect_blob(&worker, Request::WorkSave { doc: DocId(doc) }).await
+        let bytes = expect_blob(&worker, Request::WorkSave { doc: DocId(doc) }).await?;
+        Ok((bytes, redacted))
     }
     .await;
     let _ = ask(&worker, Request::WorkClose { doc: DocId(doc) }).await;
-    let pdfium = built?;
+    let (pdfium, redacted) = built?;
 
     let writes: Vec<AnnotWrite<'_>> = objects
         .iter()
@@ -178,7 +245,14 @@ pub async fn build_current(
         }
         other => other.to_string(),
     })?;
-    Ok((bytes, pages, objects.len() as u32))
+    Ok((bytes, pages, objects.len() as u32, redacted))
+}
+
+/// A worker's refusal to redact, as the user reads it. The worker's detail is
+/// already a sentence; the message id in front of it is not.
+fn redaction_refused(error: &str) -> String {
+    let detail = error.strip_prefix("redact.failed: ").unwrap_or(error);
+    format!("Redaksi dibatalkan, berkas tidak diubah: {detail}")
 }
 
 /// Writes `bytes` beside `target` and has a worker reopen the result.
@@ -238,6 +312,8 @@ pub struct SaveReport {
     /// their display sizes as the reopened document reports them. The tab
     /// must lay itself out again.
     pub restructured: Option<Vec<(f32, f32)>>,
+    /// The save applied redaction marks, and this is what they took out.
+    pub redaction: Option<RedactionSummary>,
 }
 
 /// Saves `doc` to `target` (its own file when `None`).
@@ -252,12 +328,14 @@ pub async fn save(
     source: &str,
     page_count: u32,
     target: Option<&str>,
+    redaction: Option<&Redaction>,
 ) -> Out<SaveReport> {
     let target_path = PathBuf::from(target.unwrap_or(source));
     let mapped = annots.page_map(doc).map(|m| m.len() as u32);
     // A map changes how many pages the result has; verify against that.
     let page_count = mapped.unwrap_or(page_count);
-    let (bytes, pages, count) = build_current(pool, annots, doc, source).await?;
+    let (bytes, pages, count, redacted) =
+        build_current(pool, annots, doc, source, redaction).await?;
     let worker = worker_of(pool, doc).await?;
     let pending = write_verified(
         &worker,
@@ -266,6 +344,20 @@ pub async fn save(
         (page_count, pages, Some(count)),
     )
     .await?;
+    if let Some(redacted) = &redacted {
+        // The same check once more, on the very bytes about to replace the
+        // file: nothing between the redaction and here may have put anything
+        // back.
+        let req = Request::VerifyRedacted {
+            path: pending.temp_path().to_string_lossy().to_string(),
+            pages: redacted.iter().map(|p| (p.page, p.areas.clone())).collect(),
+        };
+        match ask(&worker, req).await {
+            Ok(Response::RedactionVerified { .. }) => {}
+            Ok(other) => return Err(format!("balasan tak terduga: {other:?}")),
+            Err(e) => return Err(redaction_refused(&e)),
+        }
+    }
 
     let same_file = std::fs::canonicalize(&target_path).ok() == std::fs::canonicalize(source).ok()
         && target_path.exists();
@@ -303,6 +395,9 @@ pub async fn save(
         }
     }
     committed?;
+    if let Some(r) = redaction {
+        annots.after_redaction(doc, &r.doomed);
+    }
     annots.mark_saved(doc);
     let restructured = match (mapped, reopened_sizes) {
         (Some(_), Some(sizes)) => {
@@ -319,6 +414,7 @@ pub async fn save(
         bytes: bytes.len() as u64,
         annotations: count,
         restructured,
+        redaction: redacted.as_deref().map(RedactionSummary::of),
     })
 }
 
@@ -331,7 +427,7 @@ async fn current_as_temp(
     source: &str,
     scratch: &Path,
 ) -> Out<PendingWrite> {
-    let (bytes, _, _) = build_current(pool, annots, doc, source).await?;
+    let (bytes, _, _, _) = build_current(pool, annots, doc, source, None).await?;
     std::fs::create_dir_all(scratch).map_err(|e| e.to_string())?;
     PendingWrite::write(&scratch.join(format!("ekspor-{doc}.pdf")), &bytes)
         .map_err(|e| e.to_string())

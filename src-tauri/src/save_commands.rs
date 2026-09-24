@@ -81,11 +81,107 @@ pub async fn save_document(
     doc: u64,
     target: Option<String>,
 ) -> CmdResult<SaveReport> {
-    let (path, file_id, page_count) = doc_path(&state, doc)?;
-    if let Some(target) = &target {
-        refuse_open_target(&state, target, Some(doc))?;
+    save_with(&state, doc, target, None).await
+}
+
+/// Applies the document's redaction marks (Phase 6) and saves the result to
+/// `target`, or over the tab's own file when `None`.
+///
+/// What is under the marks is taken out of the file, checked by a worker, and
+/// only then written — see `saving::build_current`. Beyond the file, the
+/// application's own copies of the old content go too when the file is
+/// overwritten: the cover in the recent-files list (a picture of page one as
+/// it was) and the search index (the text of every page as it was). The tab
+/// then reopens the file, which drops every bitmap and text layer it held.
+#[tauri::command]
+pub async fn redact_apply(
+    state: tauri::State<'_, AppState>,
+    doc: u64,
+    target: Option<String>,
+) -> CmdResult<SaveReport> {
+    // A mark saved in the file on a page nobody has opened this session is a
+    // mark all the same; applying "all marks" must not skip it.
+    crate::pagemap::ensure_all_imported(&state, doc).await?;
+    let redaction = state
+        .annots
+        .redaction(doc)
+        .ok_or_else(|| "Belum ada tanda redaksi di dokumen ini.".to_string())?;
+    let report = save_with(&state, doc, target, Some(&redaction)).await?;
+    let saved = PathBuf::from(&report.path);
+    let cover = crate::thumbs::file_for(&state.data_dir, &saved);
+    if cover.exists() {
+        if let Err(e) = std::fs::remove_file(&cover) {
+            tracing::warn!(error = %e, "sampul lama tidak dapat dihapus");
+        }
     }
-    prepare_all_fonts(&state, doc).await?;
+    state.indexer.forget(doc);
+    let file_id = state.workspace.lock().get(doc).map_or(0, |d| d.file_id);
+    if file_id > 0 {
+        if let Ok(conn) = state.db() {
+            if let Err(e) = izul_store::search::clear(&conn, files::FileId(file_id)) {
+                tracing::warn!(error = %e, "indeks teks lama tidak dapat dihapus");
+            }
+        }
+    }
+    if let Some(r) = &report.redaction {
+        tracing::info!(
+            doc,
+            pages = r.pages,
+            glyphs = r.glyphs,
+            images = r.images_removed + r.images_cleared + r.images_unsupported,
+            "redaksi diterapkan"
+        );
+    }
+    Ok(report)
+}
+
+/// What applying the marks would take out, for the dialog that asks.
+#[derive(Debug, Clone, Serialize)]
+pub struct RedactionPreview {
+    pub marks: u32,
+    /// Pages with marks, 0-based display indices.
+    pub pages: Vec<u32>,
+    /// Our own annotations lying over a mark, which go with it.
+    pub annotations: u32,
+}
+
+#[tauri::command]
+pub async fn redact_preview(
+    state: tauri::State<'_, AppState>,
+    doc: u64,
+) -> CmdResult<RedactionPreview> {
+    crate::pagemap::ensure_all_imported(&state, doc).await?;
+    let marks = state
+        .annots
+        .objects(doc, None)
+        .iter()
+        .filter(|o| o.kind == izul_model::annot::AnnotKind::Redact)
+        .count() as u32;
+    Ok(match state.annots.redaction(doc) {
+        Some(r) => RedactionPreview {
+            marks,
+            pages: r.pages.iter().map(|p| p.page).collect(),
+            annotations: (r.doomed.len() as u32).saturating_sub(marks),
+        },
+        None => RedactionPreview {
+            marks: 0,
+            pages: Vec::new(),
+            annotations: 0,
+        },
+    })
+}
+
+async fn save_with(
+    state: &AppState,
+    doc: u64,
+    target: Option<String>,
+    redaction: Option<&saving::Redaction>,
+) -> CmdResult<SaveReport> {
+    let (path, file_id, page_count) = doc_path(state, doc)?;
+    if let Some(target) = &target {
+        refuse_open_target(state, target, Some(doc))?;
+    }
+    prepare_all_fonts(state, doc).await?;
     let report = saving::save(
         &state.pool,
         &state.annots,
@@ -93,6 +189,7 @@ pub async fn save_document(
         &path,
         page_count,
         target.as_deref(),
+        redaction,
     )
     .await?;
 
@@ -118,7 +215,7 @@ pub async fn save_document(
             .lock()
             .set_page_count(doc, sizes.len() as u32);
         for hidden in state.hidden.take(doc) {
-            crate::pagemap::close_hidden(&state, hidden).await;
+            crate::pagemap::close_hidden(state, hidden).await;
         }
         state.indexer.forget(doc);
     }

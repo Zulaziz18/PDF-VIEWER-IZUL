@@ -253,6 +253,28 @@ pub fn check_left(
     Ok(())
 }
 
+/// Nothing left under the marks *as the user saw them*: the characters are
+/// taken into display space the way the selection layer takes them there
+/// (`to_display`), and compared with the areas as drawn — never through
+/// [`PageGeometry::from_display`], the conversion the redaction itself used.
+/// A mistake in that conversion would send the redaction and [`check`] to
+/// the same wrong place, and both would agree; this check would not.
+pub fn check_left_as_shown(
+    geometry: &PageGeometry,
+    display_areas: &[PdfRectF],
+    after: &[CharLayout],
+) -> std::result::Result<(), CheckFailure> {
+    let shown: Vec<CharLayout> = after
+        .iter()
+        .map(|c| CharLayout {
+            tight: geometry.to_display(c.tight, RotationQuarter::None),
+            loose: geometry.to_display(c.loose, RotationQuarter::None),
+            ..*c
+        })
+        .collect();
+    check_left(display_areas, &shown)
+}
+
 /// Nothing left in `areas`, and nothing outside them moved.
 pub fn check(
     areas: &[PdfRectF],

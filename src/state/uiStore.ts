@@ -12,7 +12,7 @@ import { create } from "zustand";
 
 /** The ribbon tabs that exist. A tab joins this list in the phase that makes
  * every button on it work (SPEC 0: no dead controls). */
-export type RibbonTab = "home" | "edit" | "pages" | "comment" | "convert";
+export type RibbonTab = "home" | "edit" | "pages" | "comment" | "protect" | "convert";
 
 /** One button of a {@link Prompt}. */
 export interface PromptButton {
@@ -46,7 +46,9 @@ export interface Notice {
 
 export type ExportKind = "pages" | "images" | "split";
 
-export type MarkupKind = "Highlight" | "Underline" | "StrikeOut";
+/** What a text selection can be turned into — the three markups, and a
+ * redaction mark over the selected text (Phase 6). */
+export type MarkupKind = "Highlight" | "Underline" | "StrikeOut" | "Redact";
 
 export interface UiState {
   ribbon: RibbonTab;
@@ -63,6 +65,8 @@ export interface UiState {
   notice: Notice | null;
   /** The export dialog, when one is open. */
   exporting: ExportKind | null;
+  /** The apply-redaction dialog is open (Phase 6). */
+  redacting: boolean;
   setRibbon(tab: RibbonTab): void;
   armMarkup(kind: MarkupKind | null): void;
   setAboutOpen(open: boolean): void;
@@ -75,6 +79,7 @@ export interface UiState {
   answer(id: string): void;
   notify(notice: Notice | null): void;
   setExporting(kind: ExportKind | null): void;
+  setRedacting(open: boolean): void;
 }
 
 export const useUi = create<UiState>((set, get) => ({
@@ -93,6 +98,7 @@ export const useUi = create<UiState>((set, get) => ({
   prompt: null,
   notice: null,
   exporting: null,
+  redacting: false,
   ask(spec) {
     const previous = get().prompt;
     if (previous) previous.resolve(previous.spec.cancelId);
@@ -111,5 +117,8 @@ export const useUi = create<UiState>((set, get) => ({
   },
   setExporting(exporting) {
     set({ exporting });
+  },
+  setRedacting(redacting) {
+    set({ redacting });
   },
 }));

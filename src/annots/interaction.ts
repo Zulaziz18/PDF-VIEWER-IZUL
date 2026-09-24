@@ -69,11 +69,23 @@ export function handlePoint(rect: PdfRect, handle: HandleId): PdfPoint {
   }
 }
 
+/** The handles an object offers. A redaction mark has no rotate handle: what
+ * is applied is its upright quads, and a mark turned on screen would cover
+ * something other than what goes. */
+export function handlesFor(kind: AnnotObject["kind"]): HandleId[] {
+  return kind === "Redact" ? [...RESIZE_HANDLES] : [...RESIZE_HANDLES, "rotate"];
+}
+
 /** The handle under `point`, if any. `scale` is pixels per point, so the grab
  * area stays the same size on screen at every zoom. */
-export function handleAt(rect: PdfRect, point: PdfPoint, scale: number): HandleId | null {
+export function handleAt(
+  rect: PdfRect,
+  point: PdfPoint,
+  scale: number,
+  handles: readonly HandleId[] = [...RESIZE_HANDLES, "rotate"],
+): HandleId | null {
   const reach = (HANDLE_SIZE / Math.max(scale, 0.01)) * 0.75;
-  for (const handle of [...RESIZE_HANDLES, "rotate" as const]) {
+  for (const handle of handles) {
     const p = handlePoint(rect, handle);
     if (Math.abs(p.x - point.x) <= reach && Math.abs(p.y - point.y) <= reach) {
       return handle;

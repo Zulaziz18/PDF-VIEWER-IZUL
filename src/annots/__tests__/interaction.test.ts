@@ -4,6 +4,7 @@ import {
   boundsOf,
   handleAt,
   handlePoint,
+  handlesFor,
   hitTest,
   normalise,
   pick,
@@ -215,5 +216,18 @@ describe("boundsOf", () => {
     const b = base({ id: 2, rect: { left: 50, bottom: 20, right: 60, top: 80 } });
     expect(boundsOf([a, b])).toEqual({ left: 0, bottom: 0, right: 60, top: 80 });
     expect(boundsOf([])).toBeNull();
+  });
+});
+
+describe("handlesFor", () => {
+  /// What a redaction applies is its upright quads; a mark that could be
+  /// turned on screen would cover one place and empty another.
+  it("gives a redaction mark no rotate handle", () => {
+    expect(handlesFor("Redact")).not.toContain("rotate");
+    expect(handlesFor("Rect")).toContain("rotate");
+    const rect = { left: 0, bottom: 0, right: 100, top: 50 };
+    const above = handlePoint(rect, "rotate");
+    expect(handleAt(rect, above, 1, handlesFor("Redact"))).toBeNull();
+    expect(handleAt(rect, above, 1, handlesFor("Rect"))).toBe("rotate");
   });
 });

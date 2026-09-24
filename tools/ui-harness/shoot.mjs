@@ -47,7 +47,7 @@ function run(cmd, argv) {
   if (r.status !== 0) throw new Error(`${cmd} ${argv.join(" ")} gagal`);
 }
 
-if (!existsSync(join(SAMPLES, "Panduan Studi 2026.pdf"))) {
+if (!existsSync(join(SAMPLES, "Panduan Studi 2026.pdf")) || !existsSync(join(SAMPLES, "Data Pegawai.pdf"))) {
   run(process.platform === "win32" ? "python" : "python3", ["tools/ui-harness/make_samples.py"]);
 }
 run("cargo", ["build", "-q", "-p", "izul-bench", "--bin", "ui-harness"]);
@@ -104,6 +104,9 @@ const SAMPLE_FILES = [
   // Phase 5: two versions of one document, for compare mode.
   { name: "Draf Perjanjian v1.pdf", folder: docsFolder, opened: NOW - 70 * DAY, modified: NOW - 70 * DAY },
   { name: "Draf Perjanjian v2.pdf", folder: docsFolder, opened: NOW - 69 * DAY, modified: NOW - 69 * DAY },
+  // Phase 6: a page to redact, and the same page redacted by the real pipeline.
+  { name: "Data Pegawai.pdf", folder: docsFolder, opened: NOW - 80 * DAY, modified: NOW - 80 * DAY },
+  { name: "Data Pegawai (diredaksi).pdf", folder: docsFolder, opened: NOW - 81 * DAY, modified: NOW - 81 * DAY },
 ];
 
 const realPath = new Map();
@@ -154,6 +157,18 @@ function png(width, height, stride, bgra) {
     chunk("IDAT", deflateSync(raw)),
     chunk("IEND", Buffer.alloc(0)),
   ]);
+}
+
+// The redacted sample is made fresh each run, by izul-redact itself, so the
+// "after" screenshot always shows what the current code produces.
+{
+  const r = await ask({
+    op: "redact",
+    path: join(SAMPLES, "Data Pegawai.pdf"),
+    page: 0,
+    out: join(SAMPLES, "Data Pegawai (diredaksi).pdf"),
+  });
+  if (!r.header.ok) throw new Error(`sampel redaksi gagal: ${JSON.stringify(r.header)}`);
 }
 
 let nextDoc = 1;
@@ -321,6 +336,31 @@ const SCENES = {
       await izul(page, (z) => z.sidebar("thumbnails"));
     },
   },
+  // Phase 6 ------------------------------------------------------------------
+  protect: {
+    session: [`${docsFolder}\\Data Pegawai.pdf`],
+    async steps(page) {
+      await page.getByRole("tab", { name: "Lindungi", exact: true }).click();
+      await settle(page);
+      await izul(page, (z) => z.select([900]));
+    },
+  },
+  redactdialog: {
+    session: [`${docsFolder}\\Data Pegawai.pdf`],
+    async steps(page) {
+      await page.getByRole("tab", { name: "Lindungi", exact: true }).click();
+      await page.getByRole("button", { name: "Terapkan Redaksi", exact: true }).click();
+      await page.getByRole("dialog").waitFor();
+      await page.getByText(/tanda di 1 halaman/).waitFor();
+    },
+  },
+  redacted: {
+    session: [`${docsFolder}\\Data Pegawai (diredaksi).pdf`],
+    async steps(page) {
+      await page.getByRole("tab", { name: "Lindungi", exact: true }).click();
+      await settle(page);
+    },
+  },
   compare: {
     session: [`${docsFolder}\\Draf Perjanjian v1.pdf`, `${docsFolder}\\Draf Perjanjian v2.pdf`],
     async steps(page) {
@@ -395,7 +435,12 @@ async function newPage({ width, height, theme, scale, scene }) {
     const path = docById.get(a.doc);
     if (cmd === "document_outline") return (await ask({ op: "outline", path })).header.outline;
     if (cmd === "page_text") return (await ask({ op: "text", path, page: a.page, rotation: a.rotation ?? 0 })).header;
-    const annotated = a.doc === 1 && a.page === 2;
+    const redactable = String(path).endsWith("Data Pegawai.pdf");
+    if (cmd === "redact_preview") {
+      const { header } = await ask({ op: "annots", path, page: 0 });
+      return { marks: redactable ? header.objects.length : 0, pages: redactable ? [0] : [], annotations: 0 };
+    }
+    const annotated = (a.doc === 1 && a.page === 2) || (redactable && a.page === 0);
     if (!annotated) return [];
     const { header } = await ask({ op: "annots", path, page: a.page });
     return cmd === "annot_list" ? header.objects : header.lists;

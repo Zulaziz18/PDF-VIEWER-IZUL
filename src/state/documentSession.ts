@@ -127,6 +127,19 @@ export interface SaveReport {
   readonly annotations: number;
   /** The save rearranged the pages: their new sizes (Phase 5). */
   readonly restructured: ReadonlyArray<[number, number]> | null;
+  /** The save applied redaction marks, and this is what they took out. */
+  readonly redaction: RedactionSummary | null;
+}
+
+/** What `redact_apply` took out, summed over pages (Phase 6). */
+export interface RedactionSummary {
+  readonly pages: number;
+  readonly glyphs: number;
+  readonly images_removed: number;
+  readonly images_cleared: number;
+  readonly images_unsupported: number;
+  readonly paths: number;
+  readonly annotations: number;
 }
 
 /** What `file_status` answers. */

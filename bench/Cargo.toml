@@ -45,6 +45,7 @@ izul-ipc.workspace = true
 izul-render.workspace = true
 izul-model.workspace = true
 izul-write.workspace = true
+izul-redact.workspace = true
 image.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "net", "io-util", "process", "sync"] }
 parking_lot.workspace = true

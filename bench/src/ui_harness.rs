@@ -46,6 +46,59 @@ struct Req {
     row: u16,
     #[serde(default)]
     tier: String,
+    /// Where `redact` writes its result.
+    #[serde(default)]
+    out: String,
+}
+
+/// Phase 6's sample: on "Data Pegawai", the runs of digits and dashes long
+/// enough to be an identity or phone number, in display space — what a user
+/// would mark for redaction on that page.
+fn private_runs(doc: &Document, page: u32) -> Result<Vec<PdfRectF>, String> {
+    let text = doc
+        .page_text_boxed(page, RotationQuarter::None)
+        .map_err(|e| e.to_string())?;
+    let mut out = Vec::new();
+    let mut run: Vec<PdfRectF> = Vec::new();
+    let flush = |run: &mut Vec<PdfRectF>, out: &mut Vec<PdfRectF>| {
+        if run.len() >= 12 {
+            if let Some(r) = run.iter().copied().reduce(|a, b| a.union(&b)) {
+                out.push(r);
+            }
+        }
+        run.clear();
+    };
+    for c in &text.chars {
+        if c.unicode.is_ascii_digit() || c.unicode == '-' {
+            run.push(c.rect);
+        } else {
+            flush(&mut run, &mut out);
+        }
+    }
+    flush(&mut run, &mut out);
+    Ok(out)
+}
+
+fn redaction_marks(runs: &[PdfRectF], page: u32) -> Vec<AnnotObject> {
+    runs.iter()
+        .enumerate()
+        .map(|(i, r)| {
+            let mut obj = AnnotObject::new(
+                AnnotId(900 + i as u64),
+                page,
+                AnnotKind::Redact,
+                *r,
+                AnnotPayload::Markup {
+                    quads: vec![*r],
+                    color: Rgba::BLACK,
+                },
+            );
+            obj.z = 900 + i as i32;
+            obj.created_at = 1_758_000_000_000;
+            obj.modified_at = 1_758_000_000_000;
+            obj
+        })
+        .collect()
 }
 
 fn repo_root() -> PathBuf {
@@ -258,12 +311,17 @@ impl Backend {
                 ))
             }
             "annots" => {
-                let height = self
-                    .doc(&req.path)?
-                    .page_size(req.page)
-                    .map_err(|e| e.to_string())?
-                    .height;
-                let objects = sample_annotations(req.page, height);
+                let objects = if req.path.ends_with("Data Pegawai.pdf") {
+                    let runs = private_runs(self.doc(&req.path)?, req.page)?;
+                    redaction_marks(&runs, req.page)
+                } else {
+                    let height = self
+                        .doc(&req.path)?
+                        .page_size(req.page)
+                        .map_err(|e| e.to_string())?
+                        .height;
+                    sample_annotations(req.page, height)
+                };
                 let lists: Vec<Value> = objects
                     .iter()
                     .filter_map(|o| {
@@ -318,6 +376,40 @@ impl Backend {
                     json!({ "width": geo.width, "height": geo.height, "stride": geo.stride }),
                     buf,
                 ))
+            }
+            "redact" => {
+                // The "after" sample, made by the real pipeline: the same
+                // planning and checks the worker runs, then izul-redact.
+                let doc = self.doc(&req.path)?;
+                let runs = private_runs(doc, req.page)?;
+                let geometry = doc.page_geometry(req.page).map_err(|e| e.to_string())?;
+                let chars = doc.char_layout(req.page).map_err(|e| e.to_string())?;
+                let areas = izul_pdf::redaction::plan_areas(&geometry, &runs, &chars);
+                let plan = izul_redact::PageAreas {
+                    page: req.page,
+                    areas: areas
+                        .iter()
+                        .map(|a| izul_redact::Area {
+                            rect: izul_redact::Rect::new(
+                                f64::from(a.left),
+                                f64::from(a.bottom),
+                                f64::from(a.right),
+                                f64::from(a.top),
+                            ),
+                            fill: Some([0.0, 0.0, 0.0]),
+                        })
+                        .collect(),
+                };
+                let bytes = doc.save_to_vec().map_err(|e| e.to_string())?;
+                let (out, _) = izul_redact::redact(&bytes, &[plan]).map_err(|e| e.to_string())?;
+                let check = self
+                    .engine
+                    .open_bytes(out.clone(), None::<&str>, None)
+                    .map_err(|e| e.to_string())?;
+                let after = check.char_layout(req.page).map_err(|e| e.to_string())?;
+                izul_pdf::redaction::check(&areas, &chars, &after).map_err(|e| e.to_string())?;
+                std::fs::write(&req.out, &out).map_err(|e| e.to_string())?;
+                Ok((json!({ "areas": areas.len() }), Vec::new()))
             }
             other => Err(format!("op tidak dikenal: {other}")),
         }

@@ -215,7 +215,57 @@ def agreement(path, version):
     c.save()
 
 
+def personnel(path):
+    """Phase 6: a staff list with identity and phone numbers, the kind of page
+    that gets redacted before it is shared. Every name and number is made up;
+    the identity numbers follow no real registry's format beyond their length.
+    Helvetica without embedding, so redaction measures it from the standard
+    metrics."""
+    c = canvas.Canvas(str(path), pagesize=A4)
+    c.setTitle("Data Pegawai (contoh)")
+    w, h = A4
+    c.setFillColor(NAVY)
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(56, h - 72, "Data Pegawai Unit Pelatihan")
+    c.setFillColor(HexColor("#555555"))
+    c.setFont("Helvetica", 10)
+    c.drawString(56, h - 90, "Lampiran surat tugas - untuk dibagikan setelah nomor pribadi disensor.")
+    rows = [
+        ("Nama", "Jabatan", "NIK", "Telepon"),
+        ("Ayu Lestari", "Koordinator", "3174012345670001", "0812-3456-7801"),
+        ("Bima Santoso", "Instruktur", "3174012345670002", "0812-3456-7802"),
+        ("Citra Wulandari", "Instruktur", "3174012345670003", "0812-3456-7803"),
+        ("Dimas Pratama", "Administrasi", "3174012345670004", "0812-3456-7804"),
+        ("Eka Rahmawati", "Keuangan", "3174012345670005", "0812-3456-7805"),
+        ("Fajar Nugroho", "Teknisi", "3174012345670006", "0812-3456-7806"),
+    ]
+    xs = [56, 186, 296, 436]
+    y = h - 130
+    for i, row in enumerate(rows):
+        if i == 0:
+            c.setFillColor(HexColor("#e8eef8"))
+            c.rect(50, y - 6, w - 100, 22, stroke=0, fill=1)
+        c.setFillColor(HexColor("#222222"))
+        c.setFont("Helvetica-Bold" if i == 0 else "Helvetica", 10.5)
+        for x, cell in zip(xs, row):
+            c.drawString(x, y, cell)
+        c.setStrokeColor(HexColor("#dddddd"))
+        c.line(50, y - 8, w - 50, y - 8)
+        y -= 26
+    y -= 20
+    y = wrap(c, "Nomor induk kependudukan dan nomor telepon di atas adalah data pribadi. "
+             "Sebelum lampiran ini dikirim ke pihak lain, kedua kolom itu harus diredaksi, "
+             "bukan sekadar ditutup kotak hitam: kotak yang digambar di atas teks masih "
+             "menyisakan teksnya di dalam berkas.", 56, y, w - 112)
+    c.setFillColor(HexColor("#888888"))
+    c.setFont("Helvetica-Oblique", 9)
+    c.drawString(56, 56, "Semua nama dan nomor di halaman ini karangan, dibuat untuk contoh tampilan.")
+    c.showPage()
+    c.save()
+
+
 guide(OUT / "Panduan Studi 2026.pdf")
+personnel(OUT / "Data Pegawai.pdf")
 agreement(OUT / "Draf Perjanjian v1.pdf", "v1")
 agreement(OUT / "Draf Perjanjian v2.pdf", "v2")
 report(OUT / "Laporan Kegiatan Semester.pdf", "Laporan Kegiatan", 9)

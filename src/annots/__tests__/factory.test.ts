@@ -56,6 +56,24 @@ describe("objectFromDrawn", () => {
     }
   });
 
+  /// A redaction area dragged out is one quad — the area that will be
+  /// emptied — and a click leaves an area with room in it, not a point.
+  it("makes a redaction mark of one black-filled quad", () => {
+    for (const gesture of [drag, click]) {
+      const obj = objectFromDrawn("Redact", gesture, DEFAULT_STYLE);
+      expect(obj?.kind).toBe("Redact");
+      const p = obj?.payload;
+      if (!p || !("Markup" in p)) throw new Error("bukan Markup");
+      expect(p.Markup.quads).toHaveLength(1);
+      expect(p.Markup.color).toEqual({ r: 0, g: 0, b: 0, a: 1 });
+      const q = p.Markup.quads[0];
+      if (!q) throw new Error("tanpa quad");
+      expect(q.right - q.left).toBeGreaterThan(0);
+      expect(q.top - q.bottom).toBeGreaterThan(0);
+      expect(q).toEqual(obj?.rect);
+    }
+  });
+
   it("gives an arrow a head and a line none", () => {
     const arrow = objectFromDrawn("Arrow", drag, DEFAULT_STYLE);
     const line = objectFromDrawn("Line", drag, DEFAULT_STYLE);

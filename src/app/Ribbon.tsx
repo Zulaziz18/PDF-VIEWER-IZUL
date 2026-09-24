@@ -6,10 +6,10 @@
  * and under them one ribbon panel of large and small buttons in groups.
  *
  * **A ribbon tab exists only when every button on it works.** SPEC 0 forbids
- * stubs and dead controls, so WPS's "Halaman", "Lindungi" and "Isi & Tanda
- * Tangan" tabs are absent until the phase that builds them adds them here —
- * together with their entry in `RibbonTab`. "Konversi" arrived with Phase 4,
- * carrying the three conversions that phase can do without a network.
+ * stubs and dead controls, so WPS's "Isi & Tanda Tangan" tab is absent until
+ * the phase that builds it adds it here — together with its entry in
+ * `RibbonTab`. "Konversi" arrived with Phase 4, "Halaman" with Phase 5, and
+ * "Lindungi" with Phase 6, carrying redaction.
  *
  * The ribbon replaces the old contextual toolbar: "Beranda" is reading and
  * navigation, "Edit" and "Komentar" carry the annotation tools. That is the
@@ -35,6 +35,7 @@ import { useWorkspace } from "@/state/workspaceStore";
 import type { ViewMode } from "@/viewport/layout";
 import type { Layout } from "@/state/panels";
 import { toggleCompare } from "./compare";
+import { markText, openSearchForMarking, toggleAreaTool } from "./redaction";
 import { insertImage, markupSelection, pickAndOpen } from "./actions";
 import { exportFlat, requestCloseAll, requestCloseTab, saveDocument } from "./fileActions";
 import {
@@ -52,6 +53,7 @@ const TABS: ReadonlyArray<{ id: RibbonTab; label: StringKey }> = [
   { id: "edit", label: "ribbon.edit" },
   { id: "pages", label: "ribbon.pages" },
   { id: "comment", label: "ribbon.comment" },
+  { id: "protect", label: "ribbon.protect" },
   { id: "convert", label: "ribbon.convert" },
 ];
 
@@ -538,6 +540,60 @@ function PagesPanel(): JSX.Element {
 }
 
 /**
+ * "Lindungi" (Phase 6): redaction. Three ways to mark — the selected text, a
+ * dragged area, every hit of a search — and one to apply, which always asks
+ * first. Marks are annotations until applied, so undo and delete work on
+ * them as on anything else.
+ */
+function ProtectPanel(): JSX.Element {
+  const tool = useDocument((s) => s.tool);
+  const markup = useUi((s) => s.markup);
+  const canUndo = useDocument((s) => s.canUndo);
+  const canRedo = useDocument((s) => s.canRedo);
+  const selection = useDocument((s) => s.selection.length);
+  const hasMarks = useDocument((s) => [...s.annots.values()].some((list) => list.some((o) => o.kind === "Redact")));
+  return (
+    <>
+      <RibbonButton
+        icon="redactText"
+        tone="rose"
+        label={t("redact.markText")}
+        hint={t("redact.markTextHint")}
+        pressed={markup === "Redact"}
+        onClick={markText}
+      />
+      <RibbonButton
+        icon="redactArea"
+        tone="rose"
+        label={t("redact.markArea")}
+        hint={t("redact.markAreaHint")}
+        pressed={tool === "Redact"}
+        onClick={toggleAreaTool}
+      />
+      <RibbonButton
+        icon="redactSearch"
+        tone="rose"
+        label={t("redact.markSearch")}
+        hint={t("redact.markSearchHint")}
+        onClick={openSearchForMarking}
+      />
+      <RibbonDivider />
+      <RibbonButton
+        icon="redactApply"
+        tone="rose"
+        label={t("redact.apply")}
+        // Never disabled: marks saved on pages not opened yet count too, and
+        // the dialog finds them. The hint says when none are on screen.
+        hint={hasMarks ? t("redact.applyHint") : `${t("redact.applyHint")} — ${t("redact.none")}`}
+        onClick={() => useUi.getState().setRedacting(true)}
+      />
+      <RibbonDivider />
+      <UndoGroup canUndo={canUndo} canRedo={canRedo} selection={selection} />
+    </>
+  );
+}
+
+/**
  * "Konversi": the three conversions that need nothing but the PDF engine.
  * WPS's converters to Word, Excel and PowerPoint are absent — they are not
  * something PDFium can do, and SPEC 2 rules out sending the file anywhere
@@ -589,6 +645,8 @@ export function Ribbon(): JSX.Element {
           <PagesPanel />
         ) : ribbon === "comment" ? (
           <CommentPanel />
+        ) : ribbon === "protect" ? (
+          <ProtectPanel />
         ) : (
           <ConvertPanel />
         )}

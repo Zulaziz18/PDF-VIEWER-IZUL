@@ -54,6 +54,8 @@ features = [
 
 [dev-dependencies]
 izul-store.workspace = true
+# Reads every stream of a redacted file, to prove what is not in it.
+izul-redact.workspace = true
 
 [lints]
 workspace = true

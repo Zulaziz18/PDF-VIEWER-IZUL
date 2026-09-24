@@ -14,7 +14,7 @@ use izul_ipc::message::{
     ArrangePage, DocId, RedactPageWire, RedactedPageWire, Request, Response, SavedAnnotWire,
     BLOB_CHUNK,
 };
-use izul_pdf::redaction::{check, check_left, plan_areas, CharLayout};
+use izul_pdf::redaction::{check, check_left, check_left_as_shown, plan_areas, CharLayout};
 use izul_pdf::{ArrangeSource, Arranged, Document, Engine, PdfError, Quality};
 
 /// Working copies and blobs, per worker.
@@ -333,7 +333,13 @@ impl Workbench {
         let refuse = |detail: String| Failure::Redact(Some(doc), detail);
         let work = self.work(doc)?;
         let mut plans = Vec::new();
-        let mut before: Vec<(u32, Vec<izul_pdf::PdfRectF>, Vec<CharLayout>)> = Vec::new();
+        #[allow(clippy::type_complexity)]
+        let mut before: Vec<(
+            u32,
+            Vec<izul_pdf::PdfRectF>,
+            Vec<CharLayout>,
+            Vec<izul_pdf::PdfRectF>,
+        )> = Vec::new();
         for p in pages {
             if p.page >= work.page_count() {
                 return Err(refuse(format!("halaman {} tidak ada", p.page + 1)));
@@ -365,7 +371,12 @@ impl Workbench {
                     })
                     .collect(),
             });
-            before.push((p.page, planned.into_iter().map(|(r, _)| r).collect(), chars));
+            before.push((
+                p.page,
+                planned.into_iter().map(|(r, _)| r).collect(),
+                chars,
+                display,
+            ));
         }
         let bytes = work.save_to_vec().map_err(pdf)?;
         let page_count = work.page_count();
@@ -379,9 +390,12 @@ impl Workbench {
             return Err(refuse("jumlah halaman berubah".into()));
         }
         let mut result = Vec::new();
-        for ((page, areas, chars), report) in before.iter().zip(&reports) {
+        for ((page, areas, chars, display), report) in before.iter().zip(&reports) {
             let after = copy.char_layout(*page).map_err(pdf)?;
             check(areas, chars, &after)
+                .map_err(|e| refuse(format!("halaman {}: {e}", page + 1)))?;
+            let geometry = copy.page_geometry(*page).map_err(pdf)?;
+            check_left_as_shown(&geometry, display, &after)
                 .map_err(|e| refuse(format!("halaman {}: {e}", page + 1)))?;
             let c = report.counts;
             result.push(RedactedPageWire {
