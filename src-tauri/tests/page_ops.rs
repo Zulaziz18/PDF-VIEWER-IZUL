@@ -283,6 +283,7 @@ async fn rearranged_pages_are_saved_in_order_with_their_annotations() {
     let outline = live.outline(2).await;
     assert_eq!(outline.len(), 1);
     assert_eq!(outline[0].0, "Bab");
+    assert_eq!(outline[0].1, None, "its page is gone, so it points nowhere");
 
     // Every annotation is on the page it was drawn on, copies included.
     let back = AnnotState::new();

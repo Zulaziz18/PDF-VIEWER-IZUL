@@ -38,6 +38,31 @@ Test integrasi (`crash_isolation`) membaca PDFium langsung dari
 aplikasi secara otomatis pada setiap `cargo build`. Tidak ada langkah salin
 manual yang diperlukan di kedua kasus — cukup `vendor/pdfium/fetch.sh` di atas.
 
+## Hasil Fase 5
+
+| Suite | Jumlah | Status |
+|---|---|---|
+| `izul-model` (… + **peta halaman & Op::Pages**) | 77 | lulus |
+| `izul-ipc` (… + indeks `WorkArrange` terpatok) | 23 | lulus |
+| `izul-store` | 49 | lulus |
+| `izul-pdf` (… + **susun ulang di tempat**, bookmark ikut, sumber daya tidak digandakan, isi halaman terhapus hilang) | 60 | lulus |
+| `izul-render` | 29 | lulus |
+| `izul-write` | 30 | lulus |
+| `izul-worker` | 9 | lulus |
+| `izul-app` (… + **banding visual**, penjaga kunci preferensi) | 101 | lulus |
+| `crash_isolation` + `render_pipeline` + `render_end_to_end` (… + **beda visual pada pratinjau sungguhan**) + `save_round_trip` | 30 | lulus |
+| **`page_ops`** (pekerja nyata: lima operasi, simpan, buka ulang) | 2 | lulus |
+| `izul-bench` (`multidoc`) | 3 | lulus |
+| **Total Rust** | **413** | **lulus** |
+| Frontend (… + **pageRange Pecah**, **pageSelection**, **panels**, **pagesView**, **textDiff**) | 181 | lulus |
+| **Total** | **594** | **lulus** |
+
+Angka kinerja susun ulang ada di `bench/results/phase5-linux.txt`:
+
+```bash
+cargo run --release -p izul-bench --bin fase5-uji   # butuh fixture 500 halaman
+```
+
 ## Hasil Fase 4
 
 | Suite | Jumlah | Status |
@@ -552,6 +577,40 @@ penting, untuk daftar ini.
 - [ ] Beranda → Riwayat Ekspor mencantumkan ketiga ekspor di atas.
 - [ ] Ekspor ke nama berkas yang sedang terbuka di tab lain: ditolak dengan
       pesan, tidak ada yang tertimpa.
+
+### Fase 5
+
+Seperti Fase 4: **pakai salinan**, karena menyimpan menimpa berkas.
+
+- [ ] Pita Halaman → Panel Halaman membuka thumbnail. Klik satu, Shift+klik
+      yang lain: semua di antaranya terpilih. Ctrl+klik menambah/mengurangi.
+- [ ] Seret dua halaman terpilih ke posisi lain: garis biru menunjukkan tempat
+      jatuhnya, dan halamannya pindah ke sana. Ctrl+Z mengembalikannya.
+- [ ] Hapus (tombol atau Delete di panel): halaman hilang, muncul pesan
+      "… halaman dihapus. Ctrl+Z untuk membatalkan."
+- [ ] Sisip Kosong, Duplikat, Putar kiri/kanan bekerja pada halaman terpilih
+      (atau halaman yang sedang dibaca bila tidak ada yang dipilih).
+- [ ] Anotasi di halaman yang dipindah/diduplikat ikut pindah/ikut tersalin.
+- [ ] Gabung PDF memilih berkas lain; semua halamannya muncul sesudah halaman
+      yang sedang dibaca, termasuk anotasi yang pernah disimpan di berkas itu.
+- [ ] Simpan, tutup, buka lagi: urutan dan rotasi halaman sama seperti sebelum
+      disimpan, dan berkas yang sama di Edge/Chrome menunjukkan urutan yang
+      sama. Ukuran berkas hasil gabungan kira-kira jumlah kedua berkas, bukan
+      berlipat-lipat.
+- [ ] Pecah → Setiap 10 halaman: pratinjau menyebut berkas-berkasnya; hasilnya
+      `nama-1.pdf`, `nama-2.pdf`, … di folder yang dipilih.
+- [ ] Menu Jendela → Empat panel: empat dokumen tampil; klik salah satu membuat
+      pitanya bertindak atas dokumen itu (bingkai biru). Seret tab dari bilah
+      judul ke panel lain: dokumen pindah ke sana.
+- [ ] Seret pembatas panel; tutup dan buka lagi aplikasinya: tata letak dan
+      ukurannya sama.
+- [ ] Dengan dua panel, seret halaman dari panel halaman satu dokumen ke panel
+      dokumen lain: halaman tersalin ke sana (tahan Shift untuk memindah).
+- [ ] Menu Jendela → Mode Banding dengan dua versi sebuah dokumen: menggulir
+      satu sisi menggulir yang lain; kata yang berbeda ditandai merah muda di
+      kedua sisi, dan bilah atas menyebut jumlah perbedaan di halaman itu.
+- [ ] Mode Banding dengan dua PDF hasil pindaian (tanpa teks): bagian yang
+      berbeda tetap ditandai (visual).
 
 ### Menyusul (fase terkait)
 

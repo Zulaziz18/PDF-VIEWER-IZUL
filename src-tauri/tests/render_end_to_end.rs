@@ -640,3 +640,39 @@ async fn indexing_makes_a_document_findable_by_its_words() {
     live.shutdown().await;
     let _ = std::fs::remove_dir_all(&data_dir);
 }
+
+/// Compare mode's visual diff on real previews from the real pipeline: the
+/// same page against itself is no difference, two different pages are.
+/// This is also what checks `compare.rs`'s reading of the cache's bitmaps —
+/// BGRA, rows `stride` bytes apart — against what the renderer really
+/// produces, rather than against a buffer the test made up.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn the_visual_diff_sees_real_differences_and_only_those() {
+    let Some(live) = Live::start().await else {
+        return skip("izul-worker, PDFium, atau test-fixtures/viewer-10p.pdf tidak ada");
+    };
+    let preview = |page: u32| {
+        format!(
+            "http://izul.localhost/tile/{}/{page}/0/512/0/0/preview?g=0&p=1",
+            live.doc
+        )
+    };
+    let a = live.fetch(&preview(0)).await.expect("page 1");
+    let a2 = live.fetch(&preview(0)).await.expect("page 1 again");
+    let b = live.fetch(&preview(1)).await.expect("page 2");
+    fn bmp(t: &izul_render::CachedTile) -> izul_app::compare::Bitmap<'_> {
+        izul_app::compare::Bitmap {
+            bytes: &t.bytes,
+            width: t.width,
+            height: t.height,
+            stride: t.stride,
+        }
+    }
+    let (same, none) = izul_app::compare::diff(bmp(&a), bmp(&a2), 48, 64);
+    assert!(same.is_empty(), "a page differs from itself: {same:?}");
+    assert_eq!(none, 0.0);
+    let (boxes, fraction) = izul_app::compare::diff(bmp(&a), bmp(&b), 48, 64);
+    assert!(!boxes.is_empty(), "two different pages compared as equal");
+    assert!(fraction > 0.01 && fraction < 1.0, "fraction {fraction}");
+    live.shutdown().await;
+}
