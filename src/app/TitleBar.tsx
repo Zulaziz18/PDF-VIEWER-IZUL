@@ -32,6 +32,7 @@ import type { DocumentStore } from "@/state/documentSession";
 import { useWorkspace, type Tab } from "@/state/workspaceStore";
 import { t } from "@/i18n";
 import { requestCloseTab } from "./fileActions";
+import { TAB_DRAG_TYPE } from "./PanelGrid";
 
 interface VersionInfo {
   name: string;
@@ -76,7 +77,13 @@ function DocTab(props: {
       aria-selected={props.active}
       tabIndex={props.active ? 0 : -1}
       draggable
-      onDragStart={props.onDragStart}
+      onDragStart={(e) => {
+        // Also a payload a split-view panel understands: dropping a tab on a
+        // panel shows the document there (Phase 5).
+        e.dataTransfer.setData(TAB_DRAG_TYPE, String(tab.doc));
+        e.dataTransfer.effectAllowed = "move";
+        props.onDragStart();
+      }}
       onDragOver={(e) => e.preventDefault()}
       onDrop={props.onDrop}
       onDragEnd={props.onDragEnd}

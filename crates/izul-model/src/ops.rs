@@ -23,6 +23,7 @@
 use std::collections::BTreeMap;
 
 use crate::annot::{AnnotId, AnnotObject};
+use crate::pages::PageEntry;
 
 /// One reversible edit.
 #[derive(Debug, Clone, PartialEq)]
@@ -32,6 +33,23 @@ pub enum Op {
     Replace {
         before: Box<AnnotObject>,
         after: Box<AnnotObject>,
+    },
+    /// A structural page edit (`pages.rs`): the page map before and after,
+    /// and what it does to the annotations — renumbered, removed with a
+    /// deleted page, or added as copies — all in one step, so that no undo
+    /// can separate a page from what is drawn on it.
+    ///
+    /// Locks do not stop it. A lock protects an object from being edited by
+    /// accident; deleting or moving the page it is on is a decision about the
+    /// page, and a locked highlight that refused to leave with its page would
+    /// be left floating over a different one.
+    Pages {
+        before: Option<Vec<PageEntry>>,
+        after: Option<Vec<PageEntry>>,
+        /// `(object, old page, new page)`.
+        moves: Vec<(AnnotId, u32, u32)>,
+        removed: Vec<AnnotObject>,
+        added: Vec<AnnotObject>,
     },
 }
 
@@ -45,13 +63,29 @@ impl Op {
                 before: after.clone(),
                 after: before.clone(),
             },
+            Op::Pages {
+                before,
+                after,
+                moves,
+                removed,
+                added,
+            } => Op::Pages {
+                before: after.clone(),
+                after: before.clone(),
+                moves: moves.iter().map(|&(id, from, to)| (id, to, from)).collect(),
+                removed: added.clone(),
+                added: removed.clone(),
+            },
         }
     }
 
-    pub fn target(&self) -> AnnotId {
+    /// The one object an annotation edit is about; `None` for a page edit,
+    /// which is about many or none.
+    pub fn target(&self) -> Option<AnnotId> {
         match self {
-            Op::Insert(o) | Op::Delete(o) => o.id,
-            Op::Replace { after, .. } => after.id,
+            Op::Insert(o) | Op::Delete(o) => Some(o.id),
+            Op::Replace { after, .. } => Some(after.id),
+            Op::Pages { .. } => None,
         }
     }
 }
@@ -98,6 +132,8 @@ pub struct AnnotDoc {
     /// the saved file differ between runs for no reason.
     objects: BTreeMap<AnnotId, AnnotObject>,
     next_id: u64,
+    /// The page map; `None` while the pages are the file's own, in order.
+    pages: Option<Vec<PageEntry>>,
 }
 
 /// Hand-written rather than derived, and that is not a style choice: a derived
@@ -117,7 +153,19 @@ impl AnnotDoc {
         AnnotDoc {
             objects: BTreeMap::new(),
             next_id: 1,
+            pages: None,
         }
+    }
+
+    /// The page map, or `None` for the file's own pages in order.
+    pub fn page_map(&self) -> Option<&[PageEntry]> {
+        self.pages.as_deref()
+    }
+
+    /// Sets the page map outside the undo stack — for a restored draft,
+    /// which is a state to return to, not an edit to undo.
+    pub fn restore_page_map(&mut self, pages: Option<Vec<PageEntry>>) {
+        self.pages = pages;
     }
 
     /// The next free id. Monotonic and never reused, because the undo stack
@@ -201,6 +249,45 @@ impl AnnotDoc {
                     Some(_) => {}
                 }
                 self.objects.insert(after.id, *after);
+            }
+            Op::Pages {
+                after,
+                moves,
+                removed,
+                added,
+                ..
+            } => {
+                // Every check before any change: this op is all-or-nothing on
+                // its own, not only as part of a transaction.
+                for obj in &removed {
+                    if !self.objects.contains_key(&obj.id) {
+                        return Err(EditError::NotFound(obj.id));
+                    }
+                }
+                for &(id, from, _) in &moves {
+                    match self.objects.get(&id) {
+                        Some(o) if o.page == from => {}
+                        _ => return Err(EditError::NotFound(id)),
+                    }
+                }
+                for obj in &added {
+                    if obj.id.0 == 0 || self.objects.contains_key(&obj.id) {
+                        return Err(EditError::AlreadyExists(obj.id));
+                    }
+                }
+                for obj in &removed {
+                    self.objects.remove(&obj.id);
+                }
+                for (id, _, to) in moves {
+                    if let Some(o) = self.objects.get_mut(&id) {
+                        o.page = to;
+                    }
+                }
+                for obj in added {
+                    self.next_id = self.next_id.max(obj.id.0 + 1);
+                    self.objects.insert(obj.id, obj);
+                }
+                self.pages = after;
             }
         }
         Ok(inverse)

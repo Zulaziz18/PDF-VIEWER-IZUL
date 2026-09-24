@@ -170,6 +170,16 @@ body {
   mix-blend-mode: multiply;
 }
 
+/* Compare mode's differences (Phase 5): rose, so a difference is never
+ * mistaken for a search match, with an outline that still shows on a page
+ * that is itself mostly red. */
+.izul-diff-mark {
+  background: color-mix(in srgb, #e5484d 28%, transparent);
+  outline: 1px solid color-mix(in srgb, #e5484d 70%, transparent);
+  border-radius: 2px;
+  mix-blend-mode: multiply;
+}
+
 .izul-text-page div {
   transform-origin: 0 0;
   /* A line box that stretched would move the highlight off the glyphs. */

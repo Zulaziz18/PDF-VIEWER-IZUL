@@ -22,6 +22,8 @@ image.workspace = true
 serde_json.workspace = true
 # The Phase 4 round trip writes with the real writer.
 izul-write.workspace = true
+# Opens every stream of a saved file to prove what is — and is not — in it.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 
 [lints]
 workspace = true

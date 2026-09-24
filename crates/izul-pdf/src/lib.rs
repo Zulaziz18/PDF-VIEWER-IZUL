@@ -27,6 +27,7 @@
     )
 )]
 
+pub mod arrange;
 pub mod engine;
 pub mod error;
 mod ffi_guard;
@@ -43,6 +44,7 @@ pub mod sys;
 pub mod test_support;
 pub mod text;
 
+pub use arrange::{ArrangeSource, Arranged};
 pub use engine::{Document, Engine, PageGeometry};
 pub use error::{PdfError, Result};
 pub use find::{FindOptions, Match};

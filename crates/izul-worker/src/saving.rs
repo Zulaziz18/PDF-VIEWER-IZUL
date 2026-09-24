@@ -10,8 +10,8 @@
 
 use std::collections::HashMap;
 
-use izul_ipc::message::{DocId, Request, Response, SavedAnnotWire, BLOB_CHUNK};
-use izul_pdf::{Document, Engine, PdfError, Quality};
+use izul_ipc::message::{ArrangePage, DocId, Request, Response, SavedAnnotWire, BLOB_CHUNK};
+use izul_pdf::{ArrangeSource, Arranged, Document, Engine, PdfError, Quality};
 
 /// Working copies and blobs, per worker.
 #[derive(Default)]
@@ -143,6 +143,91 @@ impl Workbench {
                     work.flatten_page(page)
                         .map_err(|e| Failure::Pdf(Some(doc), e))?;
                 }
+                Ok(Response::WorkReady {
+                    doc,
+                    page_count: work.page_count(),
+                })
+            }
+            Request::WorkArrange {
+                doc,
+                pages,
+                sources,
+            } => {
+                let work = self.work(doc)?;
+                let pdf = |e| Failure::Pdf(Some(doc), e);
+                // Every other file the map draws on, opened once, read into
+                // memory: these are copies the UI process made, and nothing
+                // here may hold a user's file open.
+                let mut opened: HashMap<u32, Document> = HashMap::new();
+                let mut own_seen = std::collections::HashSet::new();
+                let mut own_twice = false;
+                for page in &pages {
+                    match *page {
+                        ArrangePage::Page {
+                            source: 0, page, ..
+                        } => {
+                            own_twice |= !own_seen.insert(page);
+                        }
+                        ArrangePage::Page { source, .. } if !opened.contains_key(&source) => {
+                            let path = sources.get(source as usize).ok_or_else(|| {
+                                Failure::Encode(format!("sumber halaman {source} tidak dikenal"))
+                            })?;
+                            let doc = engine.open_copied(path, None).map_err(pdf)?;
+                            doc.set_strip_izul(false);
+                            opened.insert(source, doc);
+                        }
+                        _ => {}
+                    }
+                }
+                // A second handle on the file itself, only for a duplicated
+                // page (see `Document::arrange`).
+                let again = if own_twice {
+                    let path = sources
+                        .first()
+                        .ok_or_else(|| Failure::Encode("berkas asal tidak disebut".into()))?;
+                    let again = engine.open_copied(path, None).map_err(pdf)?;
+                    again.set_strip_izul(false);
+                    Some(again)
+                } else {
+                    None
+                };
+                let mut plan = Vec::with_capacity(pages.len());
+                for page in &pages {
+                    plan.push(match *page {
+                        ArrangePage::Page {
+                            source: 0,
+                            page,
+                            rotation,
+                        } => Arranged {
+                            source: ArrangeSource::Own(page),
+                            rotation,
+                        },
+                        ArrangePage::Page {
+                            source,
+                            page,
+                            rotation,
+                        } => Arranged {
+                            source: ArrangeSource::From(
+                                opened.get(&source).ok_or_else(|| {
+                                    Failure::Encode(format!(
+                                        "sumber halaman {source} tidak terbuka"
+                                    ))
+                                })?,
+                                page,
+                            ),
+                            rotation,
+                        },
+                        ArrangePage::Blank {
+                            width,
+                            height,
+                            rotation,
+                        } => Arranged {
+                            source: ArrangeSource::Blank { width, height },
+                            rotation,
+                        },
+                    });
+                }
+                work.arrange(&plan, again.as_ref()).map_err(pdf)?;
                 Ok(Response::WorkReady {
                     doc,
                     page_count: work.page_count(),

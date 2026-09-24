@@ -65,6 +65,7 @@ async function openDirty(h: Harness, path: string, dirty = true): Promise<number
     can_undo: true,
     can_redo: false,
     dirty,
+    map_revision: 0,
   });
   return doc;
 }
@@ -177,7 +178,7 @@ describe("drafts", () => {
   it("offers a waiting draft when its document opens, and restores it on request", async () => {
     const h = await harness({
       draft_status: () => ({ updated_at: 1_700_000_000, objects: 3, matches_file: true }),
-      draft_restore: () => ({ objects: [], can_undo: false, can_redo: false, dirty: true }),
+      draft_restore: () => ({ objects: [], can_undo: false, can_redo: false, dirty: true, map_revision: 0 }),
     });
     h.actions.installDraftOffer();
     const doc = await h.ws.useWorkspace.getState().openFile("/x/a.pdf");
@@ -194,7 +195,7 @@ describe("drafts", () => {
   it("says so when the file changed since the draft, and forces only on request", async () => {
     const h = await harness({
       draft_status: () => ({ updated_at: 1_700_000_000, objects: 3, matches_file: false }),
-      draft_restore: () => ({ objects: [], can_undo: false, can_redo: false, dirty: true }),
+      draft_restore: () => ({ objects: [], can_undo: false, can_redo: false, dirty: true, map_revision: 0 }),
     });
     h.actions.installDraftOffer();
     const doc = await h.ws.useWorkspace.getState().openFile("/x/a.pdf");

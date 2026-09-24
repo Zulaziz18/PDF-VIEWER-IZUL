@@ -20,7 +20,8 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use izul_ipc::message::{DocId, Request, Response, BLOB_CHUNK};
+use izul_ipc::message::{ArrangePage, DocId, Request, Response, BLOB_CHUNK};
+use izul_model::PageEntry;
 use izul_write::atomic::{sweep_stale, PendingWrite};
 use izul_write::AnnotWrite;
 use tokio::sync::RwLock;
@@ -109,7 +110,46 @@ pub async fn build_current(
         },
     )
     .await?;
+    let arrange = annots.page_map(doc).map(|map| {
+        let pages: Vec<ArrangePage> = map
+            .iter()
+            .map(|e| match *e {
+                PageEntry::Page {
+                    source,
+                    page,
+                    rotation,
+                } => ArrangePage::Page {
+                    source,
+                    page,
+                    rotation,
+                },
+                PageEntry::Blank {
+                    width,
+                    height,
+                    rotation,
+                } => ArrangePage::Blank {
+                    width,
+                    height,
+                    rotation,
+                },
+            })
+            .collect();
+        let mut sources = vec![source.to_string()];
+        sources.extend(annots.sources(doc).into_iter().map(|s| s.path));
+        (pages, sources)
+    });
     let built = async {
+        if let Some((pages, sources)) = arrange {
+            expect_work(
+                &worker,
+                Request::WorkArrange {
+                    doc: DocId(doc),
+                    pages,
+                    sources,
+                },
+            )
+            .await?;
+        }
         expect_work(
             &worker,
             Request::WorkPlaceholders {
@@ -194,6 +234,10 @@ pub struct SaveReport {
     pub path: String,
     pub bytes: u64,
     pub annotations: u32,
+    /// The save applied a page map: the file has new pages, and these are
+    /// their display sizes as the reopened document reports them. The tab
+    /// must lay itself out again.
+    pub restructured: Option<Vec<(f32, f32)>>,
 }
 
 /// Saves `doc` to `target` (its own file when `None`).
@@ -210,6 +254,9 @@ pub async fn save(
     target: Option<&str>,
 ) -> Out<SaveReport> {
     let target_path = PathBuf::from(target.unwrap_or(source));
+    let mapped = annots.page_map(doc).map(|m| m.len() as u32);
+    // A map changes how many pages the result has; verify against that.
+    let page_count = mapped.unwrap_or(page_count);
     let (bytes, pages, count) = build_current(pool, annots, doc, source).await?;
     let worker = worker_of(pool, doc).await?;
     let pending = write_verified(
@@ -232,6 +279,7 @@ pub async fn save(
     let committed = pending
         .commit()
         .map_err(|e| format!("berkas tidak dapat diganti: {e}"));
+    let mut reopened_sizes = None;
     if same_file || committed.is_ok() && target.is_some() {
         // Reopen whatever is on disk now: the new file after a successful
         // save, the untouched original after a failed one. "Save as" moves the
@@ -244,18 +292,33 @@ pub async fn save(
         if !same_file {
             let _ = pool.write().await.release(DocId(doc)).await;
         }
-        pool.write()
+        let reply = pool
+            .write()
             .await
             .reload(DocId(doc), &reopen)
             .await
             .map_err(|e| format!("dokumen tidak dapat dibuka ulang: {e}"))?;
+        if let Response::Opened { page_sizes, .. } = reply {
+            reopened_sizes = Some(page_sizes);
+        }
     }
     committed?;
     annots.mark_saved(doc);
+    let restructured = match (mapped, reopened_sizes) {
+        (Some(_), Some(sizes)) => {
+            annots.after_restructure(doc, sizes.clone());
+            Some(sizes)
+        }
+        (Some(_), None) => {
+            return Err("susunan halaman tersimpan tetapi dokumen tidak dibuka ulang".into());
+        }
+        (None, _) => None,
+    };
     Ok(SaveReport {
         path: target_path.to_string_lossy().to_string(),
         bytes: bytes.len() as u64,
         annotations: count,
+        restructured,
     })
 }
 
@@ -282,6 +345,14 @@ pub enum Export {
     Flat { target: String },
     /// Some pages, in order, as a new PDF — annotations kept live.
     Pages { target: String, pages: Vec<u32> },
+    /// One PDF per range — "Pecah" (SPEC 11.3), by page ranges or by the
+    /// document's top-level bookmarks, which the frontend turns into ranges:
+    /// `<stem>-<k>.pdf` in `folder`, `k` from 1. Annotations stay live.
+    Split {
+        folder: String,
+        stem: String,
+        ranges: Vec<Vec<u32>>,
+    },
     /// Pages as image files: `<stem>-<n>.<ext>` in `folder`.
     Images {
         folder: String,
@@ -359,6 +430,48 @@ pub async fn export(
                 pending.commit().map_err(|e| e.to_string())?;
                 Ok(vec![target])
             }
+            Export::Split {
+                folder,
+                stem,
+                ranges,
+            } => {
+                let temp_path = temp.temp_path().to_string_lossy().to_string();
+                let mut written = Vec::new();
+                for (k, pages) in ranges.iter().enumerate() {
+                    if pages.is_empty() {
+                        continue;
+                    }
+                    // Extracting replaces the working copy, so each part
+                    // starts again from the whole document.
+                    if k > 0 {
+                        expect_work(
+                            &worker,
+                            Request::WorkOpen {
+                                doc: id,
+                                path: temp_path.clone(),
+                            },
+                        )
+                        .await?;
+                    }
+                    let n = expect_work(
+                        &worker,
+                        Request::WorkExtract {
+                            doc: id,
+                            pages: pages.clone(),
+                        },
+                    )
+                    .await?;
+                    let bytes = expect_blob(&worker, Request::WorkSave { doc: id }).await?;
+                    let out = Path::new(&folder).join(format!("{stem}-{}.pdf", k + 1));
+                    let pending =
+                        write_verified(&worker, &out, &bytes, (n, Vec::new(), None)).await?;
+                    pending
+                        .commit()
+                        .map_err(|e| format!("{}: {e}", out.display()))?;
+                    written.push(out.to_string_lossy().to_string());
+                }
+                Ok(written)
+            }
             Export::Images {
                 folder,
                 stem,
@@ -404,14 +517,30 @@ pub async fn import_page(
     doc: u64,
     page: u32,
 ) -> Out<usize> {
-    if annots.is_imported(doc, page) {
+    // Once every page is in the editor — which a page operation requires —
+    // page numbers on screen are no longer page numbers in the file, and
+    // reading "page n" again would read the wrong one.
+    if annots.is_imported(doc, page) || annots.all_imported(doc) {
         return Ok(0);
     }
-    let worker = worker_of(pool, doc).await?;
+    let objects = read_saved(pool, annots, doc, page, doc).await?;
+    Ok(annots.import_page(doc, page, objects))
+}
+
+/// Our annotations saved on `page` of the document open as `from`, decoded;
+/// pictures are stored as images of `owner`, the document they will live in.
+pub async fn read_saved(
+    pool: &Arc<RwLock<Pool>>,
+    annots: &AnnotState,
+    from: u64,
+    page: u32,
+    owner: u64,
+) -> Out<Vec<izul_model::annot::AnnotObject>> {
+    let worker = worker_of(pool, from).await?;
     let found = match ask(
         &worker,
         Request::PageAnnots {
-            doc: DocId(doc),
+            doc: DocId(from),
             page,
         },
     )
@@ -425,18 +554,18 @@ pub async fn import_page(
         let mut obj = match izul_write::metadata::decode(&saved.metadata) {
             Ok(o) => o,
             Err(e) => {
-                tracing::warn!(doc, page, error = %e, "anotasi tersimpan dilewati");
+                tracing::warn!(doc = from, page, error = %e, "anotasi tersimpan dilewati");
                 continue;
             }
         };
         if let Some((blob, len, _mime)) = saved.image {
             let bytes = fetch_blob(&worker, blob, len).await?;
-            let handle = annots.add_image(doc, bytes)?;
+            let handle = annots.add_image(owner, bytes)?;
             if let izul_model::annot::AnnotPayload::Image { image, .. } = &mut obj.payload {
                 *image = izul_model::display::ImageRef(handle);
             }
         }
         objects.push(obj);
     }
-    Ok(annots.import_page(doc, page, objects))
+    Ok(objects)
 }

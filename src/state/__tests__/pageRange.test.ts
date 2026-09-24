@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { formatPageRange, parsePageRange } from "../pageRange";
+import {
+  formatPageRange,
+  parsePageRange,
+  parseRangeGroups,
+  rangesEvery,
+  rangesFromOutline,
+} from "../pageRange";
 
 /** Pages as the user numbers them, for readable expectations. */
 function pages(text: string, count = 10): number[] | string {
@@ -74,5 +80,37 @@ describe("formatPageRange", () => {
       const r = parsePageRange(text, 10);
       expect(r.ok && formatPageRange(r.pages)).toBe(text);
     }
+  });
+});
+
+describe("splitting", () => {
+  it("cuts every n pages, the last part shorter", () => {
+    expect(rangesEvery(2, 5)).toEqual([[0, 1], [2, 3], [4]]);
+    expect(rangesEvery(10, 3)).toEqual([[0, 1, 2]]);
+    expect(rangesEvery(0, 2)).toEqual([[0], [1]]);
+  });
+
+  it("reads one group per semicolon", () => {
+    expect(parseRangeGroups("1-2; 4, 3", 5)).toEqual({ ok: true, groups: [[0, 1], [3, 2]] });
+    expect(parseRangeGroups("1-2; x", 5)).toEqual({
+      ok: false,
+      error: { kind: "syntax", part: "x" },
+      group: 1,
+    });
+    expect(parseRangeGroups(" ; ", 5)).toMatchObject({ ok: false, error: { kind: "empty" } });
+  });
+
+  it("splits by top-level bookmark, keeping what comes before the first", () => {
+    const outline = [
+      { depth: 0, page: 2 },
+      { depth: 1, page: 3 },
+      { depth: 0, page: 5 },
+      { depth: 0, page: 5 },
+      { depth: 0, page: null },
+      { depth: 0, page: 99 },
+    ];
+    expect(rangesFromOutline(outline, 7)).toEqual([[0, 1], [2, 3, 4], [5, 6]]);
+    expect(rangesFromOutline([{ depth: 0, page: 0 }], 2)).toEqual([[0, 1]]);
+    expect(rangesFromOutline([], 3)).toEqual([]);
   });
 });

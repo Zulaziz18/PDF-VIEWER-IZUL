@@ -39,7 +39,7 @@ import {
 import type { Layout, ViewMode, ViewRect } from "./layout";
 import { boxOf, dominantPage, layoutDocument, scrollToPage, visiblePages } from "./layout";
 import { prefetchPages, ScrollTracker } from "./prediction";
-import { buildHighlightLayer } from "./highlights";
+import { buildHighlightLayer, rectsSignature } from "./highlights";
 import type { PageBox } from "./annotLayer";
 import { pageAt, pageBox, toContentPoint, toPagePoint } from "./annotLayer";
 import { drawDisplayList } from "@/annots/canvas";
@@ -114,6 +114,16 @@ export interface RendererState {
   readonly annotImages: ReadonlyMap<number, CanvasImageSource>;
   /** The active tool; `null` is the selection arrow. */
   readonly tool: string | null;
+  /**
+   * Where each display page comes from once pages have been rearranged
+   * (Phase 5); `null` while every page is the document's own, in order. A
+   * blank page has no render document and is painted white.
+   */
+  readonly pagesView?: readonly { readonly render_doc: number | null; readonly page: number }[] | null;
+  /** Changes when display page numbers stop meaning what they meant. */
+  readonly pagesEpoch?: number;
+  /** Differences found by compare mode, per page, in display space. */
+  readonly marks?: ReadonlyMap<number, readonly PdfRect[]>;
 }
 
 export interface RendererEvents {
@@ -205,6 +215,7 @@ export class ViewportRenderer {
   #pending = new Set<string>();
   #textSignatures = new Map<number, string>();
   #highlightSignatures = new Map<number, string>();
+  #markSignatures = new Map<number, string>();
   /** The gesture in progress, if any. */
   #gesture: Gesture | null = null;
   #reportedPage = -1;
@@ -291,10 +302,11 @@ export class ViewportRenderer {
       this.#abort = new AbortController();
       this.#pending.clear();
     }
-    if (previous.doc !== state.doc) {
+    if (previous.doc !== state.doc || previous.pagesEpoch !== state.pagesEpoch) {
       this.#bitmaps.clear();
       this.#textSignatures.clear();
       this.#highlightSignatures.clear();
+      this.#markSignatures.clear();
       this.#host.textLayer.replaceChildren();
       this.#tracker.reset();
       this.#reportedPage = -1;
@@ -326,6 +338,37 @@ export class ViewportRenderer {
     }
     this.#tracker.reset();
     this.#host.scroller.scrollTo({ left: target.x, top: Math.max(0, y), behavior: "auto" });
+    this.requestFrame();
+  }
+
+  /**
+   * Where the reader is, as the page at the top edge of the view and how far
+   * into it (0 at its top, 1 at its bottom). Compare mode keeps two
+   * documents aligned by this rather than by pixels, because their pages
+   * need not be the same size.
+   */
+  position(): { page: number; fraction: number } {
+    const view = this.#view();
+    const horizontal = this.#layout.horizontal;
+    const page = visiblePages(this.#layout, view, 0)[0] ?? 0;
+    const box = boxOf(this.#layout, page);
+    if (!box) return { page, fraction: 0 };
+    const fraction = horizontal ? (view.x - box.x) / Math.max(1, box.w) : (view.y - box.y) / Math.max(1, box.h);
+    return { page, fraction: Math.min(1, Math.max(0, fraction)) };
+  }
+
+  /** The inverse of {@link position}; clamps to the pages this document has. */
+  scrollToPosition(page: number, fraction: number): void {
+    const last = this.#layout.pages.length - 1;
+    if (last < 0) return;
+    const box = boxOf(this.#layout, Math.min(Math.max(0, page), last));
+    if (!box) return;
+    const s = this.#host.scroller;
+    if (this.#layout.horizontal) {
+      s.scrollTo({ left: box.x + fraction * box.w, top: s.scrollTop, behavior: "auto" });
+    } else {
+      s.scrollTo({ left: s.scrollLeft, top: box.y + fraction * box.h, behavior: "auto" });
+    }
     this.requestFrame();
   }
 
@@ -482,12 +525,13 @@ export class ViewportRenderer {
       this.#surface.drawPageFrame({ x: originX, y: originY, w: pw, h: ph }, dpr);
       this.#surface.drawPlaceholder({ x: originX, y: originY, w: pw, h: ph }, "#ffffff");
 
-      // 2. The preview tier, upscaled to the page's box.
+      // 2. The preview tier, upscaled to the page's box. A blank page has
+      //    nothing to fetch: the white frame above is all of it.
       const previewRef = this.#previewRef(page);
-      const preview = this.#bitmaps.get(tileKey(previewRef));
+      const preview = previewRef ? this.#bitmaps.get(tileKey(previewRef)) : undefined;
       if (preview) {
         this.#surface.drawTile(preview, { x: originX, y: originY, w: pw, h: ph });
-      } else {
+      } else if (previewRef) {
         this.#request(previewRef, PRIORITY.preview);
       }
 
@@ -498,8 +542,9 @@ export class ViewportRenderer {
         w: view.w * dpr,
         h: view.h * dpr,
       };
-      for (const tile of tilesCovering(visibleInPage, size, this.#scale())) {
+      for (const tile of previewRef ? tilesCovering(visibleInPage, size, this.#scale()) : []) {
         const ref = this.#tileRef(page, tile.col, tile.row);
+        if (!ref) continue;
         const bitmap = this.#bitmaps.get(tileKey(ref));
         if (bitmap) {
           this.#surface.drawTile(bitmap, {
@@ -540,11 +585,12 @@ export class ViewportRenderer {
     // 4. Prefetch: previews for where the scroll is going.
     for (const page of prefetchPages(pages, this.#tracker.velocity, state.pageSizes.length)) {
       const ref = this.#previewRef(page);
-      if (!this.#bitmaps.has(tileKey(ref))) this.#request(ref, PRIORITY.prefetch);
+      if (ref && !this.#bitmaps.has(tileKey(ref))) this.#request(ref, PRIORITY.prefetch);
     }
 
     this.#syncTextLayer(pages);
-    this.#syncHighlightLayer(pages);
+    this.#syncBoxLayer(pages, this.#state.highlights, this.#highlightSignatures, "hl", "izul-highlight");
+    this.#syncBoxLayer(pages, this.#state.marks, this.#markSignatures, "mk", "izul-diff-mark");
     if (wantText.length > 0) this.#events.onWantText(wantText);
     if (wantAnnots.length > 0) this.#events.onWantAnnots(wantAnnots);
 
@@ -563,10 +609,22 @@ export class ViewportRenderer {
     };
   }
 
-  #previewRef(page: number): TileRef {
+  /** The document and page whose pixels display page `page` shows, or
+   * `null` for a blank page. */
+  #source(page: number): { doc: number; page: number } | null {
+    const view = this.#state.pagesView;
+    if (!view) return this.#state.doc === null ? null : { doc: this.#state.doc, page };
+    const entry = view[page];
+    if (!entry || entry.render_doc === null) return null;
+    return { doc: entry.render_doc, page: entry.page };
+  }
+
+  #previewRef(page: number): TileRef | null {
+    const from = this.#source(page);
+    if (!from) return null;
     return {
-      doc: this.#state.doc ?? 0,
-      page,
+      doc: from.doc,
+      page: from.page,
       rotation: this.#rotationOf(page),
       scale: PREVIEW_EDGE,
       col: 0,
@@ -575,10 +633,12 @@ export class ViewportRenderer {
     };
   }
 
-  #tileRef(page: number, col: number, row: number): TileRef {
+  #tileRef(page: number, col: number, row: number): TileRef | null {
+    const from = this.#source(page);
+    if (!from) return null;
     return {
-      doc: this.#state.doc ?? 0,
-      page,
+      doc: from.doc,
+      page: from.page,
       rotation: this.#rotationOf(page),
       scale: scaleKey(this.#scale()),
       col,
@@ -663,32 +723,39 @@ export class ViewportRenderer {
    * display space — a box left over from another zoom is not merely stale, it
    * is over the wrong words.
    */
-  #syncHighlightLayer(pages: readonly number[]): void {
+  #syncBoxLayer(
+    pages: readonly number[],
+    source: ReadonlyMap<number, readonly PdfRect[]> | undefined,
+    signatures: Map<number, string>,
+    attr: "hl" | "mk",
+    variant: "izul-highlight" | "izul-diff-mark",
+  ): void {
     const wanted = new Set(pages);
-    for (const page of Array.from(this.#highlightSignatures.keys())) {
-      const rects = this.#state.highlights.get(page);
+    for (const page of Array.from(signatures.keys())) {
+      const rects = source?.get(page);
       if (!wanted.has(page) || !rects || rects.length === 0) {
-        this.#host.textLayer.querySelector(`[data-hl="${page}"]`)?.remove();
-        this.#highlightSignatures.delete(page);
+        this.#host.textLayer.querySelector(`[data-${attr}="${page}"]`)?.remove();
+        signatures.delete(page);
       }
     }
     for (const page of pages) {
-      const rects = this.#state.highlights.get(page);
+      const rects = source?.get(page);
       const box = boxOf(this.#layout, page);
       const size = this.#displaySizeOf(page);
       if (!rects || rects.length === 0 || !box || !size) continue;
-      const signature = `${rects.length}:${this.#state.zoom}:${this.#rotationOf(page)}`;
-      if (this.#highlightSignatures.get(page) === signature) continue;
+      const signature = `${rectsSignature(rects)}:${this.#state.zoom}:${this.#rotationOf(page)}`;
+      if (signatures.get(page) === signature) continue;
 
       const layer = buildHighlightLayer(
         rects,
         { x: box.x, y: box.y, zoom: this.#state.zoom, pageHeight: size.height },
         document,
+        variant,
       );
-      layer.dataset["hl"] = String(page);
-      this.#host.textLayer.querySelector(`[data-hl="${page}"]`)?.remove();
+      layer.dataset[attr] = String(page);
+      this.#host.textLayer.querySelector(`[data-${attr}="${page}"]`)?.remove();
       this.#host.textLayer.appendChild(layer);
-      this.#highlightSignatures.set(page, signature);
+      signatures.set(page, signature);
     }
   }
 

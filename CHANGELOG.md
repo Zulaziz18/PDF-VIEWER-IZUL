@@ -3,6 +3,104 @@
 Semua perubahan penting per fase. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/);
 versi mengikuti `version.json` sebagai sumber tunggal.
 
+## [7.0.0-alpha.5] — Fase 5: Operasi Halaman, Split View & Banding
+
+Halaman kini bisa disusun: dihapus, dipindah, diputar, diduplikat, disisip
+kosong, digabung dari PDF lain, diekstrak, dan dipecah. Beberapa dokumen bisa
+dilihat berdampingan dalam hingga empat panel, dan dua versi sebuah dokumen
+bisa dibandingkan dengan perbedaannya ditandai.
+
+### Bagaimana operasi halaman bekerja
+
+Susunan halaman adalah **data**, bukan perubahan langsung pada PDF: sebuah
+peta "halaman ke-*n* di layar adalah halaman ke-*m* berkas ini (atau berkas
+lain), diputar sekian kali, atau halaman kosong". Peta itu hidup di tumpukan
+undo yang sama dengan anotasi (`izul-model/pages.rs`), dan setiap operasi
+membawa serta perpindahan anotasi di halamannya dalam satu langkah — tidak
+ada keadaan di mana halaman sudah pindah tetapi stabilonya belum.
+
+Saat disimpan, pekerja menerapkan peta itu **di tempat** pada salinan kerja
+(`izul-pdf/arrange.rs`): halaman baru ditambah di ujung, yang tak dipakai
+dihapus, sisanya dipindah ke urutan akhir dengan `FPDF_MovePages`. Membangun
+dokumen baru lalu mengimpor halaman akan lebih sederhana — dan akan diam-diam
+membuang bookmark, metadata, dan preferensi tampilan dokumen.
+
+Halaman dari berkas lain dibaca dari **salinan** di folder data, dibuka
+sebagai dokumen tersembunyi supaya dirender lewat jalur ubin yang sama.
+
+### Ditambahkan
+
+- **Pita Halaman**: Panel Halaman, Sisip Kosong, Gabung PDF, Hapus,
+  Duplikat, Putar kiri/kanan, Ekstrak, Pecah, Batalkan/Ulangi. Tombol
+  bertindak atas halaman yang dipilih di panel, atau halaman yang sedang
+  dibaca.
+- **Panel halaman**: klik, Ctrl+klik, Shift+klik untuk memilih; seret untuk
+  memindah; Delete menghapus; Ctrl+A memilih semua. Seret ke dokumen lain di
+  split view untuk menyalin (Shift untuk memindah) — anotasi yang belum
+  disimpan ikut.
+- **Pecah Dokumen**: per N halaman, per rentang ("1-3; 4-10; 11-"), atau satu
+  berkas per bookmark utama, dengan pratinjau hasil sebelum menulis.
+- **Split view**: satu, dua berdampingan, dua atas-bawah, atau empat panel
+  (menu Jendela di pita Beranda). Tab diseret ke panel; pembatas diseret atau
+  digeser dengan panah; tata letak dan ukuran diingat.
+- **Mode Banding**: dua dokumen berdampingan, gulir bersamaan per posisi
+  halaman, perbedaan kata ditandai merah muda di kedua sisi; halaman tanpa
+  teks (pindaian) dibandingkan secara visual.
+- "Putar halaman ini" kini suntingan dokumen (tersimpan, bisa di-undo), bukan
+  hanya tampilan. Rotasi seluruh dokumen tetap pengaturan tampilan.
+- IPC: `Request::WorkArrange` di ujung enum; `PROTOCOL_VERSION` 5 → 6.
+- Perintah baru: `pages_state`, `pages_apply`, `pages_insert_file`,
+  `pages_copy_from`, `compare_visual`, `pref_get`/`pref_set` (hanya kunci
+  berawalan `ui.`).
+
+### Diperbaiki
+
+- **Gabung PDF membengkakkan berkas 11 kali.** Halaman diimpor satu per satu,
+  dan PDFium menyalin sumber daya bersama (font tertanam) sekali per panggilan
+  impor: dua berkas teks 1 MB jadi 22,1 MB. Sekarang satu panggilan per
+  sumber: 1,9 MB. Test regresi dengan gambar 120 KB yang dipakai 20 halaman
+  terbukti gagal pada cara lama (2,4 MB).
+- **Mode banding sempat tidak menandai apa pun.** Cache teks sesi "mengklaim"
+  halaman dengan daftar kosong sebelum jawabannya datang; pembanding yang
+  membaca saat itu mengira halaman tanpa teks. Pembanding kini mengambil teks
+  sendiri.
+- Tanda tangan lapisan sorotan hanya memakai jumlah kotak, sehingga hasil
+  pencarian baru dengan jumlah sama di tempat lain tidak digambar ulang.
+
+### Angka
+
+Kriteria SPEC 17 untuk Fase 5 tidak menyebut angka; yang diukur di sini
+adalah kebenaran dan biaya. Build release, `bench/results/phase5-linux.txt`:
+
+| Berkas | Operasi | Susun | Simpan | Hasil |
+|---|---|---|---|---|
+| text-500p (1,0 MB) | balik urutan 500 halaman | 37 ms | 10 ms | 1,0 MB |
+| text-500p | hapus 250 halaman | 12 ms | 5 ms | 0,5 MB |
+| text-500p | gabung 500 halaman lain | 8 ms | 27 ms | 1,9 MB |
+| mixed-500p (50 MB) | balik urutan | 53 ms | 1 085 ms | 50,0 MB |
+| mixed-500p | gabung 500 halaman lain | 4 ms | 1 127 ms | 51,0 MB |
+| scan-50mb-500p (80 MB) | balik urutan | 42 ms | 142 ms | 79,8 MB |
+| scan-50mb-500p | gabung 500 halaman lain | 5 ms | 147 ms | 80,8 MB |
+
+Menyusun ulang sendiri paling lama 54 ms; biaya terbesar tetap PDFium menulis
+berkas utuh, sama seperti simpan biasa di Fase 4.
+
+**Kebenaran, dengan pekerja sungguhan** (`page_ops.rs`): lima operasi berurutan
+(pindah, hapus, duplikat, sisip kosong, sisip dari berkas lain dengan rotasi)
+disimpan lalu dibuka ulang: urutan teks halaman tepat, halaman asing berputar,
+setiap anotasi di halaman tempat ia digambar, bookmark masih ada. Isi halaman
+yang dihapus tidak ada lagi di berkas.
+
+### Diketahui / belum
+
+- Halaman ke-*n* dibandingkan dengan halaman ke-*n*; dokumen yang halamannya
+  bergeser disejajarkan dulu dengan memindah halaman.
+- Satu dokumen hanya bisa tampil di satu panel (lihat keputusan di CLAUDE.md).
+- Setelah menyimpan perubahan susunan halaman, riwayat undo dikosongkan:
+  langkah-langkahnya merujuk nomor halaman berkas lama.
+- Bookmark yang menunjuk halaman yang dihapus tetap ada tetapi tidak menuju
+  ke mana pun (perilaku PDFium, terlihat di test `page_ops.rs`).
+
 ## [7.0.0-alpha.4] — Langkah 0 (UI gaya WPS) + Fase 4: Tulis & Simpan
 
 Anotasi sekarang sampai ke berkas. Yang disimpan adalah **anotasi PDF standar**

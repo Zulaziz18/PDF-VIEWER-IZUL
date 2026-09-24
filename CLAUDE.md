@@ -606,6 +606,78 @@ Scene harness baru: `convert, export, close, draft, changed, exports`.
 (pembaca lain memakai padanan); dokumen terenkripsi tidak bisa disimpan;
 `npm audit` 2 moderate di `vitest` (dev saja, sudah ada sebelumnya).
 
+## Keadaan Fase 5 (Operasi Halaman, Split View, Banding, 23 September 2026)
+
+Selesai di branch `claude/pdf-studio-izul-v7-fase-5` (PR #4, base fase-4).
+Laporan SPEC 18 ada di badan PR #4.
+
+**Arsitektur operasi halaman** (rincian di kepala `izul-model/src/pages.rs`,
+`izul-pdf/src/arrange.rs`, `src-tauri/src/pagemap.rs`):
+
+- Susunan halaman adalah **peta** (`PageEntry::Page{source,page,rotation}` atau
+  `Blank`) di `AnnotDoc`, `None` selama halaman masih milik berkas dalam
+  urutannya. Setiap perintah jadi satu `Op::Pages` yang membawa peta
+  sebelum/sesudah **dan** renumbering/penghapusan/salinan anotasi — satu
+  langkah undo. `AnnotObject.page` selalu indeks **tampilan**.
+- **Sebelum operasi halaman pertama, semua halaman berkas diimpor** ke editor
+  (`ensure_all_imported`). Sesudahnya jalur impor lazy mati
+  (`all_imported`), karena "halaman n berkas" bukan lagi "halaman n layar".
+- Halaman dari berkas lain dibaca dari **salinan** di `data/sources/`
+  (dinamai hash isi, disapu setelah 30 hari) dan dirender lewat **dokumen
+  tersembunyi** (`HiddenSources`) di pool, jadi ubinnya lewat jalur biasa.
+  Frontend menerjemahkan halaman tampilan → (dokumen render, halaman) lewat
+  `sourceOf`; halaman kosong tidak meminta ubin.
+- Saat simpan, `WorkArrange` menerapkan peta **di tempat** (bukan dokumen
+  baru) supaya bookmark/metadata tetap. Sesudahnya `after_restructure`:
+  peta hilang, **riwayat undo dikosongkan** (langkahnya merujuk nomor halaman
+  berkas lama), ukuran halaman/registri render/indeks teks diperbarui.
+
+**Temuan terukur tentang PDFium:**
+
+- `FPDF_ImportPagesByIndex` menyalin sumber daya bersama (font, gambar)
+  **sekali per panggilan**. Impor per halaman menggandakan font 500 kali
+  (22,1 MB vs 1,9 MB). Satu panggilan per sumber; indeks ganda dalam satu
+  panggilan diterima (masing-masing jadi halaman).
+- `FPDF_SaveAsCopy` **memampatkan** stream yang tadinya tidak terkompresi, dan
+  **tidak menulis** objek yang tak lagi dirujuk: isi halaman yang dihapus
+  benar-benar hilang dari berkas (test `a_deleted_pages_content_is_not_in_the_saved_file`).
+  Untuk memeriksa isi berkas tersimpan, inflate setiap stream — byte mentah
+  tidak menunjukkan apa-apa.
+- Bookmark ke halaman yang dihapus tetap ada, `page` = `None`.
+- Ukuran halaman dari pohon halaman sudah termasuk `/Rotate` bawaan; rotasi
+  peta adalah rotasi **tambahan**, sama seperti rotasi tampilan Fase 1.
+
+**Split view & banding:** `src/state/panels.ts` (murni, teruji) —
+**satu dokumen hanya di satu panel** (dua panel pada satu dokumen berarti
+berbagi zoom/gulir atau dua sesi dengan dua undo atas satu set anotasi).
+Panel fokus = `activeDoc`. `Viewport` menerima `store` sesinya sendiri;
+`viewport()` = renderer dokumen aktif (`viewportHandle` per dokumen).
+Mode banding (`src/app/compare.ts`): halaman n ↔ n, gulir disinkronkan per
+posisi halaman, beda kata lewat LCS (`src/compare/textDiff.ts`), beda visual
+untuk halaman tanpa teks (`src-tauri/src/compare.rs`, grid sel dari
+pratinjau 512 px).
+
+**Cacat dan pelajarannya:**
+
+1. **Gabung membengkak 11×** (lihat temuan). **Pelajaran:** test pertama untuk
+   ini *lulus pada kode lama* karena PDFium memampatkan pola piksel saya jadi
+   1 KB — ambangnya tidak berarti. Baru dengan derau tak-termampatkan test itu
+   gagal pada cara lama (2,4 MB). Selalu jalankan test regresi pada kode lama.
+2. **Mode banding tak menandai apa pun**: cache teks sesi mengklaim halaman
+   dengan `[]` *sebelum* jawabannya datang (untuk mencegah permintaan ganda).
+   Pembaca cache di saat itu melihat "halaman tanpa teks". Jangan membaca
+   cache yang diklaim-sebelum-await sebagai jawaban.
+3. **Pemeriksaan "isi halaman terhapus hilang" versi pertama tidak bisa
+   melihat apa pun** (stream dimampatkan) — asersi "bisa melihat isi" yang
+   menangkapnya. Selalu sertakan asersi kewarasan bahwa pemeriksaannya bisa
+   gagal.
+4. Contoh warna legenda banding hilang di mode gelap karena
+   `mix-blend-mode: multiply` — hanya untuk tanda di atas halaman putih.
+
+**Belum / diketahui:** halaman n dibandingkan dengan n (tidak menyejajarkan
+otomatis); split view hanya satu dokumen per panel; perbedaan visual belum
+ditampilkan di harness screenshot (mock tidak merender).
+
 ## Alur kerja proyek ini
 
 - Branch per fase: `claude/pdf-studio-izul-v7-fase-4` (Langkah 0 + Fase 4,
@@ -627,7 +699,9 @@ Scene harness baru: `convert, export, close, draft, changed, exports`.
   SPEC 18, CI hijau, CHANGELOG, version.json, TESTING.md, dan bagian
   "Keadaan Fase N" di berkas ini sebelum lanjut.
 - Total 9 fase (0–8). Fase 0 dan 1 selesai dan disetujui pengguna; Fase 2 dan
-  Fase 3 selesai (satu branch, PR #2); Langkah 0 dan Fase 4 selesai (PR #3).
+  Fase 3 selesai (satu branch, PR #2); Langkah 0 dan Fase 4 selesai (PR #3);
+  Fase 5 selesai (PR #4). Fase 6 berikutnya di
+  `claude/pdf-studio-izul-v7-fase-6`, bercabang dari fase-5.
   Fase 5–8 dikerjakan berturut-turut tanpa menunggu persetujuan, atas
   keputusan pengguna.
 - Panduan menjalankan & menguji aplikasi di Windows (untuk pemula) ada di

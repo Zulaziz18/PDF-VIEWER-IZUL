@@ -39,6 +39,7 @@ pub mod display;
 pub mod font;
 pub mod geom;
 pub mod ops;
+pub mod pages;
 
 pub use annot::{
     AnnotId, AnnotKind, AnnotObject, AnnotPayload, FontSpec, NoteIcon, ShapeStyle, TextAlign,
@@ -52,3 +53,4 @@ pub use display::{
 pub use font::{FaceMetrics, FixedFont, FontCtx, GlyphMetrics, TextError};
 pub use geom::{Matrix, PdfPointF, PdfRectF, RotationQuarter};
 pub use ops::{AnnotDoc, CommandStack, EditError, Op, Transaction, DEFAULT_UNDO_LIMIT};
+pub use pages::{PageCommand, PageEntry, PageError, SourceId, OWN_FILE};

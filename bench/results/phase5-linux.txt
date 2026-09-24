@@ -1,0 +1,11 @@
+Fase 5 — susun ulang halaman saat simpan (linux x86_64)
+berkas                 operasi                      susun ms  simpan ms  hasil MB halaman
+text-500p.pdf          balik urutan semua               36.8       10.2       1.0     500
+text-500p.pdf          hapus tiap halaman genap         12.1        5.0       0.5     250
+text-500p.pdf          gabung 500 halaman lain           8.0       26.7       1.9    1000
+mixed-500p.pdf         balik urutan semua               53.0     1084.9      50.0     500
+mixed-500p.pdf         hapus tiap halaman genap         14.7     1036.4      45.2     250
+mixed-500p.pdf         gabung 500 halaman lain           3.7     1127.1      51.0    1000
+scan-50mb-500p.pdf     balik urutan semua               42.2      141.5      79.8     500
+scan-50mb-500p.pdf     hapus tiap halaman genap         15.2       57.3      39.9     250
+scan-50mb-500p.pdf     gabung 500 halaman lain           4.6      147.4      80.8    1000

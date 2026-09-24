@@ -4,7 +4,7 @@
 > fitur yang belum ada hanya akan menyesatkan, jadi bagian yang belum bisa
 > dipakai sengaja dikosongkan sampai fasenya selesai.
 
-## Status: Fase 4
+## Status: Fase 5
 
 Aplikasi ini sekarang bisa dipakai membaca beberapa dokumen sekaligus, mencari
 di dalamnya, menganotasi, dan **menyimpan** anotasi itu ke berkas PDF —
@@ -222,6 +222,51 @@ Tab pita **Konversi**:
 Ekspor tidak pernah mengubah berkas yang sedang Anda buka, dan menolak menimpa
 berkas yang sedang terbuka di tab lain. Semua hasil ekspor tercatat di
 **Beranda → Riwayat Ekspor**.
+
+### Menyusun halaman
+
+Tab pita **Halaman** berisi semua operasi halaman. Setiap tombol bekerja pada
+halaman yang dipilih di **Panel Halaman** (thumbnail di kiri), atau — bila
+tidak ada yang dipilih — pada halaman yang sedang dibaca.
+
+- **Memilih:** klik satu thumbnail; Shift+klik untuk memilih deretan;
+  Ctrl+klik untuk menambah atau mengurangi satu per satu; Ctrl+A semua.
+- **Memindah:** seret thumbnail yang dipilih ke tempat baru. Garis biru
+  menunjukkan tempat halaman akan jatuh.
+- **Hapus, Duplikat, Putar, Sisip Kosong:** tombol di pita. Tombol Delete di
+  panel halaman juga menghapus.
+- **Gabung PDF:** menyisipkan seluruh halaman PDF lain sesudah halaman yang
+  sedang dibaca.
+- **Ekstrak:** menyimpan halaman terpilih sebagai PDF baru.
+- **Pecah:** membagi dokumen jadi beberapa PDF — setiap N halaman, menurut
+  rentang yang Anda tulis (misalnya `1-3; 4-10; 11-`, satu berkas per bagian
+  yang dipisah titik koma), atau satu berkas per bookmark utama.
+
+Semua operasi halaman bisa dibatalkan dengan **Ctrl+Z** dan baru ditulis ke
+berkas saat Anda menyimpan. Anotasi ikut pindah bersama halamannya. Setelah
+perubahan susunan halaman disimpan, riwayat Ctrl+Z dimulai dari awal lagi.
+
+### Melihat beberapa dokumen sekaligus
+
+**Beranda → Jendela** memilih tata letak: satu panel, dua berdampingan, dua
+atas-bawah, atau empat panel. Klik di dalam sebuah panel untuk membuatnya
+aktif (bingkai biru) — pita dan panel samping bekerja pada dokumen itu.
+
+- Seret **tab** dari bilah judul ke sebuah panel untuk menampilkannya di sana.
+- Seret **halaman** dari panel halaman ke panel dokumen lain untuk
+  menyalinnya ke dokumen itu (tahan Shift untuk memindah).
+- Seret garis pembatas antar panel untuk mengubah ukuran; tata letak dan
+  ukurannya diingat.
+
+### Membandingkan dua versi
+
+**Beranda → Jendela → Mode Banding** menampilkan dua dokumen berdampingan.
+Menggulir satu sisi menggulir sisi lain ke halaman yang sama. Kata yang
+berbeda ditandai merah muda di kedua sisi; untuk halaman hasil pindaian yang
+tidak punya teks, bagian halaman yang berbeda ditandai. Halaman ke-1
+dibandingkan dengan halaman ke-1, dan seterusnya — kalau salah satu dokumen
+punya halaman sisipan, pindahkan dulu halamannya supaya sejajar. Tekan
+**Selesai** untuk keluar.
 
 ### Yang perlu diketahui soal anotasi di fase ini
 

@@ -17,6 +17,19 @@ import { create } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { forgetImages } from "@/annots/images";
 import { createDocumentSession, type DocumentStore, type OpenedDoc } from "./documentSession";
+import {
+  SINGLE,
+  assign,
+  clampRatio,
+  closeDoc,
+  decodePanels,
+  encodePanels,
+  focus,
+  setLayout as layoutFor,
+  showDoc,
+  type Layout,
+  type PanelState,
+} from "./panels";
 
 /** One tab, as the tab bar draws it. */
 export interface Tab {
@@ -66,8 +79,20 @@ export interface WorkspaceState {
    * open, the home screen is all there is.
    */
   home: boolean;
+  /** Split view (Phase 5): which document is in which panel. */
+  panels: PanelState;
+  /** Two panels side by side, scrolling together, differences marked. */
+  compare: boolean;
 
   showHome(): void;
+  setLayout(layout: Layout): void;
+  /** A tab dropped onto a panel. */
+  assignPanel(panel: number, doc: number): void;
+  focusPanel(panel: number): void;
+  setRatio(axis: "x" | "y", ratio: number): void;
+  setCompare(on: boolean): void;
+  /** Reads the remembered layout; called once at startup. */
+  loadPanels(): Promise<void>;
   openFile(path: string): Promise<number | null>;
   closeTab(doc: number): Promise<void>;
   closeAll(): Promise<void>;
@@ -113,9 +138,63 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   busy: false,
   error: null,
   home: true,
+  panels: SINGLE,
+  compare: false,
 
   showHome() {
     set({ home: true });
+  },
+
+  setLayout(layout: Layout) {
+    const { tabs, activeDoc, panels } = get();
+    const next = layoutFor(panels, layout, tabs.map((t) => t.doc), activeDoc);
+    // Comparing is two panels side by side; any other layout ends it.
+    set({ panels: next, compare: get().compare && layout === "columns", home: false });
+    savePanels(next);
+    void trimCold(get().recent);
+  },
+
+  assignPanel(panel: number, doc: number) {
+    if (!get().sessions.has(doc)) return;
+    set({ panels: assign(get().panels, panel, doc), activeDoc: doc, home: false });
+    void invoke("activate_document", { doc }).catch(() => undefined);
+    void trimCold(get().recent);
+  },
+
+  focusPanel(panel: number) {
+    const panels = focus(get().panels, panel);
+    const doc = panels.panels[panels.focused] ?? null;
+    // An empty panel takes the focus, and the next tab chosen goes into it;
+    // the ribbon keeps acting on the document that was in front.
+    if (doc === null) {
+      set({ panels });
+      return;
+    }
+    if (doc === get().activeDoc && panels.focused === get().panels.focused) return;
+    const recent = [doc, ...get().recent.filter((d) => d !== doc)];
+    set({ panels, activeDoc: doc, recent });
+    void invoke("activate_document", { doc }).catch(() => undefined);
+  },
+
+  setRatio(axis: "x" | "y", ratio: number) {
+    const panels = { ...get().panels, ratio: { ...get().panels.ratio, [axis]: clampRatio(ratio) } };
+    set({ panels });
+    savePanels(panels);
+  },
+
+  setCompare(on: boolean) {
+    if (on && get().panels.layout !== "columns") get().setLayout("columns");
+    set({ compare: on });
+  },
+
+  async loadPanels() {
+    try {
+      const saved = decodePanels(await invoke<string | null>("pref_get", { key: PANELS_PREF }));
+      set({ panels: { ...get().panels, ratio: saved.ratio } });
+      if (saved.layout !== "single") get().setLayout(saved.layout);
+    } catch {
+      // A first run, or a store that will not answer: one panel.
+    }
   },
 
   session(doc: number) {
@@ -182,11 +261,24 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
     // The neighbour that took its place, or the one before it when the last tab
     // closed — the same rule the backend registry follows, so the two cannot
     // disagree about which tab is in front.
-    const successor =
+    let successor =
       get().activeDoc === doc
         ? (nextTabs[index] ?? nextTabs[nextTabs.length - 1])?.doc ?? null
         : get().activeDoc;
+    let panels = closeDoc(get().panels, doc, successor);
+    if (panels.layout !== "single" && get().activeDoc === doc) {
+      // In a split, the front moves to a document still on screen, not to a
+      // tab the user did not put beside the others.
+      const visible = panels.panels.findIndex((d) => d !== null);
+      if (visible >= 0) {
+        successor = panels.panels[visible] ?? null;
+        panels = focus(panels, visible);
+      } else if (successor !== null) {
+        panels = showDoc(panels, successor);
+      }
+    }
     set({
+      panels,
       tabs: nextTabs,
       sessions: nextSessions,
       activeDoc: successor,
@@ -215,7 +307,7 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
   async activate(doc: number) {
     if (!get().sessions.has(doc)) return;
     const recent = [doc, ...get().recent.filter((d) => d !== doc)];
-    set({ activeDoc: doc, recent, home: false });
+    set({ activeDoc: doc, recent, home: false, panels: showDoc(get().panels, doc) });
     try {
       await invoke("activate_document", { doc });
     } catch {
@@ -282,7 +374,12 @@ export const useWorkspace = create<WorkspaceState>((set, get) => ({
  * user wait for one would be the opposite of the point.
  */
 function trimCold(recent: readonly number[]): void {
-  for (const doc of tabsToTrim(recent)) {
+  // A document on screen in any panel is being looked at, however long ago
+  // its tab was clicked.
+  const visible = new Set(
+    useWorkspace.getState().panels.panels.filter((d): d is number => d !== null),
+  );
+  for (const doc of tabsToTrim(recent.filter((d) => !visible.has(d)), Math.max(0, WARM_TABS - visible.size))) {
     void invoke("trim_document", { doc }).catch(() => {
       // A tab that could not be trimmed keeps its bitmaps until it is closed.
     });
@@ -321,6 +418,7 @@ async function openUnguarded(
       sessions,
       tabs: [...get().tabs, tab],
       activeDoc: opened.doc,
+      panels: showDoc(get().panels, opened.doc),
       recent: [opened.doc, ...get().recent.filter((d) => d !== opened.doc)],
       busy: false,
       error: null,
@@ -334,6 +432,12 @@ async function openUnguarded(
     set({ busy: false, error: String(e) });
     return null;
   }
+}
+
+const PANELS_PREF = "ui.panels";
+
+function savePanels(panels: PanelState): void {
+  void invoke("pref_set", { key: PANELS_PREF, value: encodePanels(panels) }).catch(() => undefined);
 }
 
 /** Opens in flight, by path. See `openFile`. */

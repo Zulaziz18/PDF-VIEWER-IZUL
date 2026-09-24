@@ -23,6 +23,7 @@ use izul_model::annot::{AnnotObject, FontSpec};
 use izul_model::display::{FontRef, ImageRef};
 use izul_model::font::{FaceMetrics, FontCtx, GlyphMetrics};
 use izul_model::ops::{AnnotDoc, CommandStack, EditError, Op, Transaction};
+use izul_model::pages::{self, PageCommand, PageEntry};
 use parking_lot::Mutex;
 use tokio::sync::RwLock;
 
@@ -204,6 +205,34 @@ struct DocEdits {
     /// Pages whose annotations have been read from the file into `doc`. The
     /// editor owns these pages' annotations; a save rewrites exactly these.
     imported: BTreeSet<u32>,
+    /// Every page of the file has been imported. Required before the first
+    /// page operation: once pages move, "page n of the file" and "page n on
+    /// screen" stop being the same page, and a lazy import would read the
+    /// wrong one.
+    all_imported: bool,
+    /// Pages in the file as it is on disk (not in the map).
+    file_pages: u32,
+    /// Their display sizes, with each page's own `/Rotate`.
+    own_sizes: Vec<(f32, f32)>,
+    /// Bumped whenever the page map changes — an edit, an undo, a redo — so
+    /// the frontend knows when to fetch it again.
+    map_revision: u64,
+    /// Files the page map draws from, after the document's own (source 0):
+    /// `sources[i]` is source `i + 1`. Only ever grows while the document is
+    /// open, because an undo can bring back a page that refers to any of them.
+    sources: Vec<SourceFile>,
+}
+
+/// A file pages were merged or copied in from.
+#[derive(Debug, Clone, PartialEq, serde::Serialize)]
+pub struct SourceFile {
+    /// The copy in the data folder that is read at save time — never the
+    /// user's file, which may change or be saved over while this one is open.
+    pub path: String,
+    /// The file it was copied from, for showing to the user.
+    pub origin: String,
+    /// Display size of each page, with its own `/Rotate`.
+    pub sizes: Vec<(f32, f32)>,
 }
 
 /// The unsaved state of one document, as the autosave draft stores it.
@@ -213,6 +242,13 @@ pub struct Snapshot {
     pub objects: Vec<AnnotObject>,
     /// Images the objects draw: (handle, media type, bytes).
     pub images: Vec<(u32, String, Vec<u8>)>,
+    /// The page map (Phase 5). Defaults keep Phase 4 drafts readable.
+    #[serde(default)]
+    pub map: Option<Vec<PageEntry>>,
+    /// Files the map draws pages from, after the document's own: copies in
+    /// the data folder, reopened when the draft is restored.
+    #[serde(default)]
+    pub sources: Vec<String>,
 }
 
 /// What an edit did, for the frontend to reconcile with.
@@ -223,6 +259,9 @@ pub struct EditResult {
     pub can_redo: bool,
     /// Whether the document has changes the file does not.
     pub dirty: bool,
+    /// Changes whenever the page map does; the frontend refetches the pages
+    /// when it sees a new value.
+    pub map_revision: u64,
 }
 
 impl AnnotState {
@@ -290,6 +329,7 @@ impl AnnotState {
             can_undo: edits.stack.can_undo(),
             can_redo: edits.stack.can_redo(),
             dirty: edits.revision != edits.saved,
+            map_revision: edits.map_revision,
         }
     }
 
@@ -308,6 +348,7 @@ impl AnnotState {
             can_undo: e.stack.can_undo(),
             can_redo: e.stack.can_redo(),
             dirty: e.revision != e.saved,
+            map_revision: e.map_revision,
         })
     }
 
@@ -374,23 +415,31 @@ impl AnnotState {
             Some((
                 e.imported.iter().copied().collect::<Vec<_>>(),
                 e.doc.iter().cloned().collect::<Vec<_>>(),
+                e.doc.page_map().map(<[PageEntry]>::to_vec),
             ))
         })?;
-        Some(self.snapshot_from(doc, snap.0, snap.1))
+        Some(self.snapshot_from(doc, snap.0, snap.1, snap.2))
     }
 
     /// The draft, unconditionally — for a reload that must not lose edits.
     pub fn snapshot(&self, doc: u64) -> Snapshot {
-        let (pages, objects) = self.with(doc, |e| {
+        let (pages, objects, map) = self.with(doc, |e| {
             (
                 e.imported.iter().copied().collect(),
                 e.doc.iter().cloned().collect(),
+                e.doc.page_map().map(<[PageEntry]>::to_vec),
             )
         });
-        self.snapshot_from(doc, pages, objects)
+        self.snapshot_from(doc, pages, objects, map)
     }
 
-    fn snapshot_from(&self, doc: u64, pages: Vec<u32>, objects: Vec<AnnotObject>) -> Snapshot {
+    fn snapshot_from(
+        &self,
+        doc: u64,
+        pages: Vec<u32>,
+        objects: Vec<AnnotObject>,
+        map: Option<Vec<PageEntry>>,
+    ) -> Snapshot {
         let images = self
             .images
             .lock()
@@ -402,6 +451,8 @@ impl AnnotState {
             pages,
             objects,
             images,
+            map,
+            sources: self.with(doc, |e| e.sources.iter().map(|s| s.path.clone()).collect()),
         }
     }
 
@@ -417,11 +468,31 @@ impl AnnotState {
         }
         self.with(doc, |e| {
             let revision = e.revision + 1;
+            let file_pages = e.file_pages;
+            let own_sizes = std::mem::take(&mut e.own_sizes);
+            let map_revision = e.map_revision + 1;
             *e = DocEdits::default();
+            e.own_sizes = own_sizes;
             for obj in snap.objects {
                 let _ = e.doc.import(obj);
             }
             e.imported = snap.pages.into_iter().collect();
+            e.file_pages = file_pages;
+            // A draft with a page map was made after every page was imported;
+            // its objects are already numbered by the map.
+            e.all_imported = snap.map.is_some() || e.imported.len() as u32 >= file_pages;
+            e.doc.restore_page_map(snap.map);
+            // Sizes come back when the restore reopens each file.
+            e.sources = snap
+                .sources
+                .into_iter()
+                .map(|path| SourceFile {
+                    origin: path.clone(),
+                    path,
+                    sizes: Vec::new(),
+                })
+                .collect();
+            e.map_revision = map_revision;
             e.revision = revision;
             e.saved = 0;
         });
@@ -444,6 +515,13 @@ impl AnnotState {
         let fonts = self.fonts.lock();
         self.with(doc, |e| {
             let mut pages: BTreeSet<u32> = e.imported.clone();
+            // With a page map, pages are copied in from other files and moved
+            // about, and any of them may carry annotations of ours from the
+            // file it came from. Every page is rewritten from the editor, which
+            // imported all of them before the first page operation.
+            if let Some(map) = e.doc.page_map() {
+                pages = (0..map.len() as u32).collect();
+            }
             // An object on a page never imported would mean the page's own
             // annotations were never read — saving would drop them. The
             // commands import before editing, so this is a belt.
@@ -589,8 +667,12 @@ impl AnnotState {
 
     pub fn undo(&self, doc: u64, page: Option<u32>) -> Result<EditResult, EditError> {
         self.with(doc, |edits| {
+            let before = edits.doc.page_map().map(<[PageEntry]>::to_vec);
             if edits.stack.undo(&mut edits.doc)? {
                 Self::changed(edits);
+            }
+            if edits.doc.page_map() != before.as_deref() {
+                edits.map_revision += 1;
             }
             Ok(Self::result(edits, page))
         })
@@ -598,11 +680,105 @@ impl AnnotState {
 
     pub fn redo(&self, doc: u64, page: Option<u32>) -> Result<EditResult, EditError> {
         self.with(doc, |edits| {
+            let before = edits.doc.page_map().map(<[PageEntry]>::to_vec);
             if edits.stack.redo(&mut edits.doc)? {
                 Self::changed(edits);
             }
+            if edits.doc.page_map() != before.as_deref() {
+                edits.map_revision += 1;
+            }
             Ok(Self::result(edits, page))
         })
+    }
+
+    // ---- Phase 5: pages ---------------------------------------------------
+
+    /// Records the file's pages, at open and after a save.
+    pub fn set_own_pages(&self, doc: u64, sizes: Vec<(f32, f32)>) {
+        self.with(doc, |e| {
+            e.file_pages = sizes.len() as u32;
+            e.own_sizes = sizes;
+        });
+    }
+
+    pub fn own_sizes(&self, doc: u64) -> Vec<(f32, f32)> {
+        self.with(doc, |e| e.own_sizes.clone())
+    }
+
+    pub fn file_pages(&self, doc: u64) -> u32 {
+        self.with(doc, |e| e.file_pages)
+    }
+
+    pub fn page_map(&self, doc: u64) -> Option<Vec<PageEntry>> {
+        self.with(doc, |e| e.doc.page_map().map(<[PageEntry]>::to_vec))
+    }
+
+    /// The pages as they are now: the map, or the file's own in order.
+    pub fn resolved_pages(&self, doc: u64) -> Vec<PageEntry> {
+        self.with(doc, |e| pages::resolve(e.doc.page_map(), e.file_pages))
+    }
+
+    pub fn all_imported(&self, doc: u64) -> bool {
+        self.with(doc, |e| e.all_imported)
+    }
+
+    pub fn mark_all_imported(&self, doc: u64) {
+        self.with(doc, |e| e.all_imported = true);
+    }
+
+    /// Registers a source file, or finds it if it is already one; returns
+    /// its source id (1 or more).
+    pub fn add_source(&self, doc: u64, file: SourceFile) -> u32 {
+        self.with(doc, |e| {
+            if let Some(i) = e.sources.iter().position(|s| s.path == file.path) {
+                if let Some(existing) = e.sources.get_mut(i) {
+                    if existing.sizes.is_empty() {
+                        existing.sizes = file.sizes;
+                    }
+                }
+                return i as u32 + 1;
+            }
+            e.sources.push(file);
+            e.sources.len() as u32
+        })
+    }
+
+    pub fn sources(&self, doc: u64) -> Vec<SourceFile> {
+        self.with(doc, |e| e.sources.clone())
+    }
+
+    /// Plans and applies one page command as one undo step.
+    pub fn apply_pages(&self, doc: u64, cmd: PageCommand) -> Result<EditResult, String> {
+        self.with(doc, |e| {
+            if !e.all_imported {
+                return Err("anotasi halaman belum semuanya dibaca; coba lagi".into());
+            }
+            let op = pages::plan(&mut e.doc, e.file_pages, cmd).map_err(|err| err.to_string())?;
+            e.stack
+                .commit(&mut e.doc, vec![op])
+                .map_err(|err| err.to_string())?;
+            Self::changed(e);
+            e.map_revision += 1;
+            Ok(Self::result(e, None))
+        })
+    }
+
+    /// The file on disk now has the pages the map described: the map goes,
+    /// every page counts as imported (the editor holds all of them), and the
+    /// history goes too — its page steps refer to page numbers of a file that
+    /// no longer exists, and undoing one would move the wrong pages.
+    pub fn after_restructure(&self, doc: u64, sizes: Vec<(f32, f32)>) {
+        let file_pages = sizes.len() as u32;
+        self.with(doc, |e| {
+            e.own_sizes = sizes;
+            e.doc.restore_page_map(None);
+            e.sources.clear();
+            e.stack = CommandStack::default();
+            e.file_pages = file_pages;
+            e.imported = (0..file_pages).collect();
+            e.all_imported = true;
+            e.map_revision += 1;
+        });
     }
 
     pub fn history(&self, doc: u64) -> (bool, bool) {

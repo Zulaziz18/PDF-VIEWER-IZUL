@@ -16,6 +16,9 @@ declare global {
       goToPage(page: number): void;
       select(ids: number[]): void;
       sidebar(tab: "thumbnails" | "outline" | "annots"): void;
+      layout(layout: "single" | "columns" | "rows" | "grid"): void;
+      compare(on: boolean): void;
+      pages(selection: number[]): void;
     };
   }
 }
@@ -29,6 +32,7 @@ await import("@/app/main");
 
 const { useDocument } = await import("@/state/documentStore");
 const { viewport } = await import("@/app/viewportHandle");
+const { useWorkspace } = await import("@/state/workspaceStore");
 window.__izul = {
   goToPage(page) {
     useDocument.getState().setPage(page);
@@ -39,5 +43,14 @@ window.__izul = {
   },
   sidebar(tab) {
     useDocument.getState().setSidebarTab(tab);
+  },
+  layout(layout) {
+    useWorkspace.getState().setLayout(layout);
+  },
+  compare(on) {
+    useWorkspace.getState().setCompare(on);
+  },
+  pages(selection) {
+    useDocument.getState().setPageSelection(selection);
   },
 };

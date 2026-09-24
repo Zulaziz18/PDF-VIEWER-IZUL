@@ -101,6 +101,9 @@ const SAMPLE_FILES = [
   { name: "Laporan Kegiatan Semester.pdf", folder: `${USER}\\Desktop`, opened: NOW - 1 * DAY, modified: NOW - 9 * DAY },
   { name: "Proposal Penelitian.pdf", folder: `${docsFolder}\\Kuliah`, opened: NOW - 6 * DAY, modified: NOW - 40 * DAY },
   { name: "Catatan Rapat Organisasi.pdf", folder: `${USER}\\Downloads`, opened: NOW - 45 * DAY, modified: NOW - 45 * DAY },
+  // Phase 5: two versions of one document, for compare mode.
+  { name: "Draf Perjanjian v1.pdf", folder: docsFolder, opened: NOW - 70 * DAY, modified: NOW - 70 * DAY },
+  { name: "Draf Perjanjian v2.pdf", folder: docsFolder, opened: NOW - 69 * DAY, modified: NOW - 69 * DAY },
 ];
 
 const realPath = new Map();
@@ -291,6 +294,38 @@ const SCENES = {
     async steps(page) {
       await page.getByRole("button", { name: "Riwayat Ekspor" }).click();
       await page.getByRole("row", { name: /-rata\.pdf/ }).first().click();
+    },
+  },
+  // Phase 5 ------------------------------------------------------------------
+  pages: {
+    session: OPEN_ALL.slice(0, 1),
+    async steps(page) {
+      await page.getByRole("tab", { name: "Halaman", exact: true }).click();
+      await page.getByRole("button", { name: "Sisip Kosong", exact: true }).click();
+      await settle(page);
+      await izul(page, (z) => z.pages([3, 4]));
+    },
+  },
+  splitdialog: {
+    session: OPEN_ALL.slice(0, 1),
+    async steps(page) {
+      await page.getByRole("tab", { name: "Halaman", exact: true }).click();
+      await page.getByRole("button", { name: "Pecah", exact: true }).click();
+      await page.getByRole("dialog").waitFor();
+    },
+  },
+  split: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await izul(page, (z) => z.layout("grid"));
+      await izul(page, (z) => z.sidebar("thumbnails"));
+    },
+  },
+  compare: {
+    session: [`${docsFolder}\\Draf Perjanjian v1.pdf`, `${docsFolder}\\Draf Perjanjian v2.pdf`],
+    async steps(page) {
+      await izul(page, (z) => z.compare(true));
+      await settle(page, 1200);
     },
   },
 };
