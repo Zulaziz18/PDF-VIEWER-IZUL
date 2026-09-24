@@ -63,15 +63,22 @@ use geom::Matrix;
 use interp::{run, with_xobjects, Env};
 use object::{fmt_real, Dict, Obj, Ref};
 
-/// The areas to redact on one page, in its default user space.
+/// One area to redact, in the page's default user space.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Area {
+    pub rect: Rect,
+    /// Colour the area is filled with afterwards (0..1 RGB); `None` leaves it
+    /// showing whatever is beneath, which after redaction is the bare page.
+    pub fill: Option<[f64; 3]>,
+}
+
+/// The areas to redact on one page. All of a page's areas go in one request:
+/// the page is interpreted once, against all of them.
 #[derive(Debug, Clone, PartialEq)]
 pub struct PageAreas {
     /// Index in document order.
     pub page: u32,
-    pub areas: Vec<Rect>,
-    /// Colour the areas are filled with afterwards (0..1 RGB); `None` leaves
-    /// them showing whatever is beneath, which after redaction is the page.
-    pub fill: Option<[f64; 3]>,
+    pub areas: Vec<Area>,
 }
 
 /// What was taken out of one page.
@@ -90,11 +97,11 @@ pub fn redact(input: &[u8], requests: &[PageAreas]) -> Result<(Vec<u8>, Vec<Page
     let mut removed_widgets: BTreeSet<u32> = BTreeSet::new();
     let mut gone = Gone::default();
     for req in requests {
-        let areas: Vec<Rect> = req
+        let areas: Vec<Area> = req
             .areas
             .iter()
             .copied()
-            .filter(|a| a.area() > 0.0)
+            .filter(|a| a.rect.area() > 0.0)
             .collect();
         if areas.is_empty() {
             continue;
@@ -107,7 +114,6 @@ pub fn redact(input: &[u8], requests: &[PageAreas]) -> Result<(Vec<u8>, Vec<Page
             page_ref,
             req.page,
             &areas,
-            req.fill,
             &mut removed_widgets,
             &mut gone,
         )?;
@@ -184,11 +190,11 @@ fn redact_page(
     pdf: &mut Pdf<'_>,
     page_ref: Ref,
     index: u32,
-    areas: &[Rect],
-    fill: Option<[f64; 3]>,
+    areas: &[Area],
     removed_widgets: &mut BTreeSet<u32>,
     gone: &mut Gone,
 ) -> Result<PageReport> {
+    let rects: Vec<Rect> = areas.iter().map(|a| a.rect).collect();
     let mut page = pdf
         .resolve_dict(&Obj::Ref(page_ref))?
         .ok_or(RedactError::NoPage(index))?;
@@ -199,7 +205,7 @@ fn redact_page(
     let content = contents_of(pdf, &page)?;
 
     let (outcome, counts) = {
-        let mut env = Env::new(pdf, areas.to_vec());
+        let mut env = Env::new(pdf, rects.clone());
         let outcome = run(&mut env, &content, &resources, Matrix::IDENTITY, 0)?;
         (outcome, env.counts)
     };
@@ -209,23 +215,22 @@ fn redact_page(
     let mut body = b"q\n".to_vec();
     body.extend_from_slice(outcome.content.as_deref().unwrap_or(&content));
     body.extend_from_slice(b"\nQ\n");
-    if let Some([r, g, b]) = fill {
+    for area in areas {
+        let Some([r, g, b]) = area.fill else { continue };
+        let a = area.rect;
         body.extend_from_slice(
-            format!("q {} {} {} rg\n", fmt_real(r), fmt_real(g), fmt_real(b)).as_bytes(),
+            format!(
+                "q {} {} {} rg {} {} {} {} re f Q\n",
+                fmt_real(r),
+                fmt_real(g),
+                fmt_real(b),
+                fmt_real(a.x0),
+                fmt_real(a.y0),
+                fmt_real(a.x1 - a.x0),
+                fmt_real(a.y1 - a.y0)
+            )
+            .as_bytes(),
         );
-        for a in areas {
-            body.extend_from_slice(
-                format!(
-                    "{} {} {} {} re f\n",
-                    fmt_real(a.x0),
-                    fmt_real(a.y0),
-                    fmt_real(a.x1 - a.x0),
-                    fmt_real(a.y1 - a.y0)
-                )
-                .as_bytes(),
-            );
-        }
-        body.extend_from_slice(b"Q\n");
     }
     let mut sdict = Dict::new();
     sdict.set(b"Filter", Obj::name("FlateDecode"));
@@ -250,7 +255,7 @@ fn redact_page(
     }
 
     gone.replaced.extend(outcome.replaced.iter().copied());
-    let annotations = remove_annotations(pdf, &mut page, areas, removed_widgets, gone)?;
+    let annotations = remove_annotations(pdf, &mut page, &rects, removed_widgets, gone)?;
     if !outcome.touched_mcids.is_empty() {
         strip_structure(pdf, page_ref, &outcome.touched_mcids)?;
     }

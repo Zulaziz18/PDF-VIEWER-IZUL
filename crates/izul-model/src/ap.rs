@@ -464,12 +464,13 @@ mod tests {
         let fonts = FixedFont::default();
         for kind in AnnotKind::ALL {
             let payload = match kind {
-                AnnotKind::Highlight | AnnotKind::Underline | AnnotKind::StrikeOut => {
-                    AnnotPayload::Markup {
-                        quads: vec![PdfRectF::new(10.0, 10.0, 90.0, 24.0)],
-                        color: Rgba::BLACK,
-                    }
-                }
+                AnnotKind::Highlight
+                | AnnotKind::Underline
+                | AnnotKind::StrikeOut
+                | AnnotKind::Redact => AnnotPayload::Markup {
+                    quads: vec![PdfRectF::new(10.0, 10.0, 90.0, 24.0)],
+                    color: Rgba::BLACK,
+                },
                 AnnotKind::FreeText => AnnotPayload::FreeText {
                     text: "halo (dunia)".into(),
                     font: Default::default(),

@@ -38,6 +38,7 @@ pub mod geom;
 mod golden;
 pub mod izul;
 pub mod outline;
+pub mod redaction;
 pub mod render;
 pub mod sys;
 #[cfg(test)]

@@ -41,12 +41,17 @@ pub enum AnnotKind {
     Polygon,
     Note,
     Stamp,
+    /// A mark for redaction (Phase 6). Drawn as a red outline until it is
+    /// applied; applying takes what lies beneath out of the file and paints
+    /// the area in the mark's colour. Carries a `Markup` payload: one quad per
+    /// line of marked text, or the one rectangle the user dragged.
+    Redact,
 }
 
 impl AnnotKind {
     /// Every kind, for the tests that must cover all of them and for the filter
     /// in the annotation list panel.
-    pub const ALL: [AnnotKind; 13] = [
+    pub const ALL: [AnnotKind; 14] = [
         AnnotKind::Highlight,
         AnnotKind::Underline,
         AnnotKind::StrikeOut,
@@ -60,6 +65,7 @@ impl AnnotKind {
         AnnotKind::Polygon,
         AnnotKind::Note,
         AnnotKind::Stamp,
+        AnnotKind::Redact,
     ];
 
     /// The `/Subtype` this kind is written as when saved (SPEC 8's "objek hidup
@@ -83,6 +89,9 @@ impl AnnotKind {
             AnnotKind::Ellipse => "Circle",
             AnnotKind::Polygon => "Polygon",
             AnnotKind::Note => "Text",
+            // The standard redaction annotation (ISO 32000-1 §12.5.6.23):
+            // Acrobat shows it as a mark and can apply it itself.
+            AnnotKind::Redact => "Redact",
         }
     }
 
@@ -443,8 +452,8 @@ mod tests {
         }
         assert_eq!(
             AnnotKind::ALL.len(),
-            13,
-            "SPEC 11.2 menyebut tiga belas jenis"
+            14,
+            "tiga belas jenis SPEC 11.2, ditambah tanda redaksi Fase 6"
         );
     }
 

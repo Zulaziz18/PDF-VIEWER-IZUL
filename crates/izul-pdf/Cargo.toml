@@ -24,6 +24,8 @@ serde_json.workspace = true
 izul-write.workspace = true
 # Opens every stream of a saved file to prove what is — and is not — in it.
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+# Phase 6: redacts real documents, then checks the result with PDFium.
+izul-redact.workspace = true
 
 [lints]
 workspace = true

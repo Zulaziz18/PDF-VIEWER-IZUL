@@ -7,7 +7,7 @@ use crate::file::tests::build;
 use crate::file::{Pdf, Stored};
 use crate::filters::decode_plain;
 use crate::object::{Obj, Ref};
-use crate::{redact, PageAreas, Rect};
+use crate::{redact, Area, PageAreas, Rect};
 
 /// Courier (every glyph 600/1000 em) without /Widths: the AFM metrics apply.
 const COURIER: &[u8] = b"<</Type/Font/Subtype/Type1/BaseFont/Courier/Encoding/WinAnsiEncoding>>";
@@ -42,8 +42,10 @@ fn page_content(out: &[u8]) -> String {
 fn one(page: u32, area: Rect) -> Vec<PageAreas> {
     vec![PageAreas {
         page,
-        areas: vec![area],
-        fill: Some([0.0, 0.0, 0.0]),
+        areas: vec![Area {
+            rect: area,
+            fill: Some([0.0, 0.0, 0.0]),
+        }],
     }]
 }
 
@@ -68,7 +70,7 @@ fn removed_glyphs_leave_a_gap_of_exactly_their_width() {
     assert!(!c.contains("SECRET"));
     assert_eq!(report[0].counts.glyphs, 6);
     // Filled afterwards, inside the page's own content.
-    assert!(c.contains("q 0 0 0 rg\n99 695 38 17 re f\nQ"), "{c}");
+    assert!(c.contains("q 0 0 0 rg 99 695 38 17 re f Q"), "{c}");
     // And the original stream is not in the file at all.
     assert!(!String::from_utf8_lossy(&out).contains("SECRET"));
 }
