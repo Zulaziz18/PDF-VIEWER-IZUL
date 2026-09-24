@@ -2014,6 +2014,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "izul-redact"
+version = "7.0.0-alpha.5"
+dependencies = [
+ "flate2",
+ "thiserror 2.0.20",
+ "weezl",
+ "zune-core",
+ "zune-jpeg",
+]
+
+[[package]]
 name = "izul-render"
 version = "7.0.0-alpha.5"
 dependencies = [
