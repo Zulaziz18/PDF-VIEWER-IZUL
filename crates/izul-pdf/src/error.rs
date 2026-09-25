@@ -57,6 +57,9 @@ pub enum PdfError {
         #[source]
         source: pdfium_render::prelude::PdfiumError,
     },
+
+    #[error("lampiran {index}: {detail}")]
+    Attachment { index: u32, detail: String },
 }
 
 impl PdfError {
@@ -76,6 +79,7 @@ impl PdfError {
             Self::EnginePanic { .. } => "err.pdf.engine_panic",
             Self::Cancelled => "err.pdf.cancelled",
             Self::Pdfium { .. } => "err.pdf.engine",
+            Self::Attachment { .. } => "err.pdf.attachment",
         }
     }
 

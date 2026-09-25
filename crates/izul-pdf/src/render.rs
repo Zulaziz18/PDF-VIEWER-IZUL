@@ -62,6 +62,9 @@ pub struct TileRequest {
     /// Cap PDFium's internal image cache. Set for quarantined documents, where
     /// a bounded footprint matters more than speed.
     pub limit_image_cache: bool,
+    /// Dark mode's smart inversion (Phase 8): every pixel's lightness
+    /// flipped, its hue kept, except where a picture is drawn (`invert.rs`).
+    pub invert: bool,
 }
 
 impl TileRequest {
@@ -80,6 +83,7 @@ impl TileRequest {
             draw_annotations: true,
             quality: Quality::Sharp,
             limit_image_cache: false,
+            invert: false,
         }
     }
 
@@ -361,6 +365,25 @@ impl Document {
                         }
                     }
                     bindings.FPDFBitmap_Destroy(bitmap);
+                }
+                if req.invert {
+                    let pictures = crate::invert::image_rects_on(
+                        bindings,
+                        page,
+                        &geometry_of_page,
+                        req.rotation,
+                    );
+                    let keep = crate::invert::to_tile_pixels(
+                        &pictures,
+                        &req.source,
+                        req.dest_w,
+                        req.dest_h,
+                    );
+                    // SAFETY: `dest` is exclusively borrowed for this call and
+                    // holds `stride * dest_h` bytes (checked above); PDFium is
+                    // done with it (the bitmap was destroyed).
+                    let buf = unsafe { std::slice::from_raw_parts_mut(dest_ptr, needed) };
+                    crate::invert::smart_invert(buf, stride, req.dest_w, req.dest_h, &keep);
                 }
                 Ok(geometry)
             })
@@ -695,6 +718,7 @@ mod rendered {
             draw_annotations: false,
             quality: Quality::Sharp,
             limit_image_cache: false,
+            invert: false,
         };
         doc.render_tile_into(&req, &mut ours).expect("render ubin");
 
@@ -733,6 +757,7 @@ mod rendered {
                 draw_annotations: false,
                 quality: Quality::Sharp,
                 limit_image_cache: false,
+                invert: false,
             };
             let mut buf = vec![0u8; req.dest_w as usize * req.dest_h as usize * BYTES_PER_PIXEL];
             doc.render_tile_into(&req, &mut buf).expect("render");
@@ -763,6 +788,7 @@ mod rendered {
                 draw_annotations: false,
                 quality: Quality::Sharp,
                 limit_image_cache: false,
+                invert: false,
             };
             let mut buf = vec![0u8; w as usize * h as usize * BYTES_PER_PIXEL];
             doc.render_tile_into(&req, &mut buf).expect("render");
@@ -808,6 +834,7 @@ mod rendered {
                 draw_annotations: false,
                 quality: Quality::Sharp,
                 limit_image_cache: false,
+                invert: false,
             };
             let mut buf = vec![0u8; w as usize * h as usize * BYTES_PER_PIXEL];
             doc.render_tile_into(&req, &mut buf).expect("render");
@@ -845,6 +872,7 @@ mod rendered {
                 draw_annotations: false,
                 quality: Quality::Sharp,
                 limit_image_cache: false,
+                invert: false,
             };
             let mut buf = vec![0u8; w as usize * h as usize * BYTES_PER_PIXEL];
             doc.render_tile_into(&req, &mut buf).expect("render");
@@ -877,6 +905,7 @@ mod rendered {
                 draw_annotations: false,
                 quality: Quality::Sharp,
                 limit_image_cache: false,
+                invert: false,
             };
             let mut buf = vec![0u8; 256 * 512 * BYTES_PER_PIXEL];
             doc.render_tile_into(&req, &mut buf).expect("render");
@@ -1013,6 +1042,7 @@ mod rendered {
                         draw_annotations: true,
                         quality: Quality::Sharp,
                         limit_image_cache: false,
+                        invert: false,
                     };
                     let n = req.dest_w as usize * req.dest_h as usize * BYTES_PER_PIXEL;
                     let (mut a, mut b) = (vec![0u8; n], vec![0u8; n]);
@@ -1061,5 +1091,122 @@ mod rendered {
             .expect("isi");
         let after = field_ink(&doc);
         assert!(after > 0.01, "nilai tidak tampil di halaman: {after:.4}");
+    }
+
+    /// A 200 x 200 page: a 2 x 2 picture drawn at (20, 20)–(100, 100), and
+    /// a black square drawn as a path at (120, 120)–(180, 180).
+    fn picture_and_ink_page() -> Vec<u8> {
+        // Four mid-grey-blue pixels: inverted, they would change; kept, not.
+        let mut content = b"q 80 0 0 80 20 20 cm BI /W 2 /H 2 /CS /RGB /BPC 8 ID ".to_vec();
+        content.extend_from_slice(&[60, 90, 160].repeat(4));
+        content.extend_from_slice(b" EI Q\n0 0 0 rg 120 120 60 60 re f\n");
+        let mut pdf = b"%PDF-1.7\n".to_vec();
+        let mut offsets = Vec::new();
+        let objs: Vec<Vec<u8>> = vec![
+            b"<</Type/Catalog/Pages 2 0 R>>".to_vec(),
+            b"<</Type/Pages/Kids[3 0 R]/Count 1>>".to_vec(),
+            b"<</Type/Page/Parent 2 0 R/MediaBox[0 0 200 200]/Contents 4 0 R>>".to_vec(),
+            [
+                format!("<</Length {}>>\nstream\n", content.len()).into_bytes(),
+                content.clone(),
+                b"\nendstream".to_vec(),
+            ]
+            .concat(),
+        ];
+        for (i, body) in objs.iter().enumerate() {
+            offsets.push(pdf.len());
+            pdf.extend_from_slice(format!("{} 0 obj\n", i + 1).as_bytes());
+            pdf.extend_from_slice(body);
+            pdf.extend_from_slice(b"\nendobj\n");
+        }
+        let xref = pdf.len();
+        pdf.extend_from_slice(
+            format!("xref\n0 {}\n0000000000 65535 f \n", objs.len() + 1).as_bytes(),
+        );
+        for off in &offsets {
+            pdf.extend_from_slice(format!("{off:010} 00000 n \n").as_bytes());
+        }
+        pdf.extend_from_slice(
+            format!(
+                "trailer\n<</Size {}/Root 1 0 R>>\nstartxref\n{xref}\n%%EOF\n",
+                objs.len() + 1
+            )
+            .as_bytes(),
+        );
+        pdf
+    }
+
+    /// Dark mode's smart inversion: the paper and the ink flip, the picture
+    /// stays exactly as drawn — on the whole page, on a rotated one, and on a
+    /// tile that holds only part of each.
+    #[test]
+    fn inversion_flips_the_page_and_leaves_its_picture() {
+        let (engine, _pdfium) = engine_or_skip!();
+        let doc = engine
+            .open_bytes(picture_and_ink_page(), None, None)
+            .expect("buka");
+        let pics = doc.image_rects(0, RotationQuarter::None).expect("gambar");
+        assert_eq!(pics.len(), 1, "satu gambar di halaman");
+        let render = |invert: bool, rotation: RotationQuarter, source: PdfRectF| {
+            let req = TileRequest {
+                page: 0,
+                source,
+                dest_w: source.width().round() as u32,
+                dest_h: source.height().round() as u32,
+                rotation,
+                draw_annotations: true,
+                quality: Quality::Sharp,
+                limit_image_cache: false,
+                invert,
+            };
+            let mut buf = vec![0u8; (req.dest_w * req.dest_h * 4) as usize];
+            doc.render_tile_into(&req, &mut buf).expect("render");
+            (buf, req.dest_w)
+        };
+        let at = |buf: &[u8], w: u32, x: u32, y: u32| {
+            let i = ((y * w + x) * 4) as usize;
+            [buf[i], buf[i + 1], buf[i + 2]]
+        };
+        for rotation in [RotationQuarter::None, RotationQuarter::Cw90] {
+            let whole = PdfRectF::new(0.0, 0.0, 200.0, 200.0);
+            let (plain, w) = render(false, rotation, whole);
+            let (dark, _) = render(true, rotation, whole);
+            // Picture centre, ink centre and bare paper, in tile pixels (y
+            // down) for this rotation.
+            // A quarter turn clockwise takes the bottom-left picture to the
+            // top-left and the top-right square to the bottom-right.
+            let (pic, ink, paper) = match rotation {
+                RotationQuarter::Cw90 => ((60, 60), (150, 150), (110, 110)),
+                _ => ((60, 140), (150, 50), (110, 110)),
+            };
+            assert_eq!(
+                at(&dark, w, pic.0, pic.1),
+                at(&plain, w, pic.0, pic.1),
+                "gambar tetap ({rotation:?})"
+            );
+            assert!(
+                at(&plain, w, ink.0, ink.1)[0] < 30 && at(&dark, w, ink.0, ink.1)[0] > 200,
+                "tinta jadi terang ({rotation:?})"
+            );
+            assert!(
+                at(&plain, w, paper.0, paper.1)[0] > 240 && at(&dark, w, paper.0, paper.1)[0] < 40,
+                "kertas jadi gelap ({rotation:?})"
+            );
+        }
+        // A tile over the picture's right half and the square's left half.
+        let part = PdfRectF::new(60.0, 60.0, 140.0, 140.0);
+        let (plain, w) = render(false, RotationQuarter::None, part);
+        let (dark, _) = render(true, RotationQuarter::None, part);
+        // (70, 70) in points is inside the picture: tile (10, 70).
+        assert_eq!(
+            at(&dark, w, 10, 70),
+            at(&plain, w, 10, 70),
+            "separuh gambar di ubin tetap"
+        );
+        // (130, 130) is inside the square: tile (70, 10).
+        assert!(
+            at(&dark, w, 70, 10)[0] > 200,
+            "separuh kotak di ubin terang"
+        );
     }
 }

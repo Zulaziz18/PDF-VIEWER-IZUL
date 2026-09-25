@@ -108,6 +108,7 @@ mod tests {
                 rotation: RotationQuarter::Cw90,
                 quality: RenderQuality::Sharp,
                 generation: Generation(42),
+                invert: false,
             },
         }
     }

@@ -19,7 +19,7 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
@@ -301,6 +301,80 @@ const SCENES = {
       await izul(page, (z) => z.select([205]));
     },
   },
+  // Phase 8: several objects selected — the align and distribute buttons.
+  arrange: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await page.getByRole("tab", { name: "Edit", exact: true }).click();
+      await izul(page, (z) => z.goToPage(2));
+      await settle(page);
+      await izul(page, (z) => z.select([202, 203, 204]));
+    },
+  },
+  // Phase 8: Alt+drag over one column of the table — the band held open, so
+  // the shot shows what is being taken.
+  textband: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await izul(page, (z) => z.goToPage(2));
+      await settle(page);
+      // Where two words are on screen, measured from the text layer itself.
+      const [top, bottom] = await page.evaluate(() => {
+        const find = (word) => {
+          for (const el of document.querySelectorAll(".izul-text-page div")) {
+            const at = el.textContent.indexOf(word);
+            if (at < 0) continue;
+            const range = document.createRange();
+            range.setStart(el.firstChild, at);
+            range.setEnd(el.firstChild, at + word.length);
+            const r = range.getBoundingClientRect();
+            return { x: r.left, y: r.top, right: r.right, bottom: r.bottom };
+          }
+          return null;
+        };
+        return [find("Mulai"), find("15 Desember")];
+      });
+      if (!top || !bottom) throw new Error("kolom tabel tidak ditemukan");
+      await page.keyboard.down("Alt");
+      await page.mouse.move(top.x - 8, top.y - 6);
+      await page.mouse.down();
+      await page.mouse.move((top.x + bottom.right) / 2, (top.y + bottom.bottom) / 2, { steps: 4 });
+      await page.mouse.move(bottom.right + 10, bottom.bottom + 6, { steps: 4 });
+    },
+  },
+  textbandcopied: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await SCENES.textband.steps(page);
+      await page.mouse.up();
+      await page.keyboard.up("Alt");
+      await page.getByText(/baris teks dalam persegi disalin/).waitFor();
+      const copied = await page.evaluate(() => navigator.clipboard.readText());
+      const want = "Mulai\n1 Agustus\n25 Agustus\n13 Oktober\n15 Desember";
+      if (copied !== want) throw new Error(`teks persegi salah: ${JSON.stringify(copied)}`);
+    },
+  },
+  bookmarks: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await izul(page, (z) => z.goToPage(2));
+      await settle(page);
+      await page.keyboard.press("Control+b");
+      await izul(page, (z) => z.goToPage(6));
+      await settle(page);
+      await page.keyboard.press("Control+b");
+      await page.getByRole("button", { name: /^Ganti nama — Halaman 7/ }).click();
+      await page.getByRole("textbox", { name: "Ganti nama" }).fill("Bab 4 — Ujian dan penilaian");
+      await page.keyboard.press("Enter");
+    },
+  },
+  attachments: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await izul(page, (z) => z.sidebar("attachments"));
+      await page.getByText("Peta Kampus.png").waitFor();
+    },
+  },
   comment: {
     session: OPEN_ALL,
     async steps(page) {
@@ -331,7 +405,11 @@ const SCENES = {
     session: OPEN_ALL,
     flags: { dirty: true },
     async steps(page) {
-      await page.getByRole("button", { name: /^Tutup tab — / }).first().click();
+      // The keyboard's way to close a tab (Phase 8): the close cross is a
+      // mouse target only, so the tab itself takes Delete.
+      const tab = page.getByRole("tab").nth(1);
+      await tab.focus();
+      await page.keyboard.press("Delete");
       await page.getByRole("dialog").waitFor();
     },
   },
@@ -459,6 +537,70 @@ const SCENES = {
       await page.getByText(/Model OCR belum terpasang/).waitFor();
     },
   },
+  about: {
+    session: OPEN_ALL.slice(0, 1),
+    async steps(page) {
+      await settle(page);
+      // Through the command palette, the way a keyboard user reaches it.
+      await page.keyboard.press("Control+Shift+P");
+      await page.getByRole("combobox", { name: "Ketik nama perintah…" }).fill("Tentang");
+      await page.keyboard.press("Enter");
+      await page.getByRole("dialog", { name: /PDF Studio Izul/ }).waitFor();
+    },
+  },
+  palette: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await settle(page);
+      await page.keyboard.press("Control+Shift+P");
+      await page.getByRole("combobox", { name: "Ketik nama perintah…" }).fill("sim");
+    },
+  },
+  shortcuts: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await settle(page);
+      await page.keyboard.press("F1");
+      await page.getByRole("heading", { name: "Pintasan keyboard" }).waitFor();
+      await page.getByRole("button", { name: "Ubah pintasan Buka…", exact: true }).click();
+      await page.getByText(/Tekan tombol baru untuk/).waitFor();
+    },
+  },
+  present: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await settle(page);
+      await page.keyboard.press("F5");
+      await page.keyboard.press("PageDown");
+      await settle(page, 1000);
+    },
+  },
+  focus: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await settle(page);
+      await page.keyboard.press("F11");
+      await settle(page, 1000);
+    },
+  },
+  print: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await settle(page);
+      await page.keyboard.press("Control+P");
+      await page.getByRole("heading", { name: "Cetak", exact: true }).waitFor();
+    },
+  },
+  invert: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await izul(page, (z) => z.goToPage(2));
+      await settle(page);
+      await page.getByRole("button", { name: "Tema", exact: true }).click();
+      await page.getByRole("menuitemcheckbox", { name: "Balik warna halaman di mode gelap" }).or(page.getByText("Balik warna halaman di mode gelap")).first().click();
+      await settle(page, 1200);
+    },
+  },
   textedit: {
     session: [`${docsFolder}\\Panduan Studi 2026.pdf`],
     async steps(page) {
@@ -559,6 +701,10 @@ async function newPage({ width, height, theme, scale, scene }) {
     viewport: { width, height },
     deviceScaleFactor: scale,
     colorScheme: theme,
+    // `--forced`: Windows high-contrast mode, as `forced-colors` (SPEC 14).
+    forcedColors: args.forced === "true" ? "active" : "none",
+    // Alt+drag copies to the clipboard (Phase 8), and the scene reads it back.
+    permissions: ["clipboard-read", "clipboard-write"],
     locale: "id-ID",
     timezoneId: "Asia/Jakarta",
   });
@@ -656,6 +802,7 @@ async function newPage({ width, height, theme, scale, scene }) {
       col: Number(col),
       row: Number(row),
       tier,
+      invert: url.searchParams.get("inv") === "1",
     });
     page.__lastTile = Date.now();
     if (!header.ok) return route.fulfill({ status: 404, headers: cors });
@@ -678,6 +825,45 @@ async function newPage({ width, height, theme, scale, scene }) {
 const sizes = (args.size ? [args.size] : ["1366x768", "1920x1080"]).map((s) => s.split("x").map(Number));
 const themes = args.theme ? [args.theme] : ["light", "dark"];
 const scenes = args.scene ? args.scene.split(",") : Object.keys(SCENES);
+
+// `--axe`: an accessibility audit of every shot (SPEC 14), with axe-core —
+// WCAG 2.x A and AA, contrast included. The page's own pixels are a canvas
+// and not judged; the text layer over it is transparent on purpose (the
+// selection layer) and is left out of the contrast rule for that reason.
+const audits = [];
+async function audit(page) {
+  await page.addScriptTag({ path: join(ROOT, "node_modules/axe-core/axe.min.js") });
+  return page.evaluate(async () => {
+    const r = await window.axe.run(document, {
+      runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] },
+      rules: { "color-contrast": { selector: "*:not(.izul-text-page *)" } },
+    });
+    return r.violations.map((v) => ({
+      id: v.id,
+      impact: v.impact,
+      help: v.help,
+      nodes: v.nodes.slice(0, 4).map((n) => ({ target: n.target.join(" "), summary: (n.failureSummary ?? "").split("\n").slice(1, 2).join(" ") })),
+      count: v.nodes.length,
+    }));
+  });
+}
+function writeAudit(rows) {
+  const lines = ["Audit aksesibilitas (axe-core 4.13.0, WCAG 2.1 A + AA)", ""];
+  let total = 0;
+  for (const r of rows) {
+    const n = r.found.reduce((a, v) => a + v.count, 0);
+    total += n;
+    lines.push(`${r.scene.padEnd(16)} ${r.size.padEnd(10)} ${r.theme.padEnd(6)} ${n === 0 ? "bersih" : `${n} pelanggaran`}`);
+    for (const v of r.found) {
+      lines.push(`    ${v.id} (${v.impact}, ${v.count}): ${v.help}`);
+      for (const node of v.nodes) lines.push(`        ${node.target}  ${node.summary}`);
+    }
+  }
+  lines.push("", `Total: ${total} pelanggaran di ${rows.length} tangkapan.`);
+  const out = args["axe-out"] ?? join(OUT, "a11y.txt");
+  writeFileSync(out, lines.join("\n") + "\n");
+  console.log(`  audit: ${out} — ${total} pelanggaran`);
+}
 const scale = Number(args.scale ?? 1);
 mkdirSync(OUT, { recursive: true });
 
@@ -699,10 +885,12 @@ if (args.serve === "true") {
         const file = join(OUT, `${scene}-${width}x${height}-${theme}${suffix}.png`);
         await page.screenshot({ path: file });
         console.log(`  ${file}`);
+        if (args.axe === "true") audits.push({ scene, size: `${width}x${height}`, theme, found: await audit(page) });
         await page.context().close();
       }
     }
   }
+  if (args.axe === "true") writeAudit(audits);
   await browser.close();
   await server.close();
   helper.stdin.end();

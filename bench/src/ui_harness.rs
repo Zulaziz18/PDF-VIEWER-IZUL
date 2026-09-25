@@ -52,6 +52,9 @@ struct Req {
     /// What `formfill` puts into the form.
     #[serde(default)]
     values: Vec<(String, izul_model::FormValue)>,
+    /// `tile`: dark mode's inversion.
+    #[serde(default)]
+    invert: bool,
     /// `textedit`: the area (display space) and what it becomes.
     #[serde(default)]
     rect: Option<PdfRectF>,
@@ -431,6 +434,7 @@ impl Backend {
                         draw_annotations: true,
                         quality: Quality::Fast,
                         limit_image_cache: false,
+                        invert: req.invert,
                     }
                 } else {
                     let ppp = req.scale as f32 / 1000.0;
@@ -446,6 +450,7 @@ impl Backend {
                         draw_annotations: true,
                         quality: Quality::Sharp,
                         limit_image_cache: false,
+                        invert: req.invert,
                     }
                 };
                 let mut buf = vec![0u8; (request.dest_w * request.dest_h * 4) as usize];

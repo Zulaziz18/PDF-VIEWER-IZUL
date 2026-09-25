@@ -264,6 +264,7 @@ where
             rotation,
             quality,
             generation,
+            invert,
         } => {
             sess.bump_generation(doc, generation);
             // The cheap half of cancellation, and the half that matters: a tile
@@ -286,6 +287,7 @@ where
                 draw_annotations: true,
                 quality: quality_of(quality),
                 limit_image_cache: false,
+                invert,
             };
             match render_into_ring(ring, &open.doc, doc, &req, generation.0) {
                 Ok(slot) => {
@@ -311,6 +313,7 @@ where
             max_edge_px,
             rotation,
             generation,
+            invert,
         } => {
             let Some(open) = sess.get(doc) else {
                 return fail_kind(channel, id, Some(doc), ErrorKind::BadRequest, "doc.unknown")
@@ -336,6 +339,7 @@ where
                 // The first tier is about arriving, not about being beautiful.
                 quality: Quality::Fast,
                 limit_image_cache: false,
+                invert,
             };
             let rendered = render_into_ring(ring, &open.doc, doc, &req, generation.0);
             // A preview sweep over 500 pages must not leave 500 parsed pages
@@ -360,6 +364,32 @@ where
             }
         }
 
+        Request::Attachments { doc } => {
+            let Some(open) = sess.get(doc) else {
+                return fail_kind(channel, id, Some(doc), ErrorKind::BadRequest, "doc.unknown")
+                    .await;
+            };
+            match open.doc.attachments() {
+                Ok(list) => {
+                    let items = list.into_iter().map(|a| (a.name, a.size)).collect();
+                    reply(channel, id, Response::AttachmentsReady { doc, items }).await
+                }
+                Err(e) => fail(channel, id, Some(doc), &e).await,
+            }
+        }
+        Request::AttachmentData { doc, index } => {
+            let Some(open) = sess.get(doc) else {
+                return fail_kind(channel, id, Some(doc), ErrorKind::BadRequest, "doc.unknown")
+                    .await;
+            };
+            match open.doc.attachment_bytes(index) {
+                Ok(bytes) => {
+                    let blob = bench.put_blob(bytes);
+                    reply(channel, id, blob).await
+                }
+                Err(e) => fail(channel, id, Some(doc), &e).await,
+            }
+        }
         Request::FormFields { doc } => {
             let Some(open) = sess.get(doc) else {
                 return fail_kind(channel, id, Some(doc), ErrorKind::BadRequest, "doc.unknown")

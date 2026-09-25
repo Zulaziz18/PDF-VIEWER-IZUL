@@ -16,6 +16,7 @@ import { Icon } from "@/design/Icon";
 import { t } from "@/i18n";
 import type { DocumentStore } from "@/state/documentSession";
 import { PAGE_DRAG_TYPE, decodePageDrag } from "@/state/pageSelection";
+import { useUi } from "@/state/uiStore";
 import { useWorkspace } from "@/state/workspaceStore";
 import { Viewport } from "./Viewport";
 import { toggleCompare, useCompare, useCompareMode } from "./compare";
@@ -25,11 +26,16 @@ export const TAB_DRAG_TYPE = "application/x-izul-tab";
 
 function Divider(props: { axis: "x" | "y"; host: React.RefObject<HTMLDivElement | null> }): JSX.Element {
   const vertical = props.axis === "x";
+  const ratio = useWorkspace((s) => s.panels.ratio[props.axis]);
   return (
+    // A focusable separator is a slider to a screen reader: it needs its value.
     <div
       role="separator"
       aria-orientation={vertical ? "vertical" : "horizontal"}
       aria-label={t("panels.divider")}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(ratio * 100)}
       tabIndex={0}
       onKeyDown={(e) => {
         const step = e.key === (vertical ? "ArrowLeft" : "ArrowUp") ? -0.05 : e.key === (vertical ? "ArrowRight" : "ArrowDown") ? 0.05 : 0;
@@ -210,7 +216,10 @@ export function PanelGrid(): JSX.Element {
   const sessions = useWorkspace((s) => s.sessions);
   const compare = useWorkspace((s) => s.compare);
   const host = useRef<HTMLDivElement>(null);
-  const { layout, ratio, focused } = panels;
+  // Presenting shows the document in front alone, however the window is split.
+  const presenting = useUi((s) => s.presenting);
+  const { ratio, focused } = panels;
+  const layout = presenting ? "single" : panels.layout;
   const split = layout !== "single";
   const storeOf = (i: number): DocumentStore | undefined => {
     const doc = panels.panels[i];
@@ -276,7 +285,7 @@ export function PanelGrid(): JSX.Element {
       </div>
     );
   } else {
-    body = <div className="flex-1 min-w-0 min-h-0 flex">{panel(0)}</div>;
+    body = <div className="flex-1 min-w-0 min-h-0 flex">{panel(presenting ? focused : 0)}</div>;
   }
 
   return (

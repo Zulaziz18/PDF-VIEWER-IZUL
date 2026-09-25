@@ -21,7 +21,7 @@
  * two dozen lines instead of two hundred, and a tab strip is not a canvas.
  */
 
-import { useEffect, useState, type JSX } from "react";
+import { useEffect, useState, type JSX, type KeyboardEvent } from "react";
 import { useStore } from "zustand";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -54,6 +54,7 @@ function UnsavedDot(props: { store: DocumentStore }): JSX.Element | null {
   if (!dirty) return null;
   return (
     <span
+      role="img"
       aria-label={t("tabs.unsaved")}
       className="w-2 h-2 rounded-full bg-[var(--izul-unsaved)] shrink-0"
     />
@@ -88,10 +89,14 @@ function DocTab(props: {
       onDrop={props.onDrop}
       onDragEnd={props.onDragEnd}
       onClick={() => void workspace().activate(tab.doc)}
+      aria-keyshortcuts="Delete"
       onKeyDown={(e) => {
         if (e.key === "Enter" || e.key === " ") {
           e.preventDefault();
           void workspace().activate(tab.doc);
+        } else if (e.key === "Delete") {
+          e.preventDefault();
+          void requestCloseTab(tab.doc);
         }
       }}
       // The middle button closes a tab everywhere else; a reader who expects it
@@ -113,9 +118,12 @@ function DocTab(props: {
       <FileBadge size={18} />
       <span className="flex-1 truncate">{tab.name}</span>
       {props.store && <UnsavedDot store={props.store} />}
-      <button
-        type="button"
-        aria-label={`${t("tabs.close")} — ${tab.name}`}
+      {/* A mouse target only, as in every browser's tab strip: a button
+          inside a tab is a control nested in a control, which a screen reader
+          cannot reach anyway. The keyboard closes a tab with Delete or Ctrl+W
+          (Phase 8, axe `nested-interactive`). */}
+      <span
+        aria-hidden="true"
         title={t("tabs.close")}
         onClick={(e) => {
           e.stopPropagation();
@@ -123,13 +131,37 @@ function DocTab(props: {
         }}
         className={[
           "shrink-0 w-5 h-5 grid place-items-center rounded-[4px] hover:bg-[var(--izul-chrome-hover)]",
-          props.active ? "" : "opacity-0 group-hover:opacity-100 focus:opacity-100",
+          props.active ? "" : "opacity-0 group-hover:opacity-100",
         ].join(" ")}
       >
         <Icon name="dismiss" size={16} />
-      </button>
+      </span>
     </div>
   );
+}
+
+/**
+ * Arrow keys, Home and End move between the tabs (the WAI-ARIA tabs pattern):
+ * only the selected tab is in the Tab order, so without them the others are
+ * out of the keyboard's reach.
+ */
+function moveAmongTabs(e: KeyboardEvent<HTMLDivElement>): void {
+  const tabs = [...e.currentTarget.querySelectorAll<HTMLElement>('[role="tab"]')];
+  const at = tabs.indexOf(document.activeElement as HTMLElement);
+  if (at < 0) return;
+  const to =
+    e.key === "ArrowRight"
+      ? (at + 1) % tabs.length
+      : e.key === "ArrowLeft"
+        ? (at - 1 + tabs.length) % tabs.length
+        : e.key === "Home"
+          ? 0
+          : e.key === "End"
+            ? tabs.length - 1
+            : null;
+  if (to === null) return;
+  e.preventDefault();
+  tabs[to]?.focus();
 }
 
 export function TitleBar(): JSX.Element {
@@ -189,7 +221,12 @@ export function TitleBar(): JSX.Element {
       data-tauri-drag-region
       className="h-[38px] shrink-0 flex items-end pl-1.5 bg-[var(--izul-chrome)] select-none"
     >
-      <div role="tablist" aria-label={t("tabs.label")} className="flex items-end min-w-0 gap-0.5">
+      <div
+        role="tablist"
+        aria-label={t("tabs.label")}
+        onKeyDown={moveAmongTabs}
+        className="flex items-end min-w-0 gap-0.5"
+      >
         <div
           role="tab"
           aria-selected={homeActive}
@@ -219,17 +256,17 @@ export function TitleBar(): JSX.Element {
             onDragEnd={() => setDragging(null)}
           />
         ))}
-        <button
-          type="button"
-          aria-label={t("tabs.new")}
-          title={t("tabs.new")}
-          onClick={() => useWorkspace.getState().showHome()}
-          className="h-[30px] shrink-0 px-2.5 mb-0 flex items-center gap-1.5 rounded-t-[8px] text-[13px] text-[var(--izul-text-dim)] hover:bg-[var(--izul-chrome-hover)] hover:text-[var(--izul-text)]"
-        >
-          <Icon name="add" size={16} />
-          <span>{t("tabs.newShort")}</span>
-        </button>
       </div>
+      <button
+        type="button"
+        aria-label={t("tabs.new")}
+        title={t("tabs.new")}
+        onClick={() => useWorkspace.getState().showHome()}
+        className="h-[30px] shrink-0 px-2.5 mb-0 flex items-center gap-1.5 rounded-t-[8px] text-[13px] text-[var(--izul-text-dim)] hover:bg-[var(--izul-chrome-hover)] hover:text-[var(--izul-text)]"
+      >
+        <Icon name="add" size={16} />
+        <span>{t("tabs.newShort")}</span>
+      </button>
 
       <div data-tauri-drag-region className="flex-1 min-w-4 self-stretch" />
       {version && (
@@ -268,7 +305,7 @@ export function TitleBar(): JSX.Element {
           // A request, not a destroy: it arrives at `useCloseGuard` exactly
           // as Alt+F4 does, and unsaved work is settled there for both.
           onClick={() => void getCurrentWindow().close()}
-          className="w-[46px] grid place-items-center hover:bg-[var(--izul-danger)] hover:text-white"
+          className="w-[46px] grid place-items-center hover:bg-[var(--izul-danger-fill)] hover:text-[var(--izul-on-danger)]"
         >
           <Icon name="dismiss" size={16} />
         </button>

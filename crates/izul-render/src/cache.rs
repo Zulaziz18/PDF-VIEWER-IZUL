@@ -56,6 +56,9 @@ pub struct TileKey {
     pub col: u16,
     pub row: u16,
     pub kind: TileKind,
+    /// Drawn inverted for dark mode, pictures left as they are (Phase 8): a
+    /// different bitmap, so a different key.
+    pub invert: bool,
 }
 
 /// A bitmap in the cache.
@@ -257,6 +260,7 @@ mod tests {
             col,
             row: 0,
             kind: TileKind::Sharp,
+            invert: false,
         }
     }
 

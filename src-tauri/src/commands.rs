@@ -53,6 +53,8 @@ pub struct AppState {
     pub hidden: crate::pagemap::HiddenSources,
     /// OCR runs in flight (Phase 7).
     pub ocr: crate::ocr::OcrRuns,
+    /// Pages rendered for printing, until the print dialog closes (Phase 8).
+    pub printing: crate::printing::PrintJobs,
 }
 
 impl std::fmt::Debug for AppState {
@@ -198,6 +200,31 @@ pub fn log_folder(state: tauri::State<'_, AppState>) -> CmdResult<String> {
     Ok(crate::logging::log_dir(&state.data_dir)
         .display()
         .to_string())
+}
+
+/// Opens the log folder in the file manager (SPEC 15: a report of a problem
+/// starts with the log, and a path to type out is a step most users skip).
+///
+/// Through the system's own file manager rather than a plugin: no new
+/// permission, and nothing but a folder the application created is opened.
+#[tauri::command]
+pub fn open_log_folder(state: tauri::State<'_, AppState>) -> CmdResult<()> {
+    let dir = crate::logging::log_dir(&state.data_dir);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let program = if cfg!(windows) {
+        "explorer"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    // Explorer exits with 1 even when the window opened, so only a failure to
+    // start it at all is an error.
+    std::process::Command::new(program)
+        .arg(&dir)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("folder log tidak bisa dibuka ({program}): {e}"))
 }
 
 #[tauri::command]
@@ -350,6 +377,7 @@ fn capture_cover(render: Arc<RenderService>, data_dir: PathBuf, doc: u64, file: 
             col: 0,
             row: 0,
             kind: TileKind::Preview,
+            invert: false,
         };
         let tile = match render
             .fetch(key, 0, crate::render::Priority::Prefetch)
@@ -1155,18 +1183,44 @@ pub fn annot_add_image(
     path: String,
 ) -> CmdResult<u32> {
     let bytes = std::fs::read(&path).map_err(|e| format!("tidak dapat membaca {path}: {e}"))?;
-    // A generous cap, and a cap all the same: this is held in memory per
-    // document, and a 400 MB TIFF pasted into a tab should be refused with a
-    // message rather than by the process dying.
-    const MAX_BYTES: usize = 64 * 1024 * 1024;
-    if bytes.len() > MAX_BYTES {
+    add_image_checked(&state, doc, bytes)
+}
+
+/// A generous cap, and a cap all the same: this is held in memory per
+/// document, and a 400 MB TIFF pasted into a tab should be refused with a
+/// message rather than by the process dying.
+const MAX_IMAGE_BYTES: usize = 64 * 1024 * 1024;
+
+fn add_image_checked(state: &AppState, doc: u64, bytes: Vec<u8>) -> CmdResult<u32> {
+    if bytes.len() > MAX_IMAGE_BYTES {
         return Err(format!(
             "gambar terlalu besar ({} MB, batas {} MB)",
             bytes.len() / (1024 * 1024),
-            MAX_BYTES / (1024 * 1024)
+            MAX_IMAGE_BYTES / (1024 * 1024)
         ));
     }
     state.annots.add_image(doc, bytes)
+}
+
+/// A picture pasted with Ctrl+V (SPEC 11.2, Phase 8): a screenshot has no
+/// file to name, so its bytes come as the raw body of the call — not as JSON,
+/// where a 3 MB PNG would be a 12 MB array of numbers parsed on both sides —
+/// and the document in the `x-izul-doc` header.
+#[tauri::command]
+pub fn annot_paste_image(
+    state: tauri::State<'_, AppState>,
+    request: tauri::ipc::Request<'_>,
+) -> CmdResult<u32> {
+    let doc = request
+        .headers()
+        .get("x-izul-doc")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok())
+        .ok_or_else(|| "dokumen tujuan tidak disebut".to_string())?;
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("isi tempelan harus berupa byte gambar".into());
+    };
+    add_image_checked(&state, doc, bytes.clone())
 }
 
 // ---- Preferences the interface keeps (Phase 5) ------------------------------

@@ -179,6 +179,7 @@ pub async fn compare_visual(
         col: 0,
         row: 0,
         kind: TileKind::Preview,
+        invert: false,
     };
     let (ta, tb) = tokio::join!(
         state

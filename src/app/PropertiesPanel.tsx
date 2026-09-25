@@ -12,7 +12,11 @@
  */
 
 import { useDocument } from "@/state/documentStore";
-import type { AnnotObject, Rgba } from "@/annots/types";
+import type { AnnotObject, Rgba, TextAlign } from "@/annots/types";
+import { align, distribute, type Alignment, type Axis } from "@/annots/arrange";
+import { cropOf, textStyleOf, withCrop, withTextStyle, type CropEdge } from "@/annots/style";
+import { Icon } from "@/design/Icon";
+import type { IconName } from "@/design/icons.generated";
 import { cssColor, rgba } from "@/annots/types";
 import { t } from "@/i18n";
 import { removeBackground } from "./background";
@@ -139,6 +143,57 @@ function withFamily(obj: AnnotObject, family: string): AnnotObject {
   return next;
 }
 
+const ALIGNS: ReadonlyArray<readonly [TextAlign, IconName]> = [
+  ["Left", "textLeft"],
+  ["Center", "textCenter"],
+  ["Right", "textRight"],
+  ["Justify", "textJustify"],
+];
+
+const CROP_EDGES: readonly CropEdge[] = ["left", "right", "top", "bottom"];
+
+const ALIGN_BUTTONS: ReadonlyArray<readonly [Alignment, IconName]> = [
+  ["left", "alignLeft"],
+  ["centerH", "alignCenterH"],
+  ["right", "alignRight"],
+  ["top", "alignTop"],
+  ["centerV", "alignCenterV"],
+  ["bottom", "alignBottom"],
+];
+
+const DISTRIBUTE_BUTTONS: ReadonlyArray<readonly [Axis, IconName]> = [
+  ["horizontal", "spaceH"],
+  ["vertical", "spaceV"],
+];
+
+function StyleToggle(props: {
+  icon: IconName;
+  label: string;
+  /** `null` for a plain button rather than a toggle. */
+  on: boolean | null;
+  disabled?: boolean;
+  onClick: () => void;
+}): React.JSX.Element {
+  return (
+    <button
+      type="button"
+      aria-label={props.label}
+      aria-pressed={props.on ?? undefined}
+      disabled={props.disabled}
+      title={props.label}
+      onClick={props.onClick}
+      className={[
+        "w-8 h-8 grid place-items-center rounded-[6px] border",
+        props.on
+          ? "border-[var(--izul-accent)] bg-[var(--izul-accent-soft)]"
+          : "border-[var(--izul-border)] hover:bg-[var(--izul-surface-raised)] disabled:opacity-40",
+      ].join(" ")}
+    >
+      <Icon name={props.icon} size={16} tone="plain" />
+    </button>
+  );
+}
+
 export function PropertiesPanel(): React.JSX.Element | null {
   const selection = useDocument((s) => s.selection);
   const annots = useDocument((s) => s.annots);
@@ -155,6 +210,8 @@ export function PropertiesPanel(): React.JSX.Element | null {
   const width = strokeWidthOf(first);
   const text = objects.length === 1 ? textOf(first) : null;
   const font = objects.length === 1 ? fontOf(first) : null;
+  const style = objects.length === 1 ? textStyleOf(first) : null;
+  const crop = objects.length === 1 ? cropOf(first) : null;
   // A redaction mark's colour is what its area becomes once applied, and the
   // mark itself always looks the same — so no opacity, and its own palette.
   const redact = objects.every((o) => o.kind === "Redact");
@@ -176,6 +233,35 @@ export function PropertiesPanel(): React.JSX.Element | null {
           {objects.length === 1 ? t(`kind.${first.kind}` as never) : `${objects.length} objek`}
         </span>
       </header>
+
+      {objects.length >= 2 && (
+        <section className="flex flex-col gap-1.5" aria-label={t("props.arrange")}>
+          <h3 className="text-[12px] text-[var(--izul-text-dim)]">{t("props.arrange")}</h3>
+          <div role="toolbar" aria-label={t("props.arrange")} className="flex flex-wrap gap-1">
+            {ALIGN_BUTTONS.map(([how, icon]) => (
+              <StyleToggle
+                key={how}
+                icon={icon}
+                label={t(`props.align.${how}` as never)}
+                on={null}
+                onClick={() => void store().replaceAnnots(align(objects, how))}
+              />
+            ))}
+          </div>
+          <div role="toolbar" aria-label={t("props.distribute")} className="flex gap-1">
+            {DISTRIBUTE_BUTTONS.map(([axis, icon]) => (
+              <StyleToggle
+                key={axis}
+                icon={icon}
+                label={t(`props.distribute.${axis}` as never)}
+                on={null}
+                disabled={objects.length < 3}
+                onClick={() => void store().replaceAnnots(distribute(objects, axis))}
+              />
+            ))}
+          </div>
+        </section>
+      )}
 
       {color !== null && (
         <section>
@@ -201,19 +287,21 @@ export function PropertiesPanel(): React.JSX.Element | null {
 
       {!redact && (
         <section>
-          <label className="block text-[12px] text-[var(--izul-text-dim)] mb-1">
-            {t("props.opacity")} — {Math.round(first.opacity * 100)}%
+          <label className="block text-[12px] text-[var(--izul-text-dim)]">
+            <span className="block mb-1">
+              {t("props.opacity")} — {Math.round(first.opacity * 100)}%
+            </span>
+            <input
+              type="range"
+              min={10}
+              max={100}
+              value={Math.round(first.opacity * 100)}
+              onChange={(e) =>
+                apply((o) => ({ ...structuredClone(o), opacity: Number(e.target.value) / 100 }))
+              }
+              className="w-full"
+            />
           </label>
-          <input
-            type="range"
-            min={10}
-            max={100}
-            value={Math.round(first.opacity * 100)}
-            onChange={(e) =>
-              apply((o) => ({ ...structuredClone(o), opacity: Number(e.target.value) / 100 }))
-            }
-            className="w-full"
-          />
         </section>
       )}
 
@@ -244,18 +332,20 @@ export function PropertiesPanel(): React.JSX.Element | null {
 
       {width !== null && (
         <section>
-          <label className="block text-[12px] text-[var(--izul-text-dim)] mb-1">
-            {t("props.strokeWidth")} — {width.toFixed(1)} pt
+          <label className="block text-[12px] text-[var(--izul-text-dim)]">
+            <span className="block mb-1">
+              {t("props.strokeWidth")} — {width.toFixed(1)} pt
+            </span>
+            <input
+              type="range"
+              min={0.5}
+              max={20}
+              step={0.5}
+              value={width}
+              onChange={(e) => apply((o) => withStrokeWidth(o, Number(e.target.value)))}
+              className="w-full"
+            />
           </label>
-          <input
-            type="range"
-            min={0.5}
-            max={20}
-            step={0.5}
-            value={width}
-            onChange={(e) => apply((o) => withStrokeWidth(o, Number(e.target.value)))}
-            className="w-full"
-          />
         </section>
       )}
 
@@ -289,17 +379,86 @@ export function PropertiesPanel(): React.JSX.Element | null {
         </section>
       )}
 
+      {style !== null && (
+        <section className="flex flex-col gap-2" aria-label={t("props.style")}>
+          <div role="toolbar" aria-label={t("props.style")} className="flex gap-1">
+            <StyleToggle
+              icon="bold"
+              label={t("props.bold")}
+              on={style.bold}
+              onClick={() => apply((o) => withTextStyle(o, { bold: !style.bold }))}
+            />
+            <StyleToggle
+              icon="italic"
+              label={t("props.italic")}
+              on={style.italic}
+              onClick={() => apply((o) => withTextStyle(o, { italic: !style.italic }))}
+            />
+            <span className="w-px mx-1 bg-[var(--izul-border)]" aria-hidden="true" />
+            {ALIGNS.map(([align, icon]) => (
+              <StyleToggle
+                key={align}
+                icon={icon}
+                label={t(`props.align${align}` as never)}
+                on={style.align === align}
+                onClick={() => apply((o) => withTextStyle(o, { align }))}
+              />
+            ))}
+          </div>
+          <label className="block text-[12px] text-[var(--izul-text-dim)]">
+            <span className="block mb-1">
+              {t("props.lineSpacing")} — {style.lineSpacing.toFixed(1)}×
+            </span>
+            <input
+              type="range"
+              min={0.8}
+              max={3}
+              step={0.1}
+              value={style.lineSpacing}
+              onChange={(e) => apply((o) => withTextStyle(o, { lineSpacing: Number(e.target.value) }))}
+              className="w-full"
+            />
+          </label>
+        </section>
+      )}
+
+      {crop !== null && (
+        <section className="flex flex-col gap-1.5" aria-label={t("props.crop")}>
+          <span className="flex items-center gap-1.5 text-[12px] text-[var(--izul-text-dim)]">
+            <Icon name="crop" size={16} tone="plain" />
+            {t("props.crop")}
+          </span>
+          {CROP_EDGES.map((edge) => (
+            <label key={edge} className="block text-[12px] text-[var(--izul-text-dim)]">
+              <span className="block">
+                {t(`props.crop.${edge}` as never)} — {Math.round(crop[edge] * 100)}%
+              </span>
+              <input
+                type="range"
+                min={0}
+                max={90}
+                value={Math.round(crop[edge] * 100)}
+                onChange={(e) => apply((o) => withCrop(o, edge, Number(e.target.value) / 100))}
+                className="w-full"
+              />
+            </label>
+          ))}
+        </section>
+      )}
+
       {text !== null && (
         <section>
-          <label className="block text-[12px] text-[var(--izul-text-dim)] mb-1">
-            {t("props.text")}
+          <label className="block text-[12px] text-[var(--izul-text-dim)]">
+            <span className="block mb-1">
+              {t("props.text")}
+            </span>
+            <textarea
+              value={text}
+              rows={4}
+              onChange={(e) => apply((o) => withText(o, e.target.value))}
+              className="w-full rounded-[8px] bg-[var(--izul-canvas)] border border-[var(--izul-border)] px-2 py-1.5 text-[13px]"
+            />
           </label>
-          <textarea
-            value={text}
-            rows={4}
-            onChange={(e) => apply((o) => withText(o, e.target.value))}
-            className="w-full rounded-[8px] bg-[var(--izul-canvas)] border border-[var(--izul-border)] px-2 py-1.5 text-[13px]"
-          />
         </section>
       )}
 

@@ -9,12 +9,14 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --max-warnings 0",
     "tauri": "tauri",
+    "package": "tauri build --config src-tauri/tauri.bundle.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "worker": "cargo build -p izul-worker",
     "worker:release": "cargo build -p izul-worker --release",
     "ui:shots": "node tools/ui-harness/shoot.mjs",
-    "icons": "node tools/icons/build.mjs"
+    "icons": "node tools/icons/build.mjs",
+    "icons:app": "node tools/icons/app-icon.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",
@@ -33,6 +35,7 @@
     "@typescript-eslint/eslint-plugin": "8.69.0",
     "@typescript-eslint/parser": "8.69.0",
     "@vitejs/plugin-react": "6.1.1",
+    "axe-core": "4.13.0",
     "eslint": "10.9.1",
     "globals": "^17.12.0",
     "playwright-core": "1.56.1",

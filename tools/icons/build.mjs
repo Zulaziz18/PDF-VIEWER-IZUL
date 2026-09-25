@@ -130,6 +130,33 @@ const ICONS = {
   removeBackground: "wand",
   formFill: "form",
   editText: "text_edit_style",
+  print: "print",
+  keyboard: "keyboard",
+  present: "presenter",
+  focusMode: "full_screen_maximize",
+  theme: "dark_theme",
+  // Phase 8: the SPEC 11 audit — text style, crop, paste, arranging several
+  // objects, user bookmarks, attachments, exporting the annotation list.
+  bold: "text_bold",
+  italic: "text_italic",
+  textLeft: "text_align_left",
+  textCenter: "text_align_center",
+  textRight: "text_align_right",
+  textJustify: "text_align_justify",
+  crop: "crop",
+  paste: "clipboard_paste",
+  alignLeft: "align_left",
+  alignCenterH: "align_center_horizontal",
+  alignRight: "align_right",
+  alignTop: "align_top",
+  alignCenterV: "align_center_vertical",
+  alignBottom: "align_bottom",
+  spaceH: "align_space_evenly_horizontal",
+  spaceV: "align_space_evenly_vertical",
+  bookmarkAdd: "bookmark_add",
+  bookmarks: "bookmark_multiple",
+  attach: "attach",
+  exportList: "arrow_export_ltr",
 };
 const SIZES = [20, 24];
 

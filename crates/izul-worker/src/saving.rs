@@ -67,7 +67,7 @@ impl Workbench {
         Self::default()
     }
 
-    fn put_blob(&mut self, bytes: Vec<u8>) -> Response {
+    pub(crate) fn put_blob(&mut self, bytes: Vec<u8>) -> Response {
         self.next_blob += 1;
         let blob = self.next_blob;
         let len = bytes.len() as u64;

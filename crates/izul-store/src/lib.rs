@@ -22,6 +22,7 @@
     )
 )]
 
+pub mod bookmarks;
 pub mod db;
 pub mod drafts;
 pub mod error;
@@ -33,7 +34,8 @@ pub mod search;
 pub mod sessions;
 
 pub use db::{
-    default_data_dir, open, open_memory, Which, APP_SCHEMA_VERSION, CACHE_SCHEMA_VERSION,
+    default_data_dir, is_portable, open, open_memory, Which, APP_SCHEMA_VERSION,
+    CACHE_SCHEMA_VERSION,
 };
 pub use error::{Result, StoreError};
 pub use files::{FileId, FileRow, ReadingState, ViewMode};

@@ -145,8 +145,8 @@ export interface MenuItem {
   label: string;
   icon?: IconName;
   tone?: Tone;
-  /** Shown right-aligned, e.g. "Ctrl+O". */
-  shortcut?: string;
+  /** Shown right-aligned, e.g. "Ctrl+O"; none when the command has no key. */
+  shortcut?: string | undefined;
   onSelect: () => void;
   checked?: boolean;
   disabled?: boolean;

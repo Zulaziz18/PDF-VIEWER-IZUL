@@ -112,6 +112,7 @@ pub async fn ocr_apply(
         redaction: None,
         ocr: Some(job),
         text: None,
+        bare: false,
     };
     let result = crate::save_commands::save_with(&state, doc, target, Some(&rewrite)).await;
     state.ocr.runs.lock().remove(&doc);

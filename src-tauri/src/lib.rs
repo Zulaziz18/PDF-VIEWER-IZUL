@@ -35,8 +35,11 @@
     )
 )]
 
+pub mod annotlist;
 pub mod annots;
+pub mod attachments;
 pub mod background;
+pub mod bookmarks;
 pub mod commands;
 pub mod compare;
 pub mod folders;
@@ -45,10 +48,12 @@ pub mod indexing;
 pub mod logging;
 pub mod ocr;
 pub mod pagemap;
+pub mod printing;
 pub mod protocol;
 pub mod render;
 pub mod save_commands;
 pub mod saving;
+pub mod selftest;
 pub mod supervisor;
 pub mod textedit;
 pub mod textsearch;
@@ -71,7 +76,10 @@ use tokio::sync::RwLock;
 ///
 /// Returns only when the window closes; errors are already reported.
 pub fn start() {
-    let portable = std::env::var_os("IZUL_PORTABLE").is_some();
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(std::path::Path::to_path_buf));
+    let portable = izul_store::is_portable(exe_dir.as_deref());
     let data_dir = izul_store::default_data_dir(portable);
     let _log_guard = match logging::init(&data_dir) {
         Ok(g) => Some(g),
@@ -98,6 +106,13 @@ pub fn start() {
         pdfium = %v.pdfium_version,
         "PDF Studio Izul mulai"
     );
+
+    // The installed copy checking itself, for the packaging job (Phase 8).
+    let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    if args.first().is_some_and(|a| a == "--self-test") {
+        let pdf = args.get(1).map(std::path::PathBuf::from);
+        std::process::exit(selftest::run(pdf.as_deref()));
+    }
 
     if let Err(e) = run(data_dir, v) {
         tracing::error!(error = %e, "aplikasi berhenti");
@@ -192,6 +207,7 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
         stamps: parking_lot::Mutex::new(std::collections::HashMap::new()),
         hidden: pagemap::HiddenSources::default(),
         ocr: ocr::OcrRuns::default(),
+        printing: printing::PrintJobs::default(),
     };
 
     let title = version::title_bar_text(&v);
@@ -233,6 +249,12 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
                 responder.respond(serve_image(&app, &uri));
                 return;
             }
+            if protocol::parse_print_uri(&uri).is_ok() {
+                let app = ctx.app_handle().clone();
+                // A file read: off the webview's thread.
+                handle.spawn_blocking(move || responder.respond(serve_print(&app, &uri)));
+                return;
+            }
             handle.spawn(async move {
                 responder.respond(serve_tile(&service, &uri).await);
             });
@@ -263,6 +285,7 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
         .invoke_handler(tauri::generate_handler![
             commands::app_version,
             commands::log_folder,
+            commands::open_log_folder,
             commands::pool_health,
             commands::open_document,
             commands::close_document,
@@ -299,6 +322,14 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
             commands::annot_history,
             commands::annot_display_lists,
             commands::annot_add_image,
+            commands::annot_paste_image,
+            annotlist::annots_export_csv,
+            bookmarks::bookmarks_list,
+            bookmarks::bookmark_add,
+            bookmarks::bookmark_rename,
+            bookmarks::bookmark_remove,
+            attachments::attachments_list,
+            attachments::attachment_save,
             save_commands::save_document,
             save_commands::redact_apply,
             save_commands::redact_preview,
@@ -311,6 +342,8 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
             forms::form_fields,
             forms::form_set,
             textedit::text_replace,
+            printing::print_prepare,
+            printing::print_done,
             save_commands::export_document,
             save_commands::export_history,
             save_commands::autosave_drafts,
@@ -475,6 +508,40 @@ impl TileTraffic {
 /// only do if told what it is. The CORS headers are the same ones every answer
 /// from this protocol needs; the Phase 1 notes in CLAUDE.md explain what
 /// happens without them, which is a `TypeError` with no status code at all.
+/// A page prepared for printing (`printing.rs`), from its scratch file.
+pub fn serve_print(app: &tauri::AppHandle, uri: &str) -> tauri::http::Response<Vec<u8>> {
+    use tauri::http::{Response, StatusCode};
+    use tauri::Manager as _;
+
+    let respond = |code: StatusCode, body: Vec<u8>| -> Response<Vec<u8>> {
+        let mut builder = Response::builder().status(code);
+        if code == StatusCode::OK {
+            builder = builder.header("Content-Type", "image/jpeg");
+        }
+        // Every answer, errors included: without these the browser drops
+        // the response before our code sees it (Phase 1, bug 5).
+        for (k, val) in protocol::cors_headers() {
+            builder = builder.header(k, val);
+        }
+        builder
+            .body(body)
+            .unwrap_or_else(|_| Response::new(Vec::new()))
+    };
+    let Ok(parsed) = protocol::parse_print_uri(uri) else {
+        return respond(StatusCode::BAD_REQUEST, Vec::new());
+    };
+    let Some(state) = app.try_state::<AppState>() else {
+        return respond(StatusCode::SERVICE_UNAVAILABLE, Vec::new());
+    };
+    let Some(file) = state.printing.page(parsed.job, parsed.index) else {
+        return respond(StatusCode::NOT_FOUND, Vec::new());
+    };
+    match std::fs::read(&file) {
+        Ok(bytes) => respond(StatusCode::OK, bytes),
+        Err(_) => respond(StatusCode::GONE, Vec::new()),
+    }
+}
+
 pub fn serve_image(app: &tauri::AppHandle, uri: &str) -> tauri::http::Response<Vec<u8>> {
     use tauri::http::{Response, StatusCode};
     use tauri::Manager as _;

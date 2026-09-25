@@ -16,6 +16,7 @@
 
 import { useEffect, useRef, useState, type JSX } from "react";
 import { t } from "@/i18n";
+import { useUi } from "@/state/uiStore";
 import { useDocument } from "@/state/documentStore";
 import {
   PAGE_DRAG_TYPE,
@@ -43,6 +44,8 @@ function Thumbnail(props: {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [drawn, setDrawn] = useState(false);
   const { doc, page } = props.source;
+  // Dark mode's inversion is part of the thumbnail's identity too.
+  const inverted = useUi((s) => s.pagesInverted);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -68,7 +71,7 @@ function Thumbnail(props: {
       if (!abort.signal.aborted) setDrawn(ok);
     });
     return () => abort.abort();
-  }, [doc, page, props.rotation, props.generation, props.blankAspect]);
+  }, [doc, page, props.rotation, props.generation, props.blankAspect, inverted]);
 
   return (
     <div

@@ -1,0 +1,146 @@
+Fase 8 — audit aksesibilitas (SPEC 14), 25 September 2026
+==========================================================
+
+Alat: axe-core 4.13.0 di Chromium sungguhan lewat harness screenshot
+(`npm run ui:shots -- --axe=true`), aturan WCAG 2.0/2.1 tingkat A dan AA,
+kontras termasuk. Lapisan teks di atas halaman sengaja transparan (itu
+lapisan seleksi) dan dikecualikan dari aturan kontras karena itu.
+
+Perjalanan angkanya (1366x768, terang + gelap):
+
+  Putaran 1 (11 scene, 22 tangkapan)   39 pelanggaran
+    - tablist berisi tombol yang bukan tab ("Baru", tombol tutup)
+    - tombol tutup bersarang di dalam tab (nested-interactive)
+    - slider opasitas/tebal dan kotak teks panel properti tanpa label
+    - aksen #2f6feb 3,99:1 di atas latar aksen lembut, 4,38:1 di kartu
+    - merah bahaya #d1343c 2,99:1 di permukaan gelap
+  Putaran 2 (32 scene, 64 tangkapan)   14 pelanggaran
+    - pemisah panel yang bisa difokus tanpa aria-valuenow
+    - baris berkas hilang di Beranda: opacity 50 % menurunkan kolom redup
+      ke 2,04:1
+  Putaran 3 (32 scene, 64 tangkapan)    0 pelanggaran
+
+Mode kontras tinggi Windows (`forced-colors: active`, `--forced=true`):
+axe tidak menilai mode ini, jadi tangkapannya diperiksa dengan mata. Tiga
+cacat nyata ditemukan dan diperbaiki (rinciannya di tokens.css):
+  - lapisan teks transparan jadi terlihat: setiap baris halaman tergambar dua
+    kali;
+  - kotak contoh warna jadi delapan kotak kosong;
+  - tab aktif, baris terpilih, alat yang aktif tidak bisa dibedakan (hanya
+    ditandai warna latar) — kini garis Highlight; tombol berisi ("Buka")
+    kini bertepi.
+
+Yang TIDAK dibuktikan audit ini:
+  - axe hanya menangkap sebagian masalah aksesibilitas (yang bisa diperiksa
+    mesin). Pembaca layar sungguhan (Narrator/NVDA) belum dicoba — ada di
+    daftar periksa TESTING.md "Hasil Fase 8".
+  - Tema kontras tinggi Windows yang sungguhan hanya diemulasikan Chromium;
+    warna sistemnya di Windows bisa berbeda.
+
+--- Hasil putaran terakhir, mode biasa ---
+Audit aksesibilitas (axe-core 4.13.0, WCAG 2.1 A + AA)
+
+home             1366x768   light  bersih
+home             1366x768   dark   bersih
+document         1366x768   light  bersih
+document         1366x768   dark   bersih
+edit             1366x768   light  bersih
+edit             1366x768   dark   bersih
+comment          1366x768   light  bersih
+comment          1366x768   dark   bersih
+convert          1366x768   light  bersih
+convert          1366x768   dark   bersih
+export           1366x768   light  bersih
+export           1366x768   dark   bersih
+close            1366x768   light  bersih
+close            1366x768   dark   bersih
+draft            1366x768   light  bersih
+draft            1366x768   dark   bersih
+changed          1366x768   light  bersih
+changed          1366x768   dark   bersih
+exports          1366x768   light  bersih
+exports          1366x768   dark   bersih
+pages            1366x768   light  bersih
+pages            1366x768   dark   bersih
+splitdialog      1366x768   light  bersih
+splitdialog      1366x768   dark   bersih
+split            1366x768   light  bersih
+split            1366x768   dark   bersih
+protect          1366x768   light  bersih
+protect          1366x768   dark   bersih
+redactdialog     1366x768   light  bersih
+redactdialog     1366x768   dark   bersih
+redacted         1366x768   light  bersih
+redacted         1366x768   dark   bersih
+bgpanel          1366x768   light  bersih
+bgpanel          1366x768   dark   bersih
+bgdone           1366x768   light  bersih
+bgdone           1366x768   dark   bersih
+ocrdialog        1366x768   light  bersih
+ocrdialog        1366x768   dark   bersih
+ocrrunning       1366x768   light  bersih
+ocrrunning       1366x768   dark   bersih
+ocrmissing       1366x768   light  bersih
+ocrmissing       1366x768   dark   bersih
+palette          1366x768   light  bersih
+palette          1366x768   dark   bersih
+shortcuts        1366x768   light  bersih
+shortcuts        1366x768   dark   bersih
+present          1366x768   light  bersih
+present          1366x768   dark   bersih
+focus            1366x768   light  bersih
+focus            1366x768   dark   bersih
+print            1366x768   light  bersih
+print            1366x768   dark   bersih
+invert           1366x768   light  bersih
+invert           1366x768   dark   bersih
+textedit         1366x768   light  bersih
+textedit         1366x768   dark   bersih
+texteditrefused  1366x768   light  bersih
+texteditrefused  1366x768   dark   bersih
+formbanner       1366x768   light  bersih
+formbanner       1366x768   dark   bersih
+forms            1366x768   light  bersih
+forms            1366x768   dark   bersih
+compare          1366x768   light  bersih
+compare          1366x768   dark   bersih
+
+Total: 0 pelanggaran di 64 tangkapan.
+
+--- Hasil, forced-colors (terang) ---
+Audit aksesibilitas (axe-core 4.13.0, WCAG 2.1 A + AA)
+
+home             1366x768   light  bersih
+document         1366x768   light  bersih
+edit             1366x768   light  bersih
+comment          1366x768   light  bersih
+convert          1366x768   light  bersih
+export           1366x768   light  bersih
+close            1366x768   light  bersih
+draft            1366x768   light  bersih
+changed          1366x768   light  bersih
+exports          1366x768   light  bersih
+pages            1366x768   light  bersih
+splitdialog      1366x768   light  bersih
+split            1366x768   light  bersih
+protect          1366x768   light  bersih
+redactdialog     1366x768   light  bersih
+redacted         1366x768   light  bersih
+bgpanel          1366x768   light  bersih
+bgdone           1366x768   light  bersih
+ocrdialog        1366x768   light  bersih
+ocrrunning       1366x768   light  bersih
+ocrmissing       1366x768   light  bersih
+palette          1366x768   light  bersih
+shortcuts        1366x768   light  bersih
+present          1366x768   light  bersih
+focus            1366x768   light  bersih
+print            1366x768   light  bersih
+invert           1366x768   light  bersih
+textedit         1366x768   light  bersih
+texteditrefused  1366x768   light  bersih
+formbanner       1366x768   light  bersih
+forms            1366x768   light  bersih
+compare          1366x768   light  bersih
+
+Total: 0 pelanggaran di 32 tangkapan.

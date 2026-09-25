@@ -58,3 +58,21 @@ describe("tileKey", () => {
     expect(keys.size).toBe(7);
   });
 });
+
+describe("dark mode's inversion", () => {
+  it("is part of the tile's URI and of its cache key, and only when on", async () => {
+    const { setPageInversion, tileKey, tileUri, PRIORITY } = await import("../tileSource");
+    const ref = { doc: 1, page: 2, rotation: 0, scale: 1500, col: 0, row: 0, tier: "sharp" as const };
+    const light = [tileUri(ref, 3, PRIORITY.visible), tileKey(ref)];
+    expect(setPageInversion(true)).toBe(true);
+    expect(setPageInversion(true)).toBe(false);
+    const dark = [tileUri(ref, 3, PRIORITY.visible), tileKey(ref)];
+    setPageInversion(false);
+    expect(light[0]).not.toContain("inv=");
+    expect(dark[0]).toContain("&inv=1");
+    expect(dark[1]).not.toBe(light[1]);
+    // Still under the page's prefix, so a page's bitmaps are dropped together.
+    expect(dark[1]?.startsWith("1/2/")).toBe(true);
+    expect([tileUri(ref, 3, PRIORITY.visible), tileKey(ref)]).toEqual(light);
+  });
+});

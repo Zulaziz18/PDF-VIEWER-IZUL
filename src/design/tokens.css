@@ -27,13 +27,20 @@
   --izul-text-dim: #6b6b70;
 
   /* One accent for the whole application. Other colours are status only. */
-  --izul-accent: #2f6feb;
+  /* 4.5:1 as text on the canvas, the chrome, the soft accent and white
+     (Phase 8, measured by the axe audit: #2f6feb was 3.99 on its own soft
+     background). */
+  --izul-accent: #1f5fd6;
   --izul-accent-soft: #e8f0fe;
   /* The strip that says the file on disk changed: a warning, not an error. */
   --izul-warning-soft: #fff4e0;
   /* Text on an accent-filled button: 4.5:1 or better in both themes (SPEC 14). */
   --izul-on-accent: #ffffff;
-  --izul-danger: #d1343c;
+  /* Danger as text, 4.5:1 on every surface of its theme. */
+  --izul-danger: #c42b34;
+  /* Danger as a filled background under white text, in both themes. */
+  --izul-danger-fill: #c42b34;
+  --izul-on-danger: #ffffff;
   /* Behind the warning a destructive dialog shows (Phase 6: redaction). */
   --izul-danger-soft: #fdecec;
   --izul-unsaved: #e07b26;
@@ -84,6 +91,8 @@
   --izul-accent-soft: #24324d;
   --izul-warning-soft: #3d3020;
   --izul-danger-soft: #3d2224;
+  /* #d1343c was 2.99 on the dark surface. */
+  --izul-danger: #ff7a7a;
   --izul-on-accent: #0b1a33;
   --izul-brand: #ff6b6b;
 
@@ -201,4 +210,92 @@ body {
   clip-path: inset(50%);
   white-space: nowrap;
   border: 0;
+}
+
+/* Printing (Phase 8, `src/app/print.ts`): the prepared pages exist only on
+ * paper; everything else exists only on screen. */
+#izul-print {
+  display: none;
+}
+@media print {
+  @page {
+    margin: 8mm;
+  }
+  body > *:not(#izul-print) {
+    display: none !important;
+  }
+  html,
+  body {
+    background: #fff !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  #izul-print {
+    display: block;
+  }
+  .izul-print-page {
+    width: 100%;
+    height: calc(100vh - 1px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    break-after: page;
+    overflow: hidden;
+  }
+  .izul-print-page:last-child {
+    break-after: auto;
+  }
+  .izul-print-page img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+}
+
+/*
+ * Windows high-contrast themes (SPEC 14), which reach the webview as
+ * `forced-colors: active` and repaint every colour with the theme's few.
+ * Measured with the harness (`--forced=true`), three things broke:
+ *
+ * - The transparent text layer over the page became text: its colour was
+ *   forced to CanvasText with a Canvas backing, so every line showed twice.
+ *   The page is the document's own picture and keeps its own colours; so do
+ *   the layers laid over it (selection text, search matches, differences).
+ * - A colour swatch is its background, and backgrounds are forced away:
+ *   eight identical empty squares. An inline background is data, not chrome.
+ * - What is selected was shown only by a background: the active tab, the
+ *   chosen row, a pressed toggle. It gets the theme's Highlight as an outline.
+ *   So does a filled button's edge, for the same reason.
+ */
+@media (forced-colors: active) {
+  .izul-text-layer,
+  .izul-highlight-page,
+  .izul-diff-mark,
+  [style*="background"] {
+    forced-color-adjust: none;
+  }
+  [aria-selected="true"],
+  [aria-pressed="true"],
+  [aria-current="true"],
+  [aria-current="page"] {
+    outline: 2px solid Highlight;
+    outline-offset: -2px;
+  }
+  :focus-visible {
+    outline-color: Highlight;
+  }
+  /* A filled button is a shape only by its fill; without it "Buka" read as a
+     word on the page. */
+  button[class*="bg-[var(--izul-accent)]"],
+  button[class*="bg-[var(--izul-danger-fill)]"] {
+    border: 1px solid ButtonText;
+  }
+  [role="separator"] {
+    forced-color-adjust: none;
+    background: CanvasText;
+  }
+  [role="separator"]:hover,
+  [role="separator"]:focus-visible {
+    background: Highlight;
+  }
 }

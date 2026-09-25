@@ -1,0 +1,35 @@
+PDF Studio Izul — komponen pihak ketiga yang ikut terpasang
+============================================================
+
+Berkas-berkas di bawah ini dipasang bersama aplikasi. Lisensi lengkap tiap
+komponen ada di folder yang disebut.
+
+PDFium (mesin PDF)                      BSD-3-Clause
+    licenses/pdfium/pdfium.txt, beserta lisensi pustaka yang dibawanya
+    (FreeType, ICU, libjpeg-turbo, libpng, OpenJPEG, zlib, LittleCMS,
+    Abseil, dan lainnya) di folder yang sama.
+    Perangkat lunak ini sebagian didasarkan pada karya Independent JPEG
+    Group.
+
+ONNX Runtime 1.24.4                     MIT (Microsoft)
+    licenses/onnxruntime/LICENSE.txt, ThirdPartyNotices.txt
+
+DirectML.dll                            lisensi redistribusi Microsoft
+    licenses/onnxruntime/ThirdPartyNotices.txt
+
+Model u2netp (U²-Net kecil, hapus latar)  Apache-2.0
+    Xuebin Qin, Zichen Zhang, Chenyang Huang, Masood Dehghan, Osmar R.
+    Zaiane, Martin Jagersand — "U²-Net: Going Deeper with Nested
+    U-Structure for Salient Object Detection" (2020). Berkas model
+    sebagaimana dirilis proyek rembg.
+    https://www.apache.org/licenses/LICENSE-2.0
+
+Fluent UI System Icons                  MIT (Microsoft)
+    Path ikon disalin ke dalam kode antarmuka.
+
+ocrs dan rten (mesin OCR)               MIT / Apache-2.0
+    Kodenya ditautkan ke pekerja. Model OCR-nya TIDAK ikut terpasang:
+    lisensinya belum jelas (lihat README, "Lisensi pihak ketiga").
+
+Tauri, React, dan pustaka Rust/JavaScript lainnya berlisensi MIT dan/atau
+Apache-2.0.

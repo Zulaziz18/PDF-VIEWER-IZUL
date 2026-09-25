@@ -21,7 +21,7 @@ use izul_model::geom::{PageFrame, PdfRectF, RotationQuarter};
 /// So the worker announces this number the moment it connects, and the
 /// supervisor refuses a worker that does not match. Bump it whenever anything
 /// in [`Request`] or [`Response`] changes shape.
-pub const PROTOCOL_VERSION: u32 = 12;
+pub const PROTOCOL_VERSION: u32 = 14;
 
 /// Identifies one open document within a worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -94,6 +94,8 @@ pub enum Request {
         rotation: RotationQuarter,
         quality: RenderQuality,
         generation: Generation,
+        /// Dark mode's smart inversion (`izul_pdf::invert`).
+        invert: bool,
     },
     /// A whole page at thumbnail resolution: the low-resolution first tier of
     /// SPEC 9's two-tier render, and the sidebar's thumbnail, which are the
@@ -104,6 +106,7 @@ pub enum Request {
         max_edge_px: u32,
         rotation: RotationQuarter,
         generation: Generation,
+        invert: bool,
     },
     /// Page text, and — when `with_boxes` is set — the per-character boxes the
     /// selection layer needs, in display space at `rotation`.
@@ -327,6 +330,17 @@ pub enum Request {
         page: u32,
         rect: PdfRectF,
         text: String,
+    },
+    /// The files embedded in the open document (`izul_pdf::attachments`),
+    /// Phase 8. Answered with `AttachmentsReady`.
+    Attachments {
+        doc: DocId,
+    },
+    /// The bytes of embedded file `index`, answered with `BlobReady`: an
+    /// attachment can be larger than one frame.
+    AttachmentData {
+        doc: DocId,
+        index: u32,
     },
 }
 
@@ -572,6 +586,11 @@ pub enum Response {
         before: String,
         /// Glyphs taken out.
         glyphs: u32,
+    },
+    AttachmentsReady {
+        doc: DocId,
+        /// Name and size in bytes of each embedded file, in order.
+        items: Vec<(String, u64)>,
     },
 }
 
@@ -844,6 +863,30 @@ mod tests {
                 .unwrap()
             ),
             32
+        );
+        assert_eq!(
+            index(postcard::to_allocvec(&Request::Attachments { doc: DocId(1) }).unwrap()),
+            33
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Request::AttachmentData {
+                    doc: DocId(1),
+                    index: 0
+                })
+                .unwrap()
+            ),
+            34
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Response::AttachmentsReady {
+                    doc: DocId(1),
+                    items: vec![]
+                })
+                .unwrap()
+            ),
+            25
         );
         assert_eq!(
             index(

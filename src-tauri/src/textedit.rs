@@ -58,6 +58,7 @@ pub async fn text_replace(
             rect,
             text,
         }),
+        bare: false,
     };
     let report = crate::save_commands::save_with(&state, doc, target, Some(&rewrite)).await?;
     // The search index holds the page's old text; it is read again.

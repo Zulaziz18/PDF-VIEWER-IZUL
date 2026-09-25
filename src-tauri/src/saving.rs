@@ -142,6 +142,8 @@ pub struct Rewrite {
     pub redaction: Option<Redaction>,
     pub ocr: Option<OcrJob>,
     pub text: Option<TextJob>,
+    /// The file without our annotations (printing "tanpa anotasi").
+    pub bare: bool,
 }
 
 /// One text replacement (Phase 7): on a page of the file as it is on disk,
@@ -226,8 +228,18 @@ pub async fn build_current(
     let worker = worker_of(pool, doc).await?;
     annots.ensure_all_metrics(pool, doc).await?;
     let empty = BTreeSet::new();
-    let (pages, objects) =
-        annots.write_set_without(doc, redaction.map_or(&empty, |r| &r.doomed))?;
+    let every: BTreeSet<_>;
+    let omit = if rewrite.is_some_and(|r| r.bare) {
+        every = annots
+            .objects(doc, None)
+            .into_iter()
+            .map(|o| o.id.0)
+            .collect();
+        &every
+    } else {
+        redaction.map_or(&empty, |r| &r.doomed)
+    };
+    let (pages, objects) = annots.write_set_without(doc, omit)?;
     let placeholders: Vec<(u32, u64)> = objects.iter().map(|(o, _)| (o.page, o.id.0)).collect();
 
     expect_work(
@@ -615,8 +627,13 @@ async fn current_as_temp(
     doc: u64,
     source: &str,
     scratch: &Path,
+    bare: bool,
 ) -> Out<PendingWrite> {
-    let (bytes, _, _, _, _, _) = build_current(pool, annots, doc, source, None).await?;
+    let rewrite = Rewrite {
+        bare,
+        ..Rewrite::default()
+    };
+    let (bytes, _, _, _, _, _) = build_current(pool, annots, doc, source, Some(&rewrite)).await?;
     std::fs::create_dir_all(scratch).map_err(|e| e.to_string())?;
     PendingWrite::write(&scratch.join(format!("ekspor-{doc}.pdf")), &bytes)
         .map_err(|e| e.to_string())
@@ -656,8 +673,9 @@ pub async fn export(
     source: &str,
     scratch: &Path,
     what: Export,
+    bare: bool,
 ) -> Out<Vec<String>> {
-    let temp = current_as_temp(pool, annots, doc, source, scratch).await?;
+    let temp = current_as_temp(pool, annots, doc, source, scratch, bare).await?;
     let worker = worker_of(pool, doc).await?;
     let id = DocId(doc);
     let page_count = expect_work(
