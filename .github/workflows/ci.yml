@@ -84,6 +84,19 @@ jobs:
           IZUL_REQUIRE_FIXTURES: "1"
         run: cargo test --workspace
 
+      # SPEC 17, Phase 6: what is redacted cannot be found again by any
+      # extraction tool. Six extractors that share no code look for the
+      # secret in twelve kinds of page after the application's own redaction;
+      # MuPDF and poppler are also the independent renderers that show
+      # nothing outside the areas moved. Linux only: the tools are one apt
+      # line there, and the routine under test is the same on both runners.
+      - name: Redaction proof
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y poppler-utils mupdf-tools fonts-dejavu-core fonts-liberation
+          python3 -m pip install --quiet pdfminer.six
+          python3 tools/redaction-proof/run.py --out redaction-proof.txt
+
   frontend:
     name: Frontend
     runs-on: ubuntu-latest

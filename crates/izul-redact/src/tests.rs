@@ -110,6 +110,35 @@ fn a_glyph_barely_touched_stays() {
     assert_eq!(report[0].counts.glyphs, 5);
 }
 
+/// A glyph mostly — not wholly — under the area goes whole, ink and all, so
+/// the fill must reach over the rest of its box too; otherwise part of a
+/// letter just vanishes beside the box. Courier at 10 pt: "B" spans 106..112,
+/// the area stops at 108.5 — 42 % of it, centre outside.
+#[test]
+fn a_glyph_taken_past_the_area_is_covered_where_it_was() {
+    let src = file_with("BT /F1 10 Tf 100 700 Td (ABC) Tj ET", "", &[]);
+    let (out, report) = redact(&src, &one(0, Rect::new(99.0, 690.0, 108.5, 720.0))).unwrap();
+    let c = page_content(&out);
+    assert_eq!(report[0].counts.glyphs, 2, "{c}");
+    assert!(c.contains(&format!("[-1200 {}] TJ", hex("C"))), "{c}");
+    assert_eq!(report[0].beyond.len(), 1, "{:?}", report[0].beyond);
+    let [(x0, _), (x1, _), _, _] = report[0].beyond[0];
+    assert!((x0 - 106.0).abs() < 1e-9 && (x1 - 112.0).abs() < 1e-9);
+    assert!(c.contains("q 0 0 0 rg 106 "), "{c}");
+    assert!(c.contains(" h f Q"), "{c}");
+}
+
+/// The same with invisible text: nothing was seen there, so nothing is
+/// painted or reported past the area.
+#[test]
+fn invisible_glyphs_past_the_area_paint_nothing() {
+    let src = file_with("BT 3 Tr /F1 10 Tf 100 700 Td (ABC) Tj ET", "", &[]);
+    let (out, report) = redact(&src, &one(0, Rect::new(99.0, 690.0, 108.5, 720.0))).unwrap();
+    assert_eq!(report[0].counts.glyphs, 2);
+    assert!(report[0].beyond.is_empty());
+    assert!(!page_content(&out).contains(" h f Q"));
+}
+
 /// Invisible text (render mode 3, as an OCR layer is) is text all the same.
 #[test]
 fn invisible_text_is_removed_too() {

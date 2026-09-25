@@ -2061,7 +2061,6 @@ dependencies = [
  "izul-ipc",
  "izul-model",
  "izul-pdf",
- "izul-redact",
  "parking_lot",
  "thiserror 2.0.20",
  "tokio",

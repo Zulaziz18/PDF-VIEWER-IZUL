@@ -108,6 +108,11 @@ impl Rect {
         x > self.x0 && x < self.x1 && y > self.y0 && y < self.y1
     }
 
+    /// `contains`, edges included, and up to `slack` past them.
+    pub fn holds_near(&self, x: f64, y: f64, slack: f64) -> bool {
+        x >= self.x0 - slack && x <= self.x1 + slack && y >= self.y0 - slack && y <= self.y1 + slack
+    }
+
     pub fn contains_rect(&self, r: &Rect) -> bool {
         r.x0 >= self.x0 && r.x1 <= self.x1 && r.y0 >= self.y0 && r.y1 <= self.y1
     }

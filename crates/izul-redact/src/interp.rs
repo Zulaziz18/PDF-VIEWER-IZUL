@@ -30,6 +30,12 @@ use crate::object::{fmt_real, to_bytes, write_name, write_string, Dict, Obj, Ref
 
 /// Fraction of a glyph's box that puts it inside an area.
 pub const GLYPH_COVER: f64 = 0.25;
+/// How far past its area a removed glyph's box may reach and still count as
+/// inside: areas arrive widened to PDFium's character boxes, in `f32`, and
+/// this crate's boxes for the same glyphs differ from them by hundredths of a
+/// point. A reach that small is under the fill already, give or take the
+/// antialiasing of its edge.
+const SPILL_SLACK: f64 = 0.05;
 
 /// Form XObjects nest at most this deep; deeper is a loop or hostile.
 const MAX_FORM_DEPTH: usize = 12;
@@ -70,6 +76,15 @@ pub struct Env<'r, 'a> {
     pub fonts: FontCache,
     pub areas: Vec<Rect>,
     pub counts: Counts,
+    /// Boxes of removed glyphs that were drawn and reach outside the area
+    /// that took them, with that area's index. Their ink went too, so the
+    /// fill must cover them as well — or part of a letter just vanishes
+    /// beside the box, which says less than the truth about what was taken.
+    pub spill: Vec<(Quad, usize)>,
+    /// Where images removed whole (formats that cannot be edited) reach
+    /// outside every area. Not filled — a whole scan would go black — but
+    /// reported, so no one is told nothing else changed.
+    pub vanished: Vec<Quad>,
     forms_open: Vec<u32>,
     names: u32,
 }
@@ -81,6 +96,8 @@ impl<'r, 'a> Env<'r, 'a> {
             fonts: FontCache::default(),
             areas,
             counts: Counts::default(),
+            spill: Vec::new(),
+            vanished: Vec::new(),
             forms_open: Vec::new(),
             names: 0,
         }
@@ -118,6 +135,8 @@ struct GState {
     leading: f64,
     rise: f64,
     line_width: f64,
+    /// Text rendering mode (`Tr`): 3 and 7 draw nothing.
+    render_mode: i64,
 }
 
 impl GState {
@@ -132,6 +151,7 @@ impl GState {
             leading: 0.0,
             rise: 0.0,
             line_width: 1.0,
+            render_mode: 0,
         }
     }
 }
@@ -276,10 +296,25 @@ impl Run<'_, '_, '_> {
         Ok(sub.get(name).cloned())
     }
 
-    fn hits(&self, q: &Quad, origin: (f64, f64)) -> bool {
+    /// An image drawn with the current CTM is going whole: where it reaches
+    /// past the areas, that is recorded.
+    fn note_vanished_image(&mut self) {
+        let q = quad(&Rect::new(0.0, 0.0, 1.0, 1.0), &self.g.ctm);
+        let inside = self
+            .env
+            .areas
+            .iter()
+            .any(|a| q.iter().all(|&(x, y)| a.holds_near(x, y, SPILL_SLACK)));
+        if !inside {
+            self.env.vanished.push(q);
+        }
+    }
+
+    /// The index of the first area that takes a glyph with box `q`.
+    fn hits(&self, q: &Quad, origin: (f64, f64)) -> Option<usize> {
         let degenerate = polygon_area(q) < 1e-9;
         let (cx, cy) = centre(q);
-        self.env.areas.iter().any(|a| {
+        self.env.areas.iter().position(|a| {
             if degenerate {
                 a.contains(origin.0, origin.1)
             } else {
@@ -318,6 +353,7 @@ impl Run<'_, '_, '_> {
             b"Tz" => self.g.scale = op.num(0) / 100.0,
             b"TL" => self.g.leading = op.num(0),
             b"Ts" => self.g.rise = op.num(0),
+            b"Tr" => self.g.render_mode = op.num(0) as i64,
             b"Tf" => {
                 let name = op
                     .operands
@@ -530,10 +566,19 @@ impl Run<'_, '_, '_> {
                         };
                         let q = quad(&bx, &glyph_to_page);
                         let origin = trm.apply(0.0, 0.0);
-                        let gone = self.hits(&q, origin);
+                        let hit = self.hits(&q, origin);
                         let bytes = s.get(gl.start..gl.start + gl.len).unwrap_or_default();
-                        if gone {
+                        if let Some(area) = hit {
                             removed += 1;
+                            let drawn = !matches!(self.g.render_mode, 3 | 7);
+                            if drawn
+                                && polygon_area(&q) > 1e-9
+                                && self.env.areas.get(area).is_some_and(|a| {
+                                    !q.iter().all(|&(x, y)| a.holds_near(x, y, SPILL_SLACK))
+                                })
+                            {
+                                self.env.spill.push((q, area));
+                            }
                             if !kept.is_empty() {
                                 out.push(Item::Str(std::mem::take(&mut kept)));
                             }
@@ -714,6 +759,7 @@ impl Run<'_, '_, '_> {
                 match fate {
                     ImageFate::Keep => {}
                     ImageFate::Remove { unsupported } => {
+                        self.note_vanished_image();
                         if unsupported {
                             self.env.counts.images_unsupported += 1;
                         } else {
@@ -843,6 +889,7 @@ impl Run<'_, '_, '_> {
         match fate {
             ImageFate::Keep => {}
             ImageFate::Remove { unsupported } => {
+                self.note_vanished_image();
                 if unsupported {
                     self.env.counts.images_unsupported += 1;
                 } else {

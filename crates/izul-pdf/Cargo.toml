@@ -6,6 +6,8 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+# Phase 6: the redactor, driven and checked from here (`redaction.rs`).
+izul-redact.workspace = true
 izul-model.workspace = true
 pdfium-render.workspace = true
 memmap2.workspace = true
@@ -24,8 +26,6 @@ serde_json.workspace = true
 izul-write.workspace = true
 # Opens every stream of a saved file to prove what is — and is not — in it.
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
-# Phase 6: redacts real documents, then checks the result with PDFium.
-izul-redact.workspace = true
 
 [lints]
 workspace = true

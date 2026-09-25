@@ -382,32 +382,20 @@ impl Backend {
                 // planning and checks the worker runs, then izul-redact.
                 let doc = self.doc(&req.path)?;
                 let runs = private_runs(doc, req.page)?;
-                let geometry = doc.page_geometry(req.page).map_err(|e| e.to_string())?;
-                let chars = doc.char_layout(req.page).map_err(|e| e.to_string())?;
-                let areas = izul_pdf::redaction::plan_areas(&geometry, &runs, &chars);
-                let plan = izul_redact::PageAreas {
+                let request = izul_pdf::redaction::PageRequest {
                     page: req.page,
-                    areas: areas
+                    areas: runs
                         .iter()
-                        .map(|a| izul_redact::Area {
-                            rect: izul_redact::Rect::new(
-                                f64::from(a.left),
-                                f64::from(a.bottom),
-                                f64::from(a.right),
-                                f64::from(a.top),
-                            ),
+                        .map(|r| izul_pdf::redaction::AreaRequest {
+                            rect: *r,
                             fill: Some([0.0, 0.0, 0.0]),
                         })
                         .collect(),
                 };
-                let bytes = doc.save_to_vec().map_err(|e| e.to_string())?;
-                let (out, _) = izul_redact::redact(&bytes, &[plan]).map_err(|e| e.to_string())?;
-                let check = self
-                    .engine
-                    .open_bytes(out.clone(), None::<&str>, None)
-                    .map_err(|e| e.to_string())?;
-                let after = check.char_layout(req.page).map_err(|e| e.to_string())?;
-                izul_pdf::redaction::check(&areas, &chars, &after).map_err(|e| e.to_string())?;
+                let (redacted, _) = izul_pdf::redaction::redact_document(doc, &[request])
+                    .map_err(|e| format!("{e:?}"))?;
+                let out = redacted.save_to_vec().map_err(|e| e.to_string())?;
+                let areas = runs;
                 std::fs::write(&req.out, &out).map_err(|e| e.to_string())?;
                 Ok((json!({ "areas": areas.len() }), Vec::new()))
             }

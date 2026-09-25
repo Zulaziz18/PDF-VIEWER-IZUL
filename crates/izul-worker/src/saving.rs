@@ -14,7 +14,7 @@ use izul_ipc::message::{
     ArrangePage, DocId, RedactPageWire, RedactedPageWire, Request, Response, SavedAnnotWire,
     BLOB_CHUNK,
 };
-use izul_pdf::redaction::{check, check_left, check_left_as_shown, plan_areas, CharLayout};
+use izul_pdf::redaction::{check_left, redact_document, AreaRequest, PageRequest, RedactFailure};
 use izul_pdf::{ArrangeSource, Arranged, Document, Engine, PdfError, Quality};
 
 /// Working copies and blobs, per worker.
@@ -297,7 +297,7 @@ impl Workbench {
                 })
             }
             Request::WorkRedact { doc, pages } => {
-                let pages = self.redact(engine, doc, &pages)?;
+                let pages = self.redact(doc, &pages)?;
                 Ok(Response::WorkRedacted { doc, pages })
             }
             Request::VerifyRedacted { path, pages } => {
@@ -319,100 +319,49 @@ impl Workbench {
         }
     }
 
-    /// Redacts the working copy: plans the areas in user space, has
-    /// `izul-redact` rewrite the file, and only accepts the result once PDFium
-    /// confirms that nothing is left in the areas and nothing outside them
-    /// moved. On any failure the working copy is left as it was.
+    /// Redacts the working copy (`izul_pdf::redaction::redact_document`,
+    /// the routine the proof tool runs too). On any failure the working copy
+    /// is left as it was.
     fn redact(
         &mut self,
-        engine: &'static Engine,
         doc: DocId,
         pages: &[RedactPageWire],
     ) -> Result<Vec<RedactedPageWire>, Failure> {
-        let pdf = |e| Failure::Pdf(Some(doc), e);
-        let refuse = |detail: String| Failure::Redact(Some(doc), detail);
-        let work = self.work(doc)?;
-        let mut plans = Vec::new();
-        #[allow(clippy::type_complexity)]
-        let mut before: Vec<(
-            u32,
-            Vec<izul_pdf::PdfRectF>,
-            Vec<CharLayout>,
-            Vec<izul_pdf::PdfRectF>,
-        )> = Vec::new();
-        for p in pages {
-            if p.page >= work.page_count() {
-                return Err(refuse(format!("halaman {} tidak ada", p.page + 1)));
-            }
-            let geometry = work.page_geometry(p.page).map_err(pdf)?;
-            let chars = work.char_layout(p.page).map_err(pdf)?;
-            let display: Vec<izul_pdf::PdfRectF> = p.areas.iter().map(|a| a.rect).collect();
-            let planned: Vec<(izul_pdf::PdfRectF, Option<[f32; 3]>)> =
-                plan_areas(&geometry, &display, &chars)
-                    .into_iter()
-                    .zip(p.areas.iter().map(|a| a.fill))
-                    .filter(|(r, _)| r.width() > 0.0 && r.height() > 0.0)
-                    .collect();
-            if planned.is_empty() {
-                continue;
-            }
-            plans.push(izul_redact::PageAreas {
+        let requests: Vec<PageRequest> = pages
+            .iter()
+            .map(|p| PageRequest {
                 page: p.page,
-                areas: planned
+                areas: p
+                    .areas
                     .iter()
-                    .map(|(a, fill)| izul_redact::Area {
-                        rect: izul_redact::Rect::new(
-                            f64::from(a.left),
-                            f64::from(a.bottom),
-                            f64::from(a.right),
-                            f64::from(a.top),
-                        ),
-                        fill: fill.map(|[r, g, b]| [f64::from(r), f64::from(g), f64::from(b)]),
+                    .map(|a| AreaRequest {
+                        rect: a.rect,
+                        fill: a.fill,
                     })
                     .collect(),
-            });
-            before.push((
-                p.page,
-                planned.into_iter().map(|(r, _)| r).collect(),
-                chars,
-                display,
-            ));
-        }
-        let bytes = work.save_to_vec().map_err(pdf)?;
-        let page_count = work.page_count();
-        let (out, reports) =
-            izul_redact::redact(&bytes, &plans).map_err(|e| refuse(e.to_string()))?;
-        let copy = engine
-            .open_bytes(out, None::<&str>, None)
-            .map_err(|e| refuse(format!("hasil redaksi tidak terbaca: {e}")))?;
+            })
+            .collect();
+        let (copy, results) = redact_document(self.work(doc)?, &requests).map_err(|e| match e {
+            RedactFailure::Pdf(e) => Failure::Pdf(Some(doc), e),
+            RedactFailure::Refused(detail) => Failure::Redact(Some(doc), detail),
+        })?;
         copy.set_strip_izul(false);
-        if copy.page_count() != page_count {
-            return Err(refuse("jumlah halaman berubah".into()));
-        }
-        let mut result = Vec::new();
-        for ((page, areas, chars, display), report) in before.iter().zip(&reports) {
-            let after = copy.char_layout(*page).map_err(pdf)?;
-            check(areas, chars, &after)
-                .map_err(|e| refuse(format!("halaman {}: {e}", page + 1)))?;
-            let geometry = copy.page_geometry(*page).map_err(pdf)?;
-            check_left_as_shown(&geometry, display, &after)
-                .map_err(|e| refuse(format!("halaman {}: {e}", page + 1)))?;
-            let c = report.counts;
-            result.push(RedactedPageWire {
-                page: *page,
-                areas: areas.clone(),
-                glyphs: c.glyphs,
-                images_removed: c.images_removed,
-                images_cleared: c.images_cleared,
-                images_unsupported: c.images_unsupported,
-                paths: c.paths,
-                forms: c.forms,
-                annotations: report.annotations,
-                marked_content: c.marked_content,
-            });
-        }
         self.work.insert(doc, copy);
-        Ok(result)
+        Ok(results
+            .into_iter()
+            .map(|r| RedactedPageWire {
+                page: r.page,
+                areas: r.areas,
+                glyphs: r.counts.glyphs,
+                images_removed: r.counts.images_removed,
+                images_cleared: r.counts.images_cleared,
+                images_unsupported: r.counts.images_unsupported,
+                paths: r.counts.paths,
+                forms: r.counts.forms,
+                annotations: r.annotations,
+                marked_content: r.counts.marked_content,
+            })
+            .collect())
     }
 }
 

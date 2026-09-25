@@ -39,6 +39,12 @@ path = "src/fase4_uji.rs"
 name = "fase5-uji"
 path = "src/fase5_uji.rs"
 
+# Phase 6: runs the application's own redaction on the proof cases, for
+# tools/redaction-proof/run.py to check with independent extractors.
+[[bin]]
+name = "redact-proof"
+path = "src/redact_proof.rs"
+
 [dependencies]
 izul-pdf.workspace = true
 izul-ipc.workspace = true

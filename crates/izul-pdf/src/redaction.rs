@@ -151,6 +151,126 @@ impl Document {
     }
 }
 
+/// One area to redact, as the user marked it: display space, and the colour
+/// it becomes.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct AreaRequest {
+    pub rect: PdfRectF,
+    pub fill: Option<[f32; 3]>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PageRequest {
+    pub page: u32,
+    pub areas: Vec<AreaRequest>,
+}
+
+/// What one page lost.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PageResult {
+    pub page: u32,
+    /// The areas as redacted: user space, widened to whole characters.
+    pub areas: Vec<PdfRectF>,
+    pub counts: izul_redact::Counts,
+    pub annotations: u32,
+    /// Where something was taken outside the areas (user space; see
+    /// [`izul_redact::PageReport::beyond`]).
+    pub beyond: Vec<izul_redact::Quad>,
+}
+
+/// Why a redaction was not done.
+#[derive(Debug)]
+pub enum RedactFailure {
+    Pdf(crate::PdfError),
+    /// Refused or not verified; the text is for the user.
+    Refused(String),
+}
+
+/// Redacts `doc` and returns the result as a new document — the one routine
+/// the worker runs and the proof tool (`bench --bin redact-proof`) runs, so
+/// what is proven is what ships.
+///
+/// 1. Each area is taken from display space into user space and widened to
+///    the whole of every character whose centre it holds ([`plan_areas`]).
+/// 2. `doc` is written by PDFium and handed to `izul-redact`.
+/// 3. The result is opened again with PDFium and must pass [`check`] —
+///    nothing left in an area, nothing outside one moved — and
+///    [`check_left_as_shown`], which does not go through the conversion of
+///    step 1 and so cannot share a mistake in it.
+///
+/// Any failure leaves `doc` as it was and says why.
+pub fn redact_document(
+    doc: &Document,
+    pages: &[PageRequest],
+) -> std::result::Result<(Document, Vec<PageResult>), RedactFailure> {
+    use RedactFailure::{Pdf, Refused};
+    let mut plans = Vec::new();
+    #[allow(clippy::type_complexity)]
+    let mut before: Vec<(u32, Vec<PdfRectF>, Vec<CharLayout>, Vec<PdfRectF>)> = Vec::new();
+    for p in pages {
+        if p.page >= doc.page_count() {
+            return Err(Refused(format!("halaman {} tidak ada", p.page + 1)));
+        }
+        let geometry = doc.page_geometry(p.page).map_err(Pdf)?;
+        let chars = doc.char_layout(p.page).map_err(Pdf)?;
+        let display: Vec<PdfRectF> = p.areas.iter().map(|a| a.rect).collect();
+        let planned: Vec<(PdfRectF, Option<[f32; 3]>)> = plan_areas(&geometry, &display, &chars)
+            .into_iter()
+            .zip(p.areas.iter().map(|a| a.fill))
+            .filter(|(r, _)| r.width() > 0.0 && r.height() > 0.0)
+            .collect();
+        if planned.is_empty() {
+            continue;
+        }
+        plans.push(izul_redact::PageAreas {
+            page: p.page,
+            areas: planned
+                .iter()
+                .map(|(a, fill)| izul_redact::Area {
+                    rect: izul_redact::Rect::new(
+                        f64::from(a.left),
+                        f64::from(a.bottom),
+                        f64::from(a.right),
+                        f64::from(a.top),
+                    ),
+                    fill: fill.map(|[r, g, b]| [f64::from(r), f64::from(g), f64::from(b)]),
+                })
+                .collect(),
+        });
+        before.push((
+            p.page,
+            planned.into_iter().map(|(r, _)| r).collect(),
+            chars,
+            display,
+        ));
+    }
+    let bytes = doc.save_to_vec().map_err(Pdf)?;
+    let (out, reports) = izul_redact::redact(&bytes, &plans).map_err(|e| Refused(e.to_string()))?;
+    let copy = doc
+        .engine()
+        .open_bytes(out, None::<&str>, None)
+        .map_err(|e| Refused(format!("hasil redaksi tidak terbaca: {e}")))?;
+    if copy.page_count() != doc.page_count() {
+        return Err(Refused("jumlah halaman berubah".into()));
+    }
+    let mut result = Vec::new();
+    for ((page, areas, chars, display), report) in before.iter().zip(&reports) {
+        let where_ = |e: CheckFailure| Refused(format!("halaman {}: {e}", page + 1));
+        let after = copy.char_layout(*page).map_err(Pdf)?;
+        check(areas, chars, &after).map_err(where_)?;
+        let geometry = copy.page_geometry(*page).map_err(Pdf)?;
+        check_left_as_shown(&geometry, display, &after).map_err(where_)?;
+        result.push(PageResult {
+            page: *page,
+            areas: areas.clone(),
+            counts: report.counts,
+            annotations: report.annotations,
+            beyond: report.beyond.clone(),
+        });
+    }
+    Ok((copy, result))
+}
+
 fn inside(r: &PdfRectF, (x, y): (f32, f32)) -> bool {
     x > r.left && x < r.right && y > r.bottom && y < r.top
 }
@@ -225,8 +345,10 @@ const MOVE: f64 = 0.05;
 
 /// PDFium and the specification disagree by up to this much per glyph, in
 /// thousandths of an em — measured, not assumed. The gap left for a removed
-/// glyph is its `/Widths` entry, as ISO 32000-1 §9.4.4 says and as MuPDF lays
-/// text out (0.03 pt from the widths over a whole line of `viewer-10p.pdf`).
+/// glyph is its `/Widths` entry, as ISO 32000-1 §9.4.4 says and as poppler
+/// lays text out (words after a gap move 0.0000 pt in the redaction proof).
+/// MuPDF rounds each width to the nearest unit (0.03 pt from the real widths
+/// over a whole line of `viewer-10p.pdf`, rounding errors mostly cancelling).
 /// PDFium truncates each width to a whole unit first (443.8477 is drawn as
 /// 443: 0.005 pt from the truncated widths over the same line, 0.22 pt from
 /// the real ones). So after a gap, PDFium places the rest of the line up to

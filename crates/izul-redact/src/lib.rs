@@ -54,7 +54,7 @@ mod tests;
 use std::collections::BTreeSet;
 
 pub use error::{RedactError, Result};
-pub use geom::Rect;
+pub use geom::{Quad, Rect};
 pub use interp::Counts;
 
 use file::{Pdf, Stored, Stream};
@@ -82,11 +82,16 @@ pub struct PageAreas {
 }
 
 /// What was taken out of one page.
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct PageReport {
     pub page: u32,
     pub counts: Counts,
     pub annotations: u32,
+    /// Everywhere outside the areas that something was taken from: the boxes
+    /// of glyphs that were mostly — not wholly — inside an area (filled with
+    /// that area's colour, since their ink went too), images removed whole
+    /// and annotations removed whole. Empty when nothing reached past an area.
+    pub beyond: Vec<Quad>,
 }
 
 /// Redacts `input` — a file PDFium wrote — and returns the new file.
@@ -204,10 +209,10 @@ fn redact_page(
     };
     let content = contents_of(pdf, &page)?;
 
-    let (outcome, counts) = {
+    let (outcome, counts, spill, vanished) = {
         let mut env = Env::new(pdf, rects.clone());
         let outcome = run(&mut env, &content, &resources, Matrix::IDENTITY, 0)?;
-        (outcome, env.counts)
+        (outcome, env.counts, env.spill, env.vanished)
     };
 
     // The page's own content, balanced: whatever state it leaves behind must
@@ -228,6 +233,31 @@ fn redact_page(
                 fmt_real(a.y0),
                 fmt_real(a.x1 - a.x0),
                 fmt_real(a.y1 - a.y0)
+            )
+            .as_bytes(),
+        );
+    }
+    for (q, area) in &spill {
+        let Some([r, g, b]) = areas.get(*area).and_then(|a| a.fill) else {
+            continue;
+        };
+        let [p0, p1, p2, p3] = q;
+        // One filled shape per box: sharing a path with the area's rectangle
+        // could wind the other way and cut a hole under the nonzero rule.
+        body.extend_from_slice(
+            format!(
+                "q {} {} {} rg {} {} m {} {} l {} {} l {} {} l h f Q\n",
+                fmt_real(r),
+                fmt_real(g),
+                fmt_real(b),
+                fmt_real(p0.0),
+                fmt_real(p0.1),
+                fmt_real(p1.0),
+                fmt_real(p1.1),
+                fmt_real(p2.0),
+                fmt_real(p2.1),
+                fmt_real(p3.0),
+                fmt_real(p3.1)
             )
             .as_bytes(),
         );
@@ -255,7 +285,10 @@ fn redact_page(
     }
 
     gone.replaced.extend(outcome.replaced.iter().copied());
-    let annotations = remove_annotations(pdf, &mut page, &rects, removed_widgets, gone)?;
+    let mut beyond: Vec<Quad> = spill.iter().map(|(q, _)| *q).collect();
+    beyond.extend(vanished);
+    let annotations =
+        remove_annotations(pdf, &mut page, &rects, removed_widgets, gone, &mut beyond)?;
     if !outcome.touched_mcids.is_empty() {
         strip_structure(pdf, page_ref, &outcome.touched_mcids)?;
     }
@@ -264,6 +297,7 @@ fn redact_page(
         page: index,
         counts,
         annotations,
+        beyond,
     })
 }
 
@@ -275,6 +309,7 @@ fn remove_annotations(
     areas: &[Rect],
     removed_widgets: &mut BTreeSet<u32>,
     erased: &mut Gone,
+    beyond: &mut Vec<Quad>,
 ) -> Result<u32> {
     let Some(annots) = page.get(b"Annots").cloned() else {
         return Ok(0);
@@ -289,10 +324,13 @@ fn remove_annotations(
         let Some(d) = pdf.resolve_dict(&item)? else {
             continue;
         };
-        let over =
-            rect_of(pdf, d.get(b"Rect"))?.is_some_and(|r| areas.iter().any(|a| a.overlaps(&r)));
+        let rect = rect_of(pdf, d.get(b"Rect"))?;
+        let over = rect.is_some_and(|r| areas.iter().any(|a| a.overlaps(&r)));
         if over {
             count += 1;
+            if let Some(r) = rect.filter(|r| !areas.iter().any(|a| a.contains_rect(r))) {
+                beyond.push([(r.x0, r.y0), (r.x1, r.y0), (r.x1, r.y1), (r.x0, r.y1)]);
+            }
             if let Obj::Ref(r) = item {
                 gone.insert(r.num);
                 if d.name(b"Subtype") == Some(b"Widget") {
