@@ -33,6 +33,7 @@ pub mod error;
 mod ffi_guard;
 pub mod find;
 pub mod fonts;
+pub mod forms;
 pub mod geom;
 #[cfg(test)]
 mod golden;

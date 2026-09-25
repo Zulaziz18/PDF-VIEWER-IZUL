@@ -53,6 +53,10 @@ path = "src/ocr_probe.rs"
 name = "bg-probe"
 path = "src/bg_probe.rs"
 
+[[bin]]
+name = "form-probe"
+path = "src/form_probe.rs"
+
 [dependencies]
 izul-ocr.workspace = true
 izul-pdf.workspace = true

@@ -52,5 +52,5 @@ pub use display::{
 };
 pub use font::{FaceMetrics, FixedFont, FontCtx, GlyphMetrics, TextError};
 pub use geom::{Matrix, PdfPointF, PdfRectF, RotationQuarter};
-pub use ops::{AnnotDoc, CommandStack, EditError, Op, Transaction, DEFAULT_UNDO_LIMIT};
+pub use ops::{AnnotDoc, CommandStack, EditError, FormValue, Op, Transaction, DEFAULT_UNDO_LIMIT};
 pub use pages::{PageCommand, PageEntry, PageError, SourceId, OWN_FILE};

@@ -22,7 +22,7 @@ use izul_ipc::message::{DocId, Request, Response};
 use izul_model::annot::{AnnotObject, FontSpec};
 use izul_model::display::{FontRef, ImageRef};
 use izul_model::font::{FaceMetrics, FontCtx, GlyphMetrics};
-use izul_model::ops::{AnnotDoc, CommandStack, EditError, Op, Transaction};
+use izul_model::ops::{AnnotDoc, CommandStack, EditError, FormValue, Op, Transaction};
 use izul_model::pages::{self, PageCommand, PageEntry};
 use parking_lot::Mutex;
 use tokio::sync::RwLock;
@@ -249,6 +249,9 @@ pub struct Snapshot {
     /// the data folder, reopened when the draft is restored.
     #[serde(default)]
     pub sources: Vec<String>,
+    /// Form values set in this session (Phase 7).
+    #[serde(default)]
+    pub form: Vec<(String, FormValue)>,
 }
 
 /// What an edit did, for the frontend to reconcile with.
@@ -262,6 +265,13 @@ pub struct EditResult {
     /// Changes whenever the page map does; the frontend refetches the pages
     /// when it sees a new value.
     pub map_revision: u64,
+    /// Pages whose rendered content changed (a form field filled or undone,
+    /// Phase 7): their tiles must be drawn again.
+    pub repaint: Vec<u32>,
+    /// Form fields whose value this edit changed, and to what — for the
+    /// command layer to put into the open document. Not sent.
+    #[serde(skip)]
+    pub form_changes: Vec<(String, FormValue)>,
 }
 
 impl AnnotState {
@@ -330,7 +340,21 @@ impl AnnotState {
             can_redo: edits.stack.can_redo(),
             dirty: edits.revision != edits.saved,
             map_revision: edits.map_revision,
+            repaint: Vec::new(),
+            form_changes: Vec::new(),
         }
+    }
+
+    /// The form values that differ between two states of the map.
+    fn form_diff(
+        before: &std::collections::BTreeMap<String, FormValue>,
+        after: &std::collections::BTreeMap<String, FormValue>,
+    ) -> Vec<(String, FormValue)> {
+        after
+            .iter()
+            .filter(|(k, v)| before.get(*k) != Some(*v))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect()
     }
 
     /// Records one change. Called by every mutation after it succeeds.
@@ -349,6 +373,8 @@ impl AnnotState {
             can_redo: e.stack.can_redo(),
             dirty: e.revision != e.saved,
             map_revision: e.map_revision,
+            repaint: Vec::new(),
+            form_changes: Vec::new(),
         })
     }
 
@@ -421,6 +447,10 @@ impl AnnotState {
         Some(self.snapshot_from(doc, snap.0, snap.1, snap.2))
     }
 
+    fn form_of(&self, doc: u64) -> Vec<(String, FormValue)> {
+        self.form_values(doc)
+    }
+
     /// The draft, unconditionally — for a reload that must not lose edits.
     pub fn snapshot(&self, doc: u64) -> Snapshot {
         let (pages, objects, map) = self.with(doc, |e| {
@@ -453,6 +483,7 @@ impl AnnotState {
             images,
             map,
             sources: self.with(doc, |e| e.sources.iter().map(|s| s.path.clone()).collect()),
+            form: self.form_of(doc),
         }
     }
 
@@ -482,6 +513,7 @@ impl AnnotState {
             // its objects are already numbered by the map.
             e.all_imported = snap.map.is_some() || e.imported.len() as u32 >= file_pages;
             e.doc.restore_page_map(snap.map);
+            e.doc.restore_form(snap.form.into_iter().collect());
             // Sizes come back when the restore reopens each file.
             e.sources = snap
                 .sources
@@ -709,26 +741,69 @@ impl AnnotState {
     pub fn undo(&self, doc: u64, page: Option<u32>) -> Result<EditResult, EditError> {
         self.with(doc, |edits| {
             let before = edits.doc.page_map().map(<[PageEntry]>::to_vec);
+            let form = edits.doc.form_values().clone();
             if edits.stack.undo(&mut edits.doc)? {
                 Self::changed(edits);
             }
             if edits.doc.page_map() != before.as_deref() {
                 edits.map_revision += 1;
             }
-            Ok(Self::result(edits, page))
+            let mut result = Self::result(edits, page);
+            result.form_changes = Self::form_diff(&form, edits.doc.form_values());
+            Ok(result)
         })
     }
 
     pub fn redo(&self, doc: u64, page: Option<u32>) -> Result<EditResult, EditError> {
         self.with(doc, |edits| {
             let before = edits.doc.page_map().map(<[PageEntry]>::to_vec);
+            let form = edits.doc.form_values().clone();
             if edits.stack.redo(&mut edits.doc)? {
                 Self::changed(edits);
             }
             if edits.doc.page_map() != before.as_deref() {
                 edits.map_revision += 1;
             }
-            Ok(Self::result(edits, page))
+            let mut result = Self::result(edits, page);
+            result.form_changes = Self::form_diff(&form, edits.doc.form_values());
+            Ok(result)
+        })
+    }
+
+    // ---- Phase 7: form fields ----------------------------------------------
+
+    /// Sets a form field's value as one undo step. `before` is what the field
+    /// holds now — this session's value, or the file's.
+    pub fn set_form(
+        &self,
+        doc: u64,
+        name: String,
+        before: FormValue,
+        after: FormValue,
+    ) -> Result<EditResult, EditError> {
+        self.with(doc, |edits| {
+            let op = Op::Form {
+                name: name.clone(),
+                before,
+                after: after.clone(),
+            };
+            edits.stack.commit(&mut edits.doc, vec![op])?;
+            Self::changed(edits);
+            let mut result = Self::result(edits, None);
+            result.objects.clear();
+            result.form_changes = vec![(name, after)];
+            Ok(result)
+        })
+    }
+
+    /// Form values set in this session, by field name.
+    pub fn form_values(&self, doc: u64) -> Vec<(String, FormValue)> {
+        self.with(doc, |e| {
+            e.doc
+                .form_values()
+                .iter()
+                .map(|(k, v)| (k.clone(), v.clone()))
+                .collect()
         })
     }
 

@@ -120,6 +120,13 @@ jobs:
         if: runner.os == 'Linux'
         run: python3 tools/background-proof/run.py --out background-proof.txt
 
+      # Phase 7: a form filled by the worker's routine reads as filled in
+      # pypdf, poppler and MuPDF — values and appearances — while the same
+      # values written as /V alone must fail.
+      - name: Form filling proof
+        if: runner.os == 'Linux'
+        run: python3 tools/form-proof/run.py --out form-proof.txt
+
       # The Windows runtime as the application loads it: onnxruntime.dll and
       # DirectML.dll beside the executable (src-tauri/build.rs put them in
       # target/debug). Prints where the model ran — DirectML on the runner's

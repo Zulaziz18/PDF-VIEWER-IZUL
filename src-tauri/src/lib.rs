@@ -40,6 +40,7 @@ pub mod background;
 pub mod commands;
 pub mod compare;
 pub mod folders;
+pub mod forms;
 pub mod indexing;
 pub mod logging;
 pub mod ocr;
@@ -306,6 +307,8 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
             ocr::ocr_cancel,
             background::background_available,
             background::annot_remove_background,
+            forms::form_fields,
+            forms::form_set,
             save_commands::export_document,
             save_commands::export_history,
             save_commands::autosave_drafts,

@@ -10,9 +10,13 @@
  */
 
 import type { ViewportRenderer } from "@/viewport/renderer";
+import { setRepaintHandler } from "@/state/documentSession";
 import { useWorkspace } from "@/state/workspaceStore";
 
 const byDoc = new Map<number, ViewportRenderer>();
+
+// Pages whose content changed are redrawn by whichever viewport shows them.
+setRepaintHandler((doc, pages) => byDoc.get(doc)?.invalidatePages(pages));
 
 export function registerViewport(doc: number, renderer: ViewportRenderer | null): void {
   if (renderer) byDoc.set(doc, renderer);

@@ -442,6 +442,30 @@ impl Workbench {
                     },
                 })
             }
+            Request::FillForm {
+                doc,
+                working: true,
+                values,
+            } => {
+                let work = self.work(doc)?;
+                // A field on a page the user deleted is nothing to fail a
+                // save over; every other refusal is.
+                let present = work
+                    .form_widgets()
+                    .map_err(|e| Failure::Pdf(Some(doc), e))?;
+                let values: Vec<_> = values
+                    .into_iter()
+                    .filter(|(n, _)| present.iter().any(|w| &w.name == n))
+                    .collect();
+                let (changed, pages) = work
+                    .fill_form(&values)
+                    .map_err(|e| Failure::Pdf(Some(doc), e))?;
+                Ok(Response::FormFilled {
+                    doc,
+                    changed,
+                    pages,
+                })
+            }
             Request::WorkFrames { doc } => {
                 let work = self.work(doc)?;
                 let frames = (0..work.page_count())

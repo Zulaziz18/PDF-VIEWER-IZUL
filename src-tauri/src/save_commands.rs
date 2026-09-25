@@ -426,7 +426,7 @@ pub fn draft_status(state: tauri::State<'_, AppState>, doc: u64) -> CmdResult<Op
 /// that has since changed, unless `force` — which only a reload the user asked
 /// for sets.
 #[tauri::command]
-pub fn draft_restore(
+pub async fn draft_restore(
     state: tauri::State<'_, AppState>,
     doc: u64,
     force: bool,
@@ -442,7 +442,11 @@ pub fn draft_restore(
     }
     let snap: Snapshot = serde_json::from_slice(&draft.blob).map_err(|e| e.to_string())?;
     state.annots.restore(doc, snap);
-    Ok(state.annots.edit_state(doc))
+    let mut result = state.annots.edit_state(doc);
+    // Form values in the draft go into the open document too, or the page
+    // would show the file's values until the next save (Phase 7).
+    result.repaint = crate::forms::show(&state, doc, state.annots.form_values(doc)).await?;
+    Ok(result)
 }
 
 /// Throws the draft away — the "don't save" answer when a tab closes.

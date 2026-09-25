@@ -51,6 +51,34 @@ pub enum Op {
         removed: Vec<AnnotObject>,
         added: Vec<AnnotObject>,
     },
+    /// A form field's value (Phase 7): what it held before — in the file, or
+    /// from an earlier edit — and what it holds now. The value is written into
+    /// the field when the document is saved; undo puts the old one back into
+    /// the map, so undoing past a save writes the old value on the next save.
+    Form {
+        name: String,
+        before: FormValue,
+        after: FormValue,
+    },
+}
+
+/// A value for a form field, as the user gave it.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum FormValue {
+    Text(String),
+    Checked(bool),
+    /// The export value of the radio button that is on; empty for none.
+    Radio(String),
+    /// Selected option indices.
+    Choice(Vec<u32>),
+}
+
+impl FormValue {
+    /// Whether `other` is the same kind of value — text for a text field, a
+    /// tick for a checkbox.
+    pub fn same_kind(&self, other: &FormValue) -> bool {
+        std::mem::discriminant(self) == std::mem::discriminant(other)
+    }
 }
 
 impl Op {
@@ -76,6 +104,15 @@ impl Op {
                 removed: added.clone(),
                 added: removed.clone(),
             },
+            Op::Form {
+                name,
+                before,
+                after,
+            } => Op::Form {
+                name: name.clone(),
+                before: after.clone(),
+                after: before.clone(),
+            },
         }
     }
 
@@ -85,7 +122,7 @@ impl Op {
         match self {
             Op::Insert(o) | Op::Delete(o) => Some(o.id),
             Op::Replace { after, .. } => Some(after.id),
-            Op::Pages { .. } => None,
+            Op::Pages { .. } | Op::Form { .. } => None,
         }
     }
 }
@@ -134,6 +171,8 @@ pub struct AnnotDoc {
     next_id: u64,
     /// The page map; `None` while the pages are the file's own, in order.
     pages: Option<Vec<PageEntry>>,
+    /// Form field values set in this session, by field name (Phase 7).
+    form: BTreeMap<String, FormValue>,
 }
 
 /// Hand-written rather than derived, and that is not a style choice: a derived
@@ -154,7 +193,19 @@ impl AnnotDoc {
             objects: BTreeMap::new(),
             next_id: 1,
             pages: None,
+            form: BTreeMap::new(),
         }
+    }
+
+    /// Form values set in this session, by field name.
+    pub fn form_values(&self) -> &BTreeMap<String, FormValue> {
+        &self.form
+    }
+
+    /// Sets the form values outside the undo stack — for a restored draft,
+    /// like [`restore_page_map`](Self::restore_page_map).
+    pub fn restore_form(&mut self, form: BTreeMap<String, FormValue>) {
+        self.form = form;
     }
 
     /// The page map, or `None` for the file's own pages in order.
@@ -289,6 +340,9 @@ impl AnnotDoc {
                 }
                 self.pages = after;
             }
+            Op::Form { name, after, .. } => {
+                self.form.insert(name, after);
+            }
         }
         Ok(inverse)
     }
@@ -401,6 +455,38 @@ impl CommandStack {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A form value is one undo step: the map holds what was set, undo puts
+    /// back what the field held before, and redo sets it again.
+    #[test]
+    fn form_values_undo_and_redo() {
+        let mut doc = AnnotDoc::new();
+        let mut stack = CommandStack::default();
+        stack
+            .commit(
+                &mut doc,
+                vec![Op::Form {
+                    name: "nama".into(),
+                    before: FormValue::Text(String::new()),
+                    after: FormValue::Text("Siti".into()),
+                }],
+            )
+            .unwrap();
+        assert_eq!(
+            doc.form_values().get("nama"),
+            Some(&FormValue::Text("Siti".into()))
+        );
+        assert!(stack.undo(&mut doc).unwrap());
+        assert_eq!(
+            doc.form_values().get("nama"),
+            Some(&FormValue::Text(String::new()))
+        );
+        assert!(stack.redo(&mut doc).unwrap());
+        assert_eq!(
+            doc.form_values().get("nama"),
+            Some(&FormValue::Text("Siti".into()))
+        );
+    }
     use crate::annot::{AnnotKind, AnnotPayload, ShapeStyle};
     use crate::geom::PdfRectF;
 

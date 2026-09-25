@@ -47,7 +47,8 @@ function run(cmd, argv) {
   if (r.status !== 0) throw new Error(`${cmd} ${argv.join(" ")} gagal`);
 }
 
-if (!existsSync(join(SAMPLES, "Panduan Studi 2026.pdf")) || !existsSync(join(SAMPLES, "Data Pegawai.pdf"))) {
+// Made again whenever one is missing — a phase that adds a sample adds it here.
+if (["Panduan Studi 2026.pdf", "Data Pegawai.pdf", "stempel.png", "Formulir Pendaftaran.pdf"].some((f) => !existsSync(join(SAMPLES, f)))) {
   run(process.platform === "win32" ? "python" : "python3", ["tools/ui-harness/make_samples.py"]);
 }
 run("cargo", ["build", "-q", "-p", "izul-bench", "--bin", "ui-harness"]);
@@ -107,6 +108,8 @@ const SAMPLE_FILES = [
   // Phase 6: a page to redact, and the same page redacted by the real pipeline.
   { name: "Data Pegawai.pdf", folder: docsFolder, opened: NOW - 80 * DAY, modified: NOW - 80 * DAY },
   { name: "Data Pegawai (diredaksi).pdf", folder: docsFolder, opened: NOW - 81 * DAY, modified: NOW - 81 * DAY },
+  // Phase 7: a form to fill.
+  { name: "Formulir Pendaftaran.pdf", folder: `${USER}\\Downloads`, opened: NOW - 90 * DAY, modified: NOW - 90 * DAY },
 ];
 
 const realPath = new Map();
@@ -194,6 +197,49 @@ for (const f of SAMPLE_FILES) {
   });
 }
 const docById = new Map(docs.map((d) => [d.doc, realPath.get(d.path)]));
+
+// The form panel's fields: the real widgets (izul_pdf::forms), grouped into
+// fields as src-tauri/src/forms.rs does, with the values set in this run.
+const formValues = new Map();
+// A form filled in one shot is not filled in the next: the harness's copy of
+// the document is dropped and opened fresh.
+async function forgetForms() {
+  const paths = new Set([...formValues.keys()].map((k) => k.split("\u0000")[0]));
+  for (const path of paths) await ask({ op: "forget", path });
+  formValues.clear();
+}
+async function formFieldsOf(path) {
+  const { header } = await ask({ op: "forms", path });
+  const fields = new Map();
+  for (const w of header.widgets) {
+    if (w.kind === "Other") continue;
+    const f = fields.get(w.name) ?? { name: w.name, kind: w.kind, read_only: w.read_only, widgets: [], all: [] };
+    f.widgets.push([w.page, w.rect]);
+    f.all.push(w);
+    fields.set(w.name, f);
+  }
+  return [...fields.values()].map((f) => {
+    const first = f.all[0];
+    const kind = typeof f.kind === "string" ? f.kind : Object.keys(f.kind)[0];
+    const fromFile =
+      kind === "CheckBox"
+        ? { Checked: f.all.some((w) => w.checked) }
+        : kind === "Radio"
+          ? { Radio: f.all.find((w) => w.checked)?.export ?? "" }
+          : kind === "ComboBox" || kind === "ListBox"
+            ? { Choice: first.selected }
+            : { Text: first.value };
+    return {
+      name: f.name,
+      kind: f.kind,
+      read_only: f.read_only,
+      widgets: f.widgets,
+      value: formValues.get(`${path}\u0000${f.name}`) ?? fromFile,
+      options: first.options,
+      exports: kind === "Radio" ? f.all.map((w) => w.export) : [],
+    };
+  });
+}
 
 const version = JSON.parse(readFileSync(join(ROOT, "version.json"), "utf8"));
 const folders = {
@@ -413,6 +459,35 @@ const SCENES = {
       await page.getByText(/Model OCR belum terpasang/).waitFor();
     },
   },
+  formbanner: {
+    session: [`${USER}\\Downloads\\Formulir Pendaftaran.pdf`],
+    async steps(page) {
+      await page.getByText(/Dokumen ini berisi formulir/).waitFor();
+      await settle(page);
+    },
+  },
+  forms: {
+    session: [`${USER}\\Downloads\\Formulir Pendaftaran.pdf`],
+    async steps(page) {
+      await page.getByRole("button", { name: "Isi Formulir", exact: true }).click();
+      const name = page.getByRole("textbox", { name: "Nama lengkap", exact: true });
+      await name.fill("Rahmawati Putri");
+      await name.press("Enter");
+      const address = page.getByRole("textbox", { name: "Alamat", exact: true });
+      await address.fill("Jl. Melati No. 12\nKecamatan Coblong\nBandung 40132");
+      await address.blur();
+      // The controls show the backend's value, so a click shows once it answers.
+      const radio = page.getByRole("radio", { name: "Pelajar", exact: true });
+      await radio.click();
+      await page.waitForFunction(() => document.querySelector('input[type=radio][name="form-kategori"]:checked') !== null);
+      await page.getByRole("combobox", { name: "Kota", exact: true }).selectOption({ label: "Yogyakarta" });
+      await page.getByRole("checkbox").click();
+      await page.getByText("Dicentang", { exact: true }).waitFor();
+      // Back to the top, where the filled fields are.
+      await izul(page, (z) => z.goToPage(0));
+      await settle(page, 1200);
+    },
+  },
   compare: {
     session: [`${docsFolder}\\Draf Perjanjian v1.pdf`, `${docsFolder}\\Draf Perjanjian v2.pdf`],
     async steps(page) {
@@ -498,6 +573,14 @@ async function newPage({ width, height, theme, scale, scene }) {
         paper: a.kind === "OnPaper",
       };
     }
+    if (cmd === "form_fields") return formFieldsOf(path);
+    if (cmd === "form_set") {
+      // The real form-fill routine on the harness's copy of the document, so
+      // the page shows what PDFium makes of the value.
+      const { header } = await ask({ op: "formfill", path, values: [[a.name, a.value]] });
+      formValues.set(`${path}\u0000${a.name}`, a.value);
+      return { objects: [], can_undo: true, can_redo: false, dirty: true, map_revision: 0, repaint: header.pages };
+    }
     if (cmd === "document_outline") return (await ask({ op: "outline", path })).header.outline;
     if (cmd === "page_text") return (await ask({ op: "text", path, page: a.page, rotation: a.rotation ?? 0 })).header;
     const redactable = String(path).endsWith("Data Pegawai.pdf");
@@ -573,6 +656,7 @@ if (args.serve === "true") {
   for (const scene of scenes) {
     for (const [width, height] of sizes) {
       for (const theme of themes) {
+        await forgetForms();
         const page = await newPage({ width, height, theme, scale, scene });
         await page.waitForFunction(() => window.__izul !== undefined, null, { timeout: 15_000 });
         await settle(page);

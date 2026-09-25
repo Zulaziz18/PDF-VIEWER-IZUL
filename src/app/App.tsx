@@ -23,6 +23,7 @@ import { About } from "./About";
 import { BottomBar } from "./BottomBar";
 import { ExportDialog } from "./ExportDialog";
 import { FileBanner } from "./FileBanner";
+import { FormBanner } from "./FormsPanel";
 import { NoticeToast } from "./NoticeToast";
 import { PanelGrid } from "./PanelGrid";
 import { PromptDialog } from "./PromptDialog";
@@ -96,6 +97,7 @@ export function App(): React.JSX.Element {
           <MenuBar />
           <Ribbon />
           <FileBanner />
+          <FormBanner />
           <div
             className={[
               "flex-1 min-h-0 flex border-t border-[var(--izul-border)]",

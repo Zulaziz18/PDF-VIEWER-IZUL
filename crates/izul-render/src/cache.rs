@@ -189,6 +189,26 @@ impl TileCache {
         count
     }
 
+    /// Drops every tile of one page: its content changed (a form field was
+    /// filled, Phase 7) and no bitmap of it is true any more, previews
+    /// included.
+    pub fn forget_page(&mut self, doc: u64, page: u32) -> usize {
+        let doomed: Vec<TileKey> = self
+            .entries
+            .keys()
+            .filter(|k| k.doc == doc && k.page == page)
+            .copied()
+            .collect();
+        let count = doomed.len();
+        for key in doomed {
+            if let Some(entry) = self.entries.remove(&key) {
+                self.order.remove(&entry.seq);
+                self.bytes = self.bytes.saturating_sub(entry.tile.byte_len());
+            }
+        }
+        count
+    }
+
     /// Drops the sharp tiles of a document but keeps its previews.
     ///
     /// This is what an inactive tab costs: SPEC 10 asks for full-resolution
@@ -256,6 +276,20 @@ mod tests {
         let got = c.get(&key(1, 0, 0)).expect("hit");
         assert_eq!(got.byte_len(), 100);
         assert_eq!(c.stats().hits, 1);
+    }
+
+    #[test]
+    fn forgetting_a_page_keeps_the_other_pages_and_documents() {
+        let mut c = TileCache::new(4096);
+        c.insert(key(1, 0, 0), tile(10));
+        c.insert(key(1, 0, 1), tile(10));
+        c.insert(key(1, 1, 0), tile(10));
+        c.insert(key(2, 0, 0), tile(10));
+        assert_eq!(c.forget_page(1, 0), 2);
+        assert!(c.get(&key(1, 0, 0)).is_none());
+        assert!(c.get(&key(1, 1, 0)).is_some());
+        assert!(c.get(&key(2, 0, 0)).is_some());
+        assert_eq!(c.stats().bytes, 20);
     }
 
     #[test]

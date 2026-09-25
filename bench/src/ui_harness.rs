@@ -49,6 +49,9 @@ struct Req {
     /// Where `redact` writes its result.
     #[serde(default)]
     out: String,
+    /// What `formfill` puts into the form.
+    #[serde(default)]
+    values: Vec<(String, izul_model::FormValue)>,
 }
 
 /// Phase 6's sample: on "Data Pegawai", the runs of digits and dashes long
@@ -340,6 +343,26 @@ impl Backend {
                     })
                     .collect();
                 Ok((json!({ "objects": objects, "lists": lists }), Vec::new()))
+            }
+            "forget" => {
+                self.docs.remove(&req.path);
+                Ok((json!({}), Vec::new()))
+            }
+            "forms" => {
+                let widgets = self
+                    .doc(&req.path)?
+                    .form_widgets()
+                    .map_err(|e| e.to_string())?;
+                Ok((json!({ "widgets": widgets }), Vec::new()))
+            }
+            "formfill" => {
+                // The real routine on the harness's copy, so the tiles drawn
+                // after it show what PDFium makes of the value.
+                let (_, pages) = self
+                    .doc(&req.path)?
+                    .fill_form(&req.values)
+                    .map_err(|e| e.to_string())?;
+                Ok((json!({ "pages": pages }), Vec::new()))
             }
             "background" => {
                 // The real routine on the sample stamp, so the "after" scene

@@ -278,6 +278,24 @@ pub async fn build_current(
             Some(job) => Some(run_ocr(&worker, doc, job).await?),
             None => None,
         };
+        // Form values (Phase 7) go into the fields through PDFium's form
+        // environment, which draws each widget's appearance again.
+        let form = annots.form_values(doc);
+        if !form.is_empty() {
+            match ask(
+                &worker,
+                Request::FillForm {
+                    doc: DocId(doc),
+                    working: true,
+                    values: form,
+                },
+            )
+            .await?
+            {
+                Response::FormFilled { .. } => {}
+                other => return Err(format!("balasan tak terduga: {other:?}")),
+            }
+        }
         expect_work(
             &worker,
             Request::WorkPlaceholders {

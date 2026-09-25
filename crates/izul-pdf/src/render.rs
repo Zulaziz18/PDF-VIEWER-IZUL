@@ -198,6 +198,46 @@ fn tile_matrix(
     }
 }
 
+/// Where `FPDF_FFLDraw` puts the whole page, in the tile's pixels.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct FflPlacement {
+    start_x: c_int,
+    start_y: c_int,
+    size_x: c_int,
+    size_y: c_int,
+}
+
+/// The same mapping as [`tile_matrix`], in the only terms `FPDF_FFLDraw`
+/// takes: the whole page, turned by `extra`, scaled, and shifted so that
+/// `source`'s top-left corner lands on the tile's.
+///
+/// Form widgets are drawn by `FPDF_FFLDraw` alone — the page render leaves
+/// them out, with or without the form environment (measured) — and it has no
+/// matrix variant, so this is the one place the tile's geometry is said
+/// twice. The pixel test `widgets_land_where_flattening_puts_them` holds the
+/// two together, on every rotation and on tiles off the page's corner.
+fn ffl_placement(
+    source: &PdfRectF,
+    dest_w: u32,
+    dest_h: u32,
+    extra: RotationQuarter,
+    page_w: f32,
+    page_h: f32,
+) -> FflPlacement {
+    let sx = dest_w as f32 / source.width();
+    let sy = dest_h as f32 / source.height();
+    let (dw, dh) = match extra {
+        RotationQuarter::None | RotationQuarter::Cw180 => (page_w, page_h),
+        RotationQuarter::Cw90 | RotationQuarter::Cw270 => (page_h, page_w),
+    };
+    FflPlacement {
+        start_x: (-source.left * sx).round() as c_int,
+        start_y: (-(dh - source.top) * sy).round() as c_int,
+        size_x: (dw * sx).round() as c_int,
+        size_y: (dh * sy).round() as c_int,
+    }
+}
+
 impl Document {
     /// Renders a tile straight into `dest`.
     ///
@@ -296,6 +336,30 @@ impl Document {
                         0xFFFF_FFFF,
                     );
                     bindings.FPDF_RenderPageBitmapWithMatrix(bitmap, page, &matrix, &clip, flags);
+                    if req.draw_annotations {
+                        let form = self.form_handle();
+                        if !form.is_null() {
+                            let d = ffl_placement(
+                                &req.source,
+                                req.dest_w,
+                                req.dest_h,
+                                req.rotation,
+                                page_space.width,
+                                page_space.height,
+                            );
+                            bindings.FPDF_FFLDraw(
+                                form,
+                                bitmap,
+                                page,
+                                d.start_x,
+                                d.start_y,
+                                d.size_x,
+                                d.size_y,
+                                req.rotation as c_int,
+                                flags & !crate::sys::FPDF_ANNOT,
+                            );
+                        }
+                    }
                     bindings.FPDFBitmap_Destroy(bitmap);
                 }
                 Ok(geometry)
@@ -826,5 +890,176 @@ mod rendered {
                 assert!(got < 0.01, "ubin di luar persegi harus putih: {got:.4}");
             }
         }
+    }
+
+    /// A one-page AcroForm: a text field whose appearance is a solid block,
+    /// 60 by 90 points, near the top-left of an unrotated 200 by 400 page
+    /// whose box starts at (`mx`, `my`) and which carries `/Rotate rotate`.
+    fn form_page(mx: f32, my: f32, rotate: i32) -> Vec<u8> {
+        form_page_drawing(mx, my, rotate, "0 0 0 rg 0 0 60 90 re f\n")
+    }
+
+    /// [`form_page`], its field's appearance being `ap`.
+    fn form_page_drawing(mx: f32, my: f32, rotate: i32, ap: &str) -> Vec<u8> {
+        let objects = [
+            "<</Type/Catalog/Pages 2 0 R/AcroForm<</Fields[4 0 R]/DA(/Helv 0 Tf 0 g)/DR<</Font<</Helv 6 0 R>>>>>>>>"
+                .to_string(),
+            "<</Type/Pages/Kids[3 0 R]/Count 1>>".to_string(),
+            format!(
+                "<</Type/Page/Parent 2 0 R/MediaBox[{mx} {my} {} {}]/Rotate {rotate}/Annots[4 0 R]>>",
+                mx + 200.0,
+                my + 400.0
+            ),
+            format!(
+                "<</Type/Annot/Subtype/Widget/FT/Tx/T(nama)/F 4/P 3 0 R/Rect[{} {} {} {}]/AP<</N 5 0 R>>>>",
+                mx + 20.0,
+                my + 290.0,
+                mx + 80.0,
+                my + 380.0
+            ),
+            format!(
+                "<</Type/XObject/Subtype/Form/BBox[0 0 60 90]/Length {}>>\nstream\n{ap}endstream",
+                ap.len()
+            ),
+            "<</Type/Font/Subtype/Type1/BaseFont/Helvetica/Encoding/WinAnsiEncoding>>".to_string(),
+        ];
+        let mut pdf = String::from("%PDF-1.7\n");
+        let mut offsets = Vec::new();
+        for (i, body) in objects.iter().enumerate() {
+            offsets.push(pdf.len());
+            pdf.push_str(&format!("{} 0 obj\n{body}\nendobj\n", i + 1));
+        }
+        let xref = pdf.len();
+        pdf.push_str(&format!(
+            "xref\n0 {}\n0000000000 65535 f \n",
+            objects.len() + 1
+        ));
+        for off in &offsets {
+            pdf.push_str(&format!("{off:010} 00000 n \n"));
+        }
+        pdf.push_str(&format!(
+            "trailer\n<</Size {}/Root 1 0 R>>\nstartxref\n{xref}\n%%EOF\n",
+            objects.len() + 1
+        ));
+        pdf.into_bytes()
+    }
+
+    /// Pixels dark in one bitmap and light in the other.
+    fn mismatched(a: &[u8], b: &[u8]) -> usize {
+        a.chunks_exact(BYTES_PER_PIXEL)
+            .zip(b.chunks_exact(BYTES_PER_PIXEL))
+            .filter(|(p, q)| (p[0] < 128) != (q[0] < 128))
+            .count()
+    }
+
+    /// Form widgets are drawn by `FPDF_FFLDraw` — the page render leaves them
+    /// out — and it takes a start, a size and a rotation rather than the tile
+    /// matrix. So the same page flattened (the widget's appearance made part
+    /// of the page's content, drawn by the matrix path) must come out the
+    /// same: on every extra rotation, on pages with their own `/Rotate` and a
+    /// box off the origin, and on a tile that is not the page's corner.
+    #[test]
+    fn widgets_land_where_flattening_puts_them() {
+        let (engine, _pdfium) = engine_or_skip!();
+        let scale = 1.5f32;
+        for (mx, my, rotate) in [
+            (0.0, 0.0, 0),
+            (30.0, 40.0, 0),
+            (30.0, 40.0, 90),
+            (0.0, 0.0, 270),
+        ] {
+            let bytes = form_page(mx, my, rotate);
+            let live = engine.open_bytes(bytes.clone(), None, None).expect("buka");
+            let flat = {
+                let d = engine.open_bytes(bytes, None, None).expect("buka");
+                d.flatten_page(0).expect("ratakan");
+                engine
+                    .open_bytes(d.save_to_vec().expect("simpan"), None, None)
+                    .expect("buka lagi")
+            };
+            assert!(
+                !live.form_handle().is_null(),
+                "dokumen berformulir tanpa lingkungan"
+            );
+            for extra in [
+                RotationQuarter::None,
+                RotationQuarter::Cw90,
+                RotationQuarter::Cw180,
+                RotationQuarter::Cw270,
+            ] {
+                let size = live.page_display_size(0, extra).expect("ukuran");
+                let whole = PdfRectF::new(0.0, 0.0, size.width, size.height);
+                // The four quarters too, cut on the pixel grid as the
+                // viewport's tiles are: tiles that do not start at the page's
+                // corner, one of which holds the widget whatever the turn.
+                let (hw, hh) = (
+                    (size.width * scale / 2.0).floor() / scale,
+                    (size.height * scale / 2.0).floor() / scale,
+                );
+                let quarters = [
+                    PdfRectF::new(0.0, size.height - hh, hw, size.height),
+                    PdfRectF::new(hw, size.height - hh, size.width, size.height),
+                    PdfRectF::new(0.0, 0.0, hw, size.height - hh),
+                    PdfRectF::new(hw, 0.0, size.width, size.height - hh),
+                ];
+                let mut quarter_ink = 0.0;
+                for (i, source) in std::iter::once(whole).chain(quarters).enumerate() {
+                    let req = TileRequest {
+                        page: 0,
+                        source,
+                        dest_w: (source.width() * scale).round() as u32,
+                        dest_h: (source.height() * scale).round() as u32,
+                        rotation: extra,
+                        draw_annotations: true,
+                        quality: Quality::Sharp,
+                        limit_image_cache: false,
+                    };
+                    let n = req.dest_w as usize * req.dest_h as usize * BYTES_PER_PIXEL;
+                    let (mut a, mut b) = (vec![0u8; n], vec![0u8; n]);
+                    live.render_tile_into(&req, &mut a).expect("render");
+                    flat.render_tile_into(&req, &mut b).expect("render datar");
+                    let ink = ink(&b, req.dest_w, req.dest_h);
+                    if i == 0 {
+                        // The sanity half: the reference has the widget in
+                        // it, so a render without it could not pass.
+                        assert!(
+                            ink > 0.05,
+                            "acuan tanpa tinta: {ink:.3} ({mx},{my},/Rotate {rotate}, {extra:?})"
+                        );
+                    } else {
+                        quarter_ink += ink;
+                    }
+                    let off = mismatched(&a, &b);
+                    assert!(
+                        off <= 2,
+                        "{off} piksel beda ({mx},{my},/Rotate {rotate}, {extra:?}, {source:?})"
+                    );
+                }
+                assert!(quarter_ink > 0.05, "tidak ada kuadran bertinta ({extra:?})");
+            }
+        }
+    }
+
+    /// What is typed into a field shows on the page before anything is
+    /// saved: filling rebuilds the widget's appearance, and the render draws
+    /// the widget through the environment that did it.
+    #[test]
+    fn a_filled_field_shows_its_value() {
+        let (engine, _pdfium) = engine_or_skip!();
+        let doc = engine
+            .open_bytes(form_page_drawing(0.0, 0.0, 0, ""), None, None)
+            .expect("buka");
+        // The field's rectangle in the tile, points to pixels at 1x: x 20..80,
+        // y from the top 20..110.
+        let field_ink = |doc: &Document| {
+            let (g, px) = doc.render_page(0, 1.0, Quality::Sharp).expect("render");
+            ink_in(&px, g.width, g.height, 20, 20, 80, 110)
+        };
+        let before = field_ink(&doc);
+        assert!(before < 0.001, "isian kosong bertinta: {before:.4}");
+        doc.fill_form(&[("nama".into(), crate::forms::FieldValue::Text("MMMM".into()))])
+            .expect("isi");
+        let after = field_ink(&doc);
+        assert!(after > 0.01, "nilai tidak tampil di halaman: {after:.4}");
     }
 }

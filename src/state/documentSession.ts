@@ -210,7 +210,7 @@ export type ZoomMode = "custom" | "fitWidth" | "fitPage" | "actual";
 
 /** What the sidebar is showing (SPEC 11.1). Search results are one of its
  * tabs, as SPEC 11.1 lists them, reached from the icon rail like the rest. */
-export type SidebarTab = "thumbnails" | "outline" | "annots" | "search";
+export type SidebarTab = "thumbnails" | "outline" | "annots" | "search" | "forms";
 
 export interface DocumentState {
   doc: number | null;
@@ -281,6 +281,11 @@ export interface DocumentState {
    * starts again when it changes.
    */
   pagesEpoch: number;
+  /**
+   * Bumped whenever an edit changed what a form field holds — filled, undone,
+   * redone (Phase 7). The forms panel fetches the values again when it moves.
+   */
+  formRevision: number;
   /** Pages selected in the page panel, for the page operations. */
   pageSelection: number[];
   /** Differences compare mode found, per page, in display space. */
@@ -452,6 +457,7 @@ export function createDocumentSession(
     file: { size: null, changedOnDisk: false, missing: false, savedAt: null, saving: false },
     pagesView: null,
     mapRevision: 0,
+    formRevision: 0,
     pagesEpoch: 0,
     pageSelection: [],
     marks: new Map(),
@@ -874,6 +880,11 @@ export function createDocumentSession(
 
     applyEdit(result: EditResult) {
       set({ canUndo: result.can_undo, canRedo: result.can_redo, dirty: result.dirty });
+      const { doc } = get();
+      if (doc !== null && result.repaint && result.repaint.length > 0) {
+        repaintHandler?.(doc, result.repaint);
+        set({ formRevision: get().formRevision + 1 });
+      }
       // An undo or redo of a page operation moves pages; the backend says so
       // by a new map revision, and the layout is fetched again.
       if (result.map_revision !== get().mapRevision) void get().refreshPages();
@@ -1106,6 +1117,17 @@ export function createDocumentSession(
  * Every such change is one layout epoch, and the backend is told immediately so
  * that work for the old one is dropped rather than finished (SPEC 6).
  */
+/**
+ * Who redraws pages whose content changed. Set by the app layer
+ * (`viewportHandle.ts`): the store must not import the viewport, which
+ * imports the store.
+ */
+let repaintHandler: ((doc: number, pages: readonly number[]) => void) | null = null;
+
+export function setRepaintHandler(handler: (doc: number, pages: readonly number[]) => void): void {
+  repaintHandler = handler;
+}
+
 function bumpGeneration(
   set: (partial: Partial<DocumentState>) => void,
   get: () => DocumentState,

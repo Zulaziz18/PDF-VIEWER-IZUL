@@ -21,7 +21,7 @@ use izul_model::geom::{PageFrame, PdfRectF, RotationQuarter};
 /// So the worker announces this number the moment it connects, and the
 /// supervisor refuses a worker that does not match. Bump it whenever anything
 /// in [`Request`] or [`Response`] changes shape.
-pub const PROTOCOL_VERSION: u32 = 10;
+pub const PROTOCOL_VERSION: u32 = 11;
 
 /// Identifies one open document within a worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -305,6 +305,47 @@ pub enum Request {
         model: String,
         kind: BackgroundKind,
     },
+    /// Every form widget of the open document (`izul_pdf::forms`). Answered
+    /// with `FormFieldsReady`.
+    FormFields {
+        doc: DocId,
+    },
+    /// Fills fields through PDFium's form-fill environment, which builds the
+    /// widgets' appearances again. `working`: on the working copy (a save);
+    /// otherwise on the open document itself, so the page shows the value
+    /// before it is saved. Answered with `FormFilled`.
+    FillForm {
+        doc: DocId,
+        working: bool,
+        values: Vec<(String, izul_model::FormValue)>,
+    },
+}
+
+/// One widget of a form field, as `FormFields` reports it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormWidgetWire {
+    pub page: u32,
+    /// Display space.
+    pub rect: PdfRectF,
+    pub name: String,
+    pub kind: FormKindWire,
+    pub read_only: bool,
+    pub value: String,
+    pub checked: bool,
+    /// A checkbox or radio widget's "on" name.
+    pub export: String,
+    pub options: Vec<String>,
+    pub selected: Vec<u32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FormKindWire {
+    Text { multiline: bool },
+    CheckBox,
+    Radio,
+    ComboBox { editable: bool },
+    ListBox { multiple: bool },
+    Other,
 }
 
 /// What a picture is, for [`Request::RemoveBackground`]. The user says; it
@@ -504,6 +545,17 @@ pub enum Response {
         /// The paper refinement ran (`BackgroundKind::OnPaper` on a plain,
         /// light background).
         paper: bool,
+    },
+    FormFieldsReady {
+        doc: DocId,
+        widgets: Vec<FormWidgetWire>,
+    },
+    FormFilled {
+        doc: DocId,
+        /// Widgets changed.
+        changed: u32,
+        /// Pages whose widgets changed, for repainting.
+        pages: Vec<u32>,
     },
 }
 
@@ -728,6 +780,42 @@ mod tests {
         assert_eq!(
             index(postcard::to_allocvec(&Response::BlobAppended { blob: 1, len: 0 }).unwrap()),
             20
+        );
+        assert_eq!(
+            index(postcard::to_allocvec(&Request::FormFields { doc: DocId(1) }).unwrap()),
+            30
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Request::FillForm {
+                    doc: DocId(1),
+                    working: false,
+                    values: vec![]
+                })
+                .unwrap()
+            ),
+            31
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Response::FormFieldsReady {
+                    doc: DocId(1),
+                    widgets: vec![]
+                })
+                .unwrap()
+            ),
+            22
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Response::FormFilled {
+                    doc: DocId(1),
+                    changed: 0,
+                    pages: vec![]
+                })
+                .unwrap()
+            ),
+            23
         );
         assert_eq!(
             index(
