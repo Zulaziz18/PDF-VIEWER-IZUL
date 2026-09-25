@@ -16,6 +16,7 @@ import { Icon } from "@/design/Icon";
 import { t } from "@/i18n";
 import type { DocumentStore } from "@/state/documentSession";
 import { PAGE_DRAG_TYPE, decodePageDrag } from "@/state/pageSelection";
+import { useUi } from "@/state/uiStore";
 import { useWorkspace } from "@/state/workspaceStore";
 import { Viewport } from "./Viewport";
 import { toggleCompare, useCompare, useCompareMode } from "./compare";
@@ -210,7 +211,10 @@ export function PanelGrid(): JSX.Element {
   const sessions = useWorkspace((s) => s.sessions);
   const compare = useWorkspace((s) => s.compare);
   const host = useRef<HTMLDivElement>(null);
-  const { layout, ratio, focused } = panels;
+  // Presenting shows the document in front alone, however the window is split.
+  const presenting = useUi((s) => s.presenting);
+  const { ratio, focused } = panels;
+  const layout = presenting ? "single" : panels.layout;
   const split = layout !== "single";
   const storeOf = (i: number): DocumentStore | undefined => {
     const doc = panels.panels[i];
@@ -276,7 +280,7 @@ export function PanelGrid(): JSX.Element {
       </div>
     );
   } else {
-    body = <div className="flex-1 min-w-0 min-h-0 flex">{panel(0)}</div>;
+    body = <div className="flex-1 min-w-0 min-h-0 flex">{panel(presenting ? focused : 0)}</div>;
   }
 
   return (

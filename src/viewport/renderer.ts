@@ -69,6 +69,7 @@ import {
   StaleTileError,
   SupersededTileError,
   tileKey,
+  isPageInverted,
 } from "./tileSource";
 
 /** Maximum edge of a preview bitmap, in pixels. Doubles as the thumbnail size. */
@@ -186,6 +187,7 @@ const EMPTY_LAYOUT: Layout = {
 };
 
 export class ViewportRenderer {
+  #solo: number | null = null;
   #host: RendererHost;
   #events: RendererEvents;
   #surface: Canvas2DSurface;
@@ -416,6 +418,13 @@ export class ViewportRenderer {
     this.#bitmaps.clear();
   }
 
+  /** Draws only `page` (presentation mode), or every page again with `null`. */
+  setSoloPage(page: number | null): void {
+    if (page === this.#solo) return;
+    this.#solo = page;
+    this.requestFrame();
+  }
+
   requestFrame(): void {
     if (this.#frame) return;
     this.#frame = requestAnimationFrame(() => {
@@ -516,7 +525,9 @@ export class ViewportRenderer {
       return;
     }
 
-    const pages = visiblePages(this.#layout, view, VISIBLE_MARGIN);
+    const nearby = visiblePages(this.#layout, view, VISIBLE_MARGIN);
+    // Presenting: the one page, its neighbours not drawn at all (Phase 8).
+    const pages = this.#solo === null ? nearby : nearby.filter((p) => p === this.#solo);
     let drawn = 0;
     let missing = 0;
     const wantText: number[] = [];
@@ -536,7 +547,7 @@ export class ViewportRenderer {
       // 1. The page is white even before anything has been rendered, so the
       //    user never sees the canvas background where a page should be.
       this.#surface.drawPageFrame({ x: originX, y: originY, w: pw, h: ph }, dpr);
-      this.#surface.drawPlaceholder({ x: originX, y: originY, w: pw, h: ph }, "#ffffff");
+      this.#surface.drawPlaceholder({ x: originX, y: originY, w: pw, h: ph }, isPageInverted() ? "#1c1c1c" : "#ffffff");
 
       // 2. The preview tier, upscaled to the page's box. A blank page has
       //    nothing to fetch: the white frame above is all of it.

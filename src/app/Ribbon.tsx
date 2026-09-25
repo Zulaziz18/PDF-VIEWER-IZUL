@@ -38,6 +38,8 @@ import { toggleCompare } from "./compare";
 import { markText, openSearchForMarking, toggleAreaTool } from "./redaction";
 import { insertImage, markupSelection, pickAndOpen } from "./actions";
 import { startTextEdit } from "./textEdit";
+import type { ThemePref } from "@/design/theme";
+import { keyOf, useKeymap, withKeys } from "@/state/keymapStore";
 import { exportFlat, requestCloseAll, requestCloseTab, saveDocument } from "./fileActions";
 import {
   deletePages,
@@ -65,13 +67,13 @@ const TABS: ReadonlyArray<{ id: RibbonTab; label: StringKey }> = [
 function fileMenu(): MenuItem[] {
   const none = useWorkspace.getState().activeDoc === null;
   return [
-    { label: t("menu.open"), icon: "open", tone: "amber", shortcut: "Ctrl+O", onSelect: () => void pickAndOpen() },
+    { label: t("menu.open"), icon: "open", tone: "amber", shortcut: keyOf("file.open"), onSelect: () => void pickAndOpen() },
     { label: t("menu.home"), icon: "home", tone: "blue", onSelect: () => useWorkspace.getState().showHome() },
     {
       label: t("menu.save"),
       icon: "save",
       tone: "blue",
-      shortcut: "Ctrl+S",
+      shortcut: keyOf("file.save"),
       separator: true,
       disabled: none,
       onSelect: () => void saveDocument(),
@@ -80,9 +82,17 @@ function fileMenu(): MenuItem[] {
       label: t("menu.saveAs"),
       icon: "saveAs",
       tone: "blue",
-      shortcut: "Ctrl+Shift+S",
+      shortcut: keyOf("file.saveAs"),
       disabled: none,
       onSelect: () => void saveDocument(undefined, "saveAs"),
+    },
+    {
+      label: t("print.command"),
+      icon: "print",
+      tone: "blue",
+      shortcut: keyOf("file.print"),
+      disabled: none,
+      onSelect: () => useUi.getState().setPrinting(true),
     },
     {
       label: t("convert.toImages"),
@@ -103,7 +113,7 @@ function fileMenu(): MenuItem[] {
     {
       label: t("menu.closeTab"),
       icon: "dismiss",
-      shortcut: "Ctrl+W",
+      shortcut: keyOf("file.close"),
       separator: true,
       disabled: none,
       onSelect: () => void requestCloseTab(),
@@ -112,6 +122,21 @@ function fileMenu(): MenuItem[] {
       label: t("menu.closeAll"),
       disabled: useWorkspace.getState().tabs.length === 0,
       onSelect: () => void requestCloseAll(),
+    },
+    {
+      label: t("palette.command"),
+      icon: "search",
+      tone: "violet",
+      shortcut: keyOf("app.palette"),
+      separator: true,
+      onSelect: () => useUi.getState().setPaletteOpen(true),
+    },
+    {
+      label: t("shortcuts.command"),
+      icon: "keyboard",
+      tone: "neutral",
+      shortcut: keyOf("app.shortcuts"),
+      onSelect: () => useUi.getState().setShortcutsOpen(true),
     },
     {
       label: t("menu.about"),
@@ -125,6 +150,8 @@ function fileMenu(): MenuItem[] {
 
 export function MenuBar(): JSX.Element {
   const ribbon = useUi((s) => s.ribbon);
+  // Tooltips name the keys the user has now.
+  useKeymap((s) => s.keys);
   const canUndo = useDocument((s) => s.canUndo);
   const canRedo = useDocument((s) => s.canRedo);
   const searchOpen = useDocument((s) => s.search.open);
@@ -143,26 +170,34 @@ export function MenuBar(): JSX.Element {
         {t("menu.file")}
       </MenuButton>
       <span aria-hidden="true" className="w-px h-4 mx-1 bg-[var(--izul-border)]" />
-      <IconButton icon="open" tone="amber" label={t("menu.open")} hint={`${t("menu.open")} (Ctrl+O)`} onClick={() => void pickAndOpen()} />
+      <IconButton icon="open" tone="amber" label={t("menu.open")} hint={withKeys(t("menu.open"), "file.open")} onClick={() => void pickAndOpen()} />
       <IconButton
         icon="save"
         tone="blue"
         label={t("menu.save")}
-        hint={`${t("menu.save")} (Ctrl+S)`}
+        hint={withKeys(t("menu.save"), "file.save")}
         disabled={!dirty || saving}
         onClick={() => void saveDocument()}
       />
       <IconButton
+        icon="print"
+        tone="blue"
+        label={t("print.command")}
+        hint={withKeys(t("print.command"), "file.print")}
+        disabled={useWorkspace.getState().activeDoc === null}
+        onClick={() => useUi.getState().setPrinting(true)}
+      />
+      <IconButton
         icon="undo"
         label={t("annot.undo")}
-        hint={`${t("annot.undo")} (Ctrl+Z)`}
+        hint={withKeys(t("annot.undo"), "edit.undo")}
         disabled={!canUndo}
         onClick={() => void store().undoAnnot()}
       />
       <IconButton
         icon="redo"
         label={t("annot.redo")}
-        hint={`${t("annot.redo")} (Ctrl+Y)`}
+        hint={withKeys(t("annot.redo"), "edit.redo")}
         disabled={!canRedo}
         onClick={() => void store().redoAnnot()}
       />
@@ -200,7 +235,7 @@ export function MenuBar(): JSX.Element {
         type="button"
         aria-pressed={searchOpen}
         onClick={() => store().toggleSearch()}
-        title={`${t("search.label")} (Ctrl+F)`}
+        title={withKeys(t("search.label"), "view.find")}
         className={[
           "h-7 w-[180px] px-2 flex items-center gap-2 rounded-[6px] text-[13px] border",
           searchOpen
@@ -288,14 +323,14 @@ function UndoGroup(props: { canUndo: boolean; canRedo: boolean; selection: numbe
   return (
     <>
       <RibbonStack>
-        <RibbonSmall icon="undo" label={t("annot.undo")} hint={`${t("annot.undo")} (Ctrl+Z)`} disabled={!props.canUndo} onClick={() => void store().undoAnnot()} />
-        <RibbonSmall icon="redo" label={t("annot.redo")} hint={`${t("annot.redo")} (Ctrl+Y)`} disabled={!props.canRedo} onClick={() => void store().redoAnnot()} />
+        <RibbonSmall icon="undo" label={t("annot.undo")} hint={withKeys(t("annot.undo"), "edit.undo")} disabled={!props.canUndo} onClick={() => void store().undoAnnot()} />
+        <RibbonSmall icon="redo" label={t("annot.redo")} hint={withKeys(t("annot.redo"), "edit.redo")} disabled={!props.canRedo} onClick={() => void store().redoAnnot()} />
       </RibbonStack>
       <RibbonButton
         icon="delete"
         tone="rose"
         label={t("annot.delete")}
-        hint={`${t("annot.delete")} (Delete)`}
+        hint={withKeys(t("annot.delete"), "edit.delete")}
         disabled={props.selection === 0}
         onClick={() => void store().deleteSelected()}
       />
@@ -375,23 +410,23 @@ function HomePanel(): JSX.Element {
           store().setTool(null);
         }}
       />
-      <RibbonButton icon="open" tone="amber" label={t("ribbon.open")} hint={`${t("menu.open")} (Ctrl+O)`} onClick={() => void pickAndOpen()} />
+      <RibbonButton icon="open" tone="amber" label={t("ribbon.open")} hint={withKeys(t("menu.open"), "file.open")} onClick={() => void pickAndOpen()} />
       <RibbonDivider />
       <MarkupButton kind="Highlight" armed={markup} />
       <RibbonButton icon="note" tone="amber" label={t("tool.note")} {...toolProps("Note", tool)} />
       <RibbonButton icon="textbox" tone="violet" label={t("tool.text")} {...toolProps("FreeText", tool)} />
       <RibbonDivider />
-      <RibbonButton icon="search" tone="violet" label={t("ribbon.find")} hint={`${t("search.label")} (Ctrl+F)`} onClick={() => store().toggleSearch(true)} />
+      <RibbonButton icon="search" tone="violet" label={t("ribbon.find")} hint={withKeys(t("search.label"), "view.find")} onClick={() => store().toggleSearch(true)} />
       <RibbonDivider />
       <RibbonStack>
         <RibbonSmall icon="fitWidth" tone="blue" label={t("zoom.fitWidthLong")} pressed={zoomMode === "fitWidth"} onClick={() => store().setZoomMode("fitWidth")} />
         <RibbonSmall icon="fitPage" tone="blue" label={t("zoom.fitPageLong")} pressed={zoomMode === "fitPage"} onClick={() => store().setZoomMode("fitPage")} />
       </RibbonStack>
       <RibbonStack>
-        <RibbonSmall icon="actualSize" tone="blue" label={t("zoom.actualLong")} hint="Ctrl+0" pressed={zoomMode === "actual"} onClick={() => store().setZoomMode("actual")} />
+        <RibbonSmall icon="actualSize" tone="blue" label={t("zoom.actualLong")} hint={withKeys(t("zoom.actualLong"), "view.actualSize")} pressed={zoomMode === "actual"} onClick={() => store().setZoomMode("actual")} />
         <div className="flex">
-          <RibbonSmall icon="zoomOut" tone="blue" label={t("zoom.out")} hint={`${t("zoom.out")} (Ctrl+−)`} hideLabel onClick={() => store().zoomOut()} />
-          <RibbonSmall icon="zoomIn" tone="blue" label={t("zoom.in")} hint={`${t("zoom.in")} (Ctrl++)`} hideLabel onClick={() => store().zoomIn()} />
+          <RibbonSmall icon="zoomOut" tone="blue" label={t("zoom.out")} hint={withKeys(t("zoom.out"), "view.zoomOut")} hideLabel onClick={() => store().zoomOut()} />
+          <RibbonSmall icon="zoomIn" tone="blue" label={t("zoom.in")} hint={withKeys(t("zoom.in"), "view.zoomIn")} hideLabel onClick={() => store().zoomIn()} />
         </div>
       </RibbonStack>
       <RibbonDivider />
@@ -415,7 +450,54 @@ function HomePanel(): JSX.Element {
         }))}
       />
       <WindowButton />
+      <RibbonDivider />
+      <RibbonButton
+        icon="present"
+        tone="orange"
+        label={t("present.button")}
+        hint={withKeys(t("present.command"), "view.present")}
+        onClick={() => useUi.getState().setPresenting(true)}
+      />
+      <RibbonButton
+        icon="focusMode"
+        tone="teal"
+        label={t("focus.button")}
+        hint={withKeys(t("focus.command"), "view.focus")}
+        onClick={() => useUi.getState().setFocusMode(true)}
+      />
+      <ThemeButton />
     </>
+  );
+}
+
+function ThemeButton(): JSX.Element {
+  const pref = useUi((s) => s.themePref);
+  const invert = useUi((s) => s.invertPages);
+  const choices: ReadonlyArray<{ pref: ThemePref; label: StringKey }> = [
+    { pref: "system", label: "theme.system" },
+    { pref: "light", label: "theme.light" },
+    { pref: "dark", label: "theme.dark" },
+  ];
+  return (
+    <RibbonButton
+      icon="theme"
+      tone="violet"
+      label={t("theme.button")}
+      onClick={() => undefined}
+      menu={[
+        ...choices.map((c) => ({
+          label: t(c.label),
+          checked: pref === c.pref,
+          onSelect: () => useUi.getState().setThemePref(c.pref),
+        })),
+        {
+          label: t("invert.command"),
+          checked: invert,
+          separator: true,
+          onSelect: () => useUi.getState().setInvertPages(!invert),
+        },
+      ]}
+    />
   );
 }
 
@@ -535,8 +617,8 @@ function PagesPanel(): JSX.Element {
       <RibbonButton icon="split" tone="orange" label={t("pages.split")} hint={t("pages.splitHint")} onClick={splitDocument} />
       <RibbonDivider />
       <RibbonStack>
-        <RibbonSmall icon="undo" label={t("annot.undo")} hint={`${t("annot.undo")} (Ctrl+Z)`} disabled={!canUndo} onClick={() => void store().undoAnnot()} />
-        <RibbonSmall icon="redo" label={t("annot.redo")} hint={`${t("annot.redo")} (Ctrl+Y)`} disabled={!canRedo} onClick={() => void store().redoAnnot()} />
+        <RibbonSmall icon="undo" label={t("annot.undo")} hint={withKeys(t("annot.undo"), "edit.undo")} disabled={!canUndo} onClick={() => void store().undoAnnot()} />
+        <RibbonSmall icon="redo" label={t("annot.redo")} hint={withKeys(t("annot.redo"), "edit.redo")} disabled={!canRedo} onClick={() => void store().redoAnnot()} />
       </RibbonStack>
     </>
   );
@@ -626,13 +708,14 @@ function ConvertPanel(): JSX.Element {
       <RibbonDivider />
       <RibbonButton icon="ocr" tone="teal" label={t("ocr.button")} hint={t("ocr.hint")} onClick={() => ui().setOcring(true)} />
       <RibbonDivider />
-      <RibbonButton icon="saveAs" tone="blue" label={t("menu.saveAs")} hint={`${t("menu.saveAs")} (Ctrl+Shift+S)`} onClick={() => void saveDocument(undefined, "saveAs")} />
+      <RibbonButton icon="saveAs" tone="blue" label={t("menu.saveAs")} hint={withKeys(t("menu.saveAs"), "file.saveAs")} onClick={() => void saveDocument(undefined, "saveAs")} />
     </>
   );
 }
 
 export function Ribbon(): JSX.Element {
   const ribbon = useUi((s) => s.ribbon);
+  useKeymap((s) => s.keys);
   const error = useDocument((s) => s.annotError);
   const markup = useUi((s) => s.markup);
   return (

@@ -53,6 +53,8 @@ pub struct AppState {
     pub hidden: crate::pagemap::HiddenSources,
     /// OCR runs in flight (Phase 7).
     pub ocr: crate::ocr::OcrRuns,
+    /// Pages rendered for printing, until the print dialog closes (Phase 8).
+    pub printing: crate::printing::PrintJobs,
 }
 
 impl std::fmt::Debug for AppState {
@@ -350,6 +352,7 @@ fn capture_cover(render: Arc<RenderService>, data_dir: PathBuf, doc: u64, file: 
             col: 0,
             row: 0,
             kind: TileKind::Preview,
+            invert: false,
         };
         let tile = match render
             .fetch(key, 0, crate::render::Priority::Prefetch)

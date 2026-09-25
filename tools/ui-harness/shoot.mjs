@@ -459,6 +459,59 @@ const SCENES = {
       await page.getByText(/Model OCR belum terpasang/).waitFor();
     },
   },
+  palette: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await settle(page);
+      await page.keyboard.press("Control+Shift+P");
+      await page.getByRole("combobox", { name: "Ketik nama perintah…" }).fill("sim");
+    },
+  },
+  shortcuts: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await settle(page);
+      await page.keyboard.press("F1");
+      await page.getByRole("heading", { name: "Pintasan keyboard" }).waitFor();
+      await page.getByRole("button", { name: "Ubah pintasan Buka…", exact: true }).click();
+      await page.getByText(/Tekan tombol baru untuk/).waitFor();
+    },
+  },
+  present: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await settle(page);
+      await page.keyboard.press("F5");
+      await page.keyboard.press("PageDown");
+      await settle(page, 1000);
+    },
+  },
+  focus: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await settle(page);
+      await page.keyboard.press("F11");
+      await settle(page, 1000);
+    },
+  },
+  print: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await settle(page);
+      await page.keyboard.press("Control+P");
+      await page.getByRole("heading", { name: "Cetak", exact: true }).waitFor();
+    },
+  },
+  invert: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await izul(page, (z) => z.goToPage(2));
+      await settle(page);
+      await page.getByRole("button", { name: "Tema", exact: true }).click();
+      await page.getByRole("menuitemcheckbox", { name: "Balik warna halaman di mode gelap" }).or(page.getByText("Balik warna halaman di mode gelap")).first().click();
+      await settle(page, 1200);
+    },
+  },
   textedit: {
     session: [`${docsFolder}\\Panduan Studi 2026.pdf`],
     async steps(page) {
@@ -656,6 +709,7 @@ async function newPage({ width, height, theme, scale, scene }) {
       col: Number(col),
       row: Number(row),
       tier,
+      invert: url.searchParams.get("inv") === "1",
     });
     page.__lastTile = Date.now();
     if (!header.ok) return route.fulfill({ status: 404, headers: cors });

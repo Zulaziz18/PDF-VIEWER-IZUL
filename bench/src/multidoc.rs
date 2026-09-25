@@ -271,6 +271,7 @@ async fn open_and_render(worker: &mut Worker, doc: DocId, path: &Path) -> bool {
             rotation: RotationQuarter::from_degrees(0),
             quality: RenderQuality::Sharp,
             generation: Generation(1),
+            invert: false,
         })
         .await;
     matches!(reply, Response::TileReady { .. })
@@ -370,6 +371,7 @@ async fn main() {
                 max_edge_px: 256,
                 rotation: RotationQuarter::from_degrees(0),
                 generation: Generation(1),
+                invert: false,
             })
             .await;
     }

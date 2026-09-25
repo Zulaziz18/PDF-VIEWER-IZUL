@@ -51,17 +51,35 @@ export interface TileRef {
   readonly tier: TileTier;
 }
 
+/**
+ * Pages drawn inverted for dark mode (Phase 8). One setting for the window,
+ * as the theme is; part of every tile's identity, so a light tile is never
+ * drawn where a dark one belongs, on either side of the protocol.
+ */
+let inverted = false;
+
+/** Sets the inversion; returns whether it changed. */
+export function setPageInversion(on: boolean): boolean {
+  const changed = on !== inverted;
+  inverted = on;
+  return changed;
+}
+
+export function isPageInverted(): boolean {
+  return inverted;
+}
+
 /** The URI that identifies a tile, and doubles as its cache key. */
 export function tileUri(ref: TileRef, generation: number, priority: Priority): string {
   return (
     `http://izul.localhost/tile/${ref.doc}/${ref.page}/${ref.rotation}/${ref.scale}/${ref.col}/${ref.row}/${ref.tier}` +
-    `?g=${generation}&p=${priority}`
+    `?g=${generation}&p=${priority}${inverted ? "&inv=1" : ""}`
   );
 }
 
 /** A stable key for a tile, without the scheduling parameters. */
 export function tileKey(ref: TileRef): string {
-  return `${ref.doc}/${ref.page}/${ref.rotation}/${ref.scale}/${ref.col}/${ref.row}/${ref.tier}`;
+  return `${ref.doc}/${ref.page}/${ref.rotation}/${ref.scale}/${ref.col}/${ref.row}/${ref.tier}${inverted ? "/inv" : ""}`;
 }
 
 /** A tile whose pixels are ready to draw. */

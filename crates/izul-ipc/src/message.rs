@@ -21,7 +21,7 @@ use izul_model::geom::{PageFrame, PdfRectF, RotationQuarter};
 /// So the worker announces this number the moment it connects, and the
 /// supervisor refuses a worker that does not match. Bump it whenever anything
 /// in [`Request`] or [`Response`] changes shape.
-pub const PROTOCOL_VERSION: u32 = 12;
+pub const PROTOCOL_VERSION: u32 = 13;
 
 /// Identifies one open document within a worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -94,6 +94,8 @@ pub enum Request {
         rotation: RotationQuarter,
         quality: RenderQuality,
         generation: Generation,
+        /// Dark mode's smart inversion (`izul_pdf::invert`).
+        invert: bool,
     },
     /// A whole page at thumbnail resolution: the low-resolution first tier of
     /// SPEC 9's two-tier render, and the sidebar's thumbnail, which are the
@@ -104,6 +106,7 @@ pub enum Request {
         max_edge_px: u32,
         rotation: RotationQuarter,
         generation: Generation,
+        invert: bool,
     },
     /// Page text, and — when `with_boxes` is set — the per-character boxes the
     /// selection layer needs, in display space at `rotation`.

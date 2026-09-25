@@ -130,6 +130,11 @@ const ICONS = {
   removeBackground: "wand",
   formFill: "form",
   editText: "text_edit_style",
+  print: "print",
+  keyboard: "keyboard",
+  present: "presenter",
+  focusMode: "full_screen_maximize",
+  theme: "dark_theme",
 };
 const SIZES = [20, 24];
 

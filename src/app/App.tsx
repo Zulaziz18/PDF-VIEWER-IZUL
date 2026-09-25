@@ -30,6 +30,9 @@ import { PromptDialog } from "./PromptDialog";
 import { RedactDialog } from "./RedactDialog";
 import { OcrDialog } from "./OcrDialog";
 import { TextEditDialog } from "./TextEditDialog";
+import { CommandPalette } from "./CommandPalette";
+import { PrintDialog } from "./PrintDialog";
+import { ShortcutsDialog } from "./ShortcutsDialog";
 import { SplitDialog } from "./SplitDialog";
 import { Home } from "./Home";
 import { PropertiesPanel } from "./PropertiesPanel";
@@ -41,7 +44,10 @@ import { useDropTarget } from "./dropTarget";
 import { installDraftOffer, useAutosave, useCloseGuard, useFileWatch } from "./fileActions";
 import { useOpenFilesFromOtherInstance } from "./openFiles";
 import { useShortcuts } from "./shortcuts";
+import { BareHint } from "./BareHint";
+import { usePageInversion, usePresentation } from "./presentation";
 import { useDocument } from "@/state/documentStore";
+import { useUi } from "@/state/uiStore";
 import { useWorkspace } from "@/state/workspaceStore";
 import { t } from "@/i18n";
 
@@ -62,6 +68,11 @@ export function App(): React.JSX.Element {
   useCloseGuard();
   useAutosave();
   useFileWatch();
+  usePresentation();
+  usePageInversion();
+  const presenting = useUi((s) => s.presenting);
+  const focusMode = useUi((s) => s.focusMode);
+  const bare = (presenting || focusMode) && doc !== null;
 
   useEffect(() => {
     // Once per run, not once per mount. React's development mode mounts every
@@ -70,6 +81,8 @@ export function App(): React.JSX.Element {
     // is the only place the two mounts share.
     if (startupDone) return;
     startupDone = true;
+    // The stored theme and page inversion, before the first document draws.
+    void useUi.getState().loadPrefs();
     const workspace = useWorkspace.getState();
     void workspace
       .restoreSession()
@@ -82,11 +95,16 @@ export function App(): React.JSX.Element {
       });
   }, []);
 
-  const showHome = home || doc === null;
+  const showHome = (home || doc === null) && !bare;
 
   return (
-    <div className="h-full flex flex-col bg-[var(--izul-chrome)]">
-      <TitleBar />
+    <div
+      className="h-full flex flex-col bg-[var(--izul-chrome)]"
+      data-presenting={presenting ? "" : undefined}
+      // Black around the page while presenting: the canvas reads this.
+      style={presenting ? ({ "--izul-canvas": "#000000" } as React.CSSProperties) : undefined}
+    >
+      {!bare && <TitleBar />}
       {error !== null && (
         <div role="alert" className="px-3 py-2 bg-[var(--izul-danger)] text-white text-[13px]">
           {t("err.open")}: {error}
@@ -95,22 +113,27 @@ export function App(): React.JSX.Element {
       {showHome && <Home dropping={dropping} />}
       {doc !== null && (
         <div className={showHome ? "hidden" : "flex-1 min-h-0 flex flex-col"}>
-          <MenuBar />
-          <Ribbon />
-          <FileBanner />
-          <FormBanner />
+          {!bare && (
+            <>
+              <MenuBar />
+              <Ribbon />
+              <FileBanner />
+              <FormBanner />
+            </>
+          )}
           <div
             className={[
               "flex-1 min-h-0 flex border-t border-[var(--izul-border)]",
               dropping ? "outline outline-2 -outline-offset-2 outline-[var(--izul-accent)]" : "",
             ].join(" ")}
           >
-            <LeftRail />
-            <Sidebar />
+            {!bare && <LeftRail />}
+            {!bare && <Sidebar />}
             <PanelGrid />
-            <PropertiesPanel />
+            {!bare && <PropertiesPanel />}
           </div>
-          <BottomBar />
+          {!bare && <BottomBar />}
+          {bare && <BareHint presenting={presenting} />}
         </div>
       )}
       <About />
@@ -119,6 +142,9 @@ export function App(): React.JSX.Element {
       <RedactDialog />
       <OcrDialog />
       <TextEditDialog />
+      <CommandPalette />
+      <PrintDialog />
+      <ShortcutsDialog />
       <PromptDialog />
       <NoticeToast />
     </div>

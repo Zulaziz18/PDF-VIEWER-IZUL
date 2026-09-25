@@ -239,6 +239,7 @@ async fn a_worker_opens_renders_and_reports_honestly() {
             rotation: RotationQuarter::None,
             quality: RenderQuality::Sharp,
             generation: Generation(1),
+            invert: false,
         })
         .await;
     let slot = match tile {
@@ -298,6 +299,7 @@ async fn a_request_for_a_missing_page_is_refused_not_fatal() {
             rotation: RotationQuarter::None,
             quality: RenderQuality::Fast,
             generation: Generation(1),
+            invert: false,
         })
         .await;
     assert!(
@@ -372,6 +374,7 @@ async fn killing_one_worker_leaves_the_others_serving() {
             rotation: RotationQuarter::None,
             quality: RenderQuality::Fast,
             generation: Generation(1),
+            invert: false,
         })
         .await;
     assert!(
@@ -471,6 +474,7 @@ async fn a_superseded_generation_is_dropped_rather_than_rendered() {
             rotation: RotationQuarter::None,
             quality: RenderQuality::Fast,
             generation: Generation(3),
+            invert: false,
         })
         .await;
     assert!(
@@ -489,6 +493,7 @@ async fn a_superseded_generation_is_dropped_rather_than_rendered() {
             rotation: RotationQuarter::None,
             quality: RenderQuality::Fast,
             generation: Generation(10),
+            invert: false,
         })
         .await;
     assert!(

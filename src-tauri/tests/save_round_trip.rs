@@ -426,6 +426,7 @@ async fn exports_write_new_files_and_touch_nothing_else() {
         Export::Flat {
             target: flat.to_string_lossy().into(),
         },
+        false,
     )
     .await
     .unwrap();
@@ -445,6 +446,7 @@ async fn exports_write_new_files_and_touch_nothing_else() {
             target: one.to_string_lossy().into(),
             pages: vec![1],
         },
+        false,
     )
     .await
     .unwrap();
@@ -469,12 +471,47 @@ async fn exports_write_new_files_and_touch_nothing_else() {
             dpi: 72,
             jpeg_quality: None,
         },
+        false,
     )
     .await
     .unwrap();
     assert_eq!(images.len(), 2);
     let first = image::open(&images[0]).unwrap();
     assert_eq!((first.width(), first.height()), (595, 842));
+
+    // Printing "without annotations" (Phase 8): the same page, bare. Page 2
+    // carries ink, text and a picture, so the two renders must differ — and
+    // the bare one must be the page as the file has it.
+    let bare_dir = live.dir.join("tanpa");
+    std::fs::create_dir_all(&bare_dir).unwrap();
+    let bare = saving::export(
+        &live.pool,
+        &state,
+        1,
+        &source,
+        &scratch,
+        Export::Images {
+            folder: bare_dir.to_string_lossy().into(),
+            stem: "hal".into(),
+            pages: vec![1],
+            dpi: 72,
+            jpeg_quality: None,
+        },
+        true,
+    )
+    .await
+    .unwrap();
+    let with = image::open(&images[1]).unwrap().to_rgba8();
+    let without = image::open(&bare[0]).unwrap().to_rgba8();
+    let differing = with
+        .pixels()
+        .zip(without.pixels())
+        .filter(|(a, b)| a.0.iter().zip(b.0.iter()).any(|(x, y)| x.abs_diff(*y) > 40))
+        .count();
+    assert!(
+        differing > 500,
+        "anotasi tidak ikut tercetak berbeda: {differing}"
+    );
 
     assert_eq!(
         std::fs::read(&path).unwrap(),

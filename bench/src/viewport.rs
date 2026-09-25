@@ -385,6 +385,7 @@ fn sharp_key(doc: u64, page: u32, ppp_milli: u32, col: u16, row: u16) -> TileKey
         col,
         row,
         kind: TileKind::Sharp,
+        invert: false,
     }
 }
 
@@ -397,6 +398,7 @@ fn preview_key(doc: u64, page: u32) -> TileKey {
         col: 0,
         row: 0,
         kind: TileKind::Preview,
+        invert: false,
     }
 }
 

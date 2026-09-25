@@ -45,6 +45,7 @@ pub mod indexing;
 pub mod logging;
 pub mod ocr;
 pub mod pagemap;
+pub mod printing;
 pub mod protocol;
 pub mod render;
 pub mod save_commands;
@@ -192,6 +193,7 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
         stamps: parking_lot::Mutex::new(std::collections::HashMap::new()),
         hidden: pagemap::HiddenSources::default(),
         ocr: ocr::OcrRuns::default(),
+        printing: printing::PrintJobs::default(),
     };
 
     let title = version::title_bar_text(&v);
@@ -231,6 +233,12 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
             if protocol::parse_image_uri(&uri).is_ok() {
                 let app = ctx.app_handle().clone();
                 responder.respond(serve_image(&app, &uri));
+                return;
+            }
+            if protocol::parse_print_uri(&uri).is_ok() {
+                let app = ctx.app_handle().clone();
+                // A file read: off the webview's thread.
+                handle.spawn_blocking(move || responder.respond(serve_print(&app, &uri)));
                 return;
             }
             handle.spawn(async move {
@@ -311,6 +319,8 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
             forms::form_fields,
             forms::form_set,
             textedit::text_replace,
+            printing::print_prepare,
+            printing::print_done,
             save_commands::export_document,
             save_commands::export_history,
             save_commands::autosave_drafts,
@@ -475,6 +485,40 @@ impl TileTraffic {
 /// only do if told what it is. The CORS headers are the same ones every answer
 /// from this protocol needs; the Phase 1 notes in CLAUDE.md explain what
 /// happens without them, which is a `TypeError` with no status code at all.
+/// A page prepared for printing (`printing.rs`), from its scratch file.
+pub fn serve_print(app: &tauri::AppHandle, uri: &str) -> tauri::http::Response<Vec<u8>> {
+    use tauri::http::{Response, StatusCode};
+    use tauri::Manager as _;
+
+    let respond = |code: StatusCode, body: Vec<u8>| -> Response<Vec<u8>> {
+        let mut builder = Response::builder().status(code);
+        if code == StatusCode::OK {
+            builder = builder.header("Content-Type", "image/jpeg");
+        }
+        // Every answer, errors included: without these the browser drops
+        // the response before our code sees it (Phase 1, bug 5).
+        for (k, val) in protocol::cors_headers() {
+            builder = builder.header(k, val);
+        }
+        builder
+            .body(body)
+            .unwrap_or_else(|_| Response::new(Vec::new()))
+    };
+    let Ok(parsed) = protocol::parse_print_uri(uri) else {
+        return respond(StatusCode::BAD_REQUEST, Vec::new());
+    };
+    let Some(state) = app.try_state::<AppState>() else {
+        return respond(StatusCode::SERVICE_UNAVAILABLE, Vec::new());
+    };
+    let Some(file) = state.printing.page(parsed.job, parsed.index) else {
+        return respond(StatusCode::NOT_FOUND, Vec::new());
+    };
+    match std::fs::read(&file) {
+        Ok(bytes) => respond(StatusCode::OK, bytes),
+        Err(_) => respond(StatusCode::GONE, Vec::new()),
+    }
+}
+
 pub fn serve_image(app: &tauri::AppHandle, uri: &str) -> tauri::http::Response<Vec<u8>> {
     use tauri::http::{Response, StatusCode};
     use tauri::Manager as _;

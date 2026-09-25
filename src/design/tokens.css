@@ -202,3 +202,43 @@ body {
   white-space: nowrap;
   border: 0;
 }
+
+/* Printing (Phase 8, `src/app/print.ts`): the prepared pages exist only on
+ * paper; everything else exists only on screen. */
+#izul-print {
+  display: none;
+}
+@media print {
+  @page {
+    margin: 8mm;
+  }
+  body > *:not(#izul-print) {
+    display: none !important;
+  }
+  html,
+  body {
+    background: #fff !important;
+    height: auto !important;
+    overflow: visible !important;
+  }
+  #izul-print {
+    display: block;
+  }
+  .izul-print-page {
+    width: 100%;
+    height: calc(100vh - 1px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    break-after: page;
+    overflow: hidden;
+  }
+  .izul-print-page:last-child {
+    break-after: auto;
+  }
+  .izul-print-page img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain;
+  }
+}
