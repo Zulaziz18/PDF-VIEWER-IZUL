@@ -9,6 +9,7 @@ members = [
     "crates/izul-store",
     "crates/izul-write",
     "crates/izul-redact",
+    "crates/izul-ocr",
     "bench",
     "tests-integration",
     "src-tauri",
@@ -29,6 +30,7 @@ izul-ipc = { path = "crates/izul-ipc" }
 izul-store = { path = "crates/izul-store" }
 izul-write = { path = "crates/izul-write" }
 izul-redact = { path = "crates/izul-redact" }
+izul-ocr = { path = "crates/izul-ocr" }
 
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
@@ -60,6 +62,33 @@ todo = "deny"
 unimplemented = "deny"
 indexing_slicing = "warn"
 undocumented_unsafe_blocks = "deny"
+
+# The OCR engine is numeric code that runs ~70x slower unoptimised: 55 s for
+# one page in a debug build against 0.75 s in release, far past the 6 s a
+# worker may stay silent before the supervisor takes it for hung. So it is
+# optimised even in `npm run tauri dev`; our own crates stay debuggable.
+[profile.dev.package.ocrs]
+opt-level = 3
+[profile.dev.package.rten]
+opt-level = 3
+[profile.dev.package.rten-tensor]
+opt-level = 3
+[profile.dev.package.rten-imageproc]
+opt-level = 3
+[profile.dev.package.rten-vecmath]
+opt-level = 3
+[profile.dev.package.rten-simd]
+opt-level = 3
+[profile.dev.package.rten-gemm]
+opt-level = 3
+[profile.dev.package.rten-base]
+opt-level = 3
+[profile.dev.package.rten-model-file]
+opt-level = 3
+[profile.dev.package.rten-parallel]
+opt-level = 3
+[profile.dev.package.rten-shape-inference]
+opt-level = 3
 
 [profile.release]
 opt-level = 3

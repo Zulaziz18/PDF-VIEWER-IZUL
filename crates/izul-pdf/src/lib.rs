@@ -37,6 +37,7 @@ pub mod geom;
 #[cfg(test)]
 mod golden;
 pub mod izul;
+pub mod ocr_layer;
 pub mod outline;
 pub mod redaction;
 pub mod render;

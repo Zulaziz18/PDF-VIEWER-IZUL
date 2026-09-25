@@ -361,6 +361,36 @@ const SCENES = {
       await settle(page);
     },
   },
+  // Phase 7 ------------------------------------------------------------------
+  ocrdialog: {
+    session: [`${docsFolder}\\Data Pegawai.pdf`],
+    async steps(page) {
+      await page.getByRole("tab", { name: "Konversi", exact: true }).click();
+      await page.getByRole("button", { name: "Kenali Teks (OCR)", exact: true }).click();
+      await page.getByRole("dialog").waitFor();
+      await page.getByRole("button", { name: /Kenali \d+ halaman/ }).waitFor();
+    },
+  },
+  ocrrunning: {
+    session: [`${docsFolder}\\Data Pegawai.pdf`],
+    async steps(page) {
+      await page.getByRole("tab", { name: "Konversi", exact: true }).click();
+      await page.getByRole("button", { name: "Kenali Teks (OCR)", exact: true }).click();
+      await page.getByRole("dialog").waitFor();
+      await page.getByRole("radio", { name: "Timpa berkas ini" }).check();
+      await page.getByRole("button", { name: /Kenali \d+ halaman/ }).click();
+      await page.getByText(/Mengenali halaman 3 dari 5/).waitFor();
+    },
+  },
+  ocrmissing: {
+    session: [`${docsFolder}\\Data Pegawai.pdf`],
+    flags: { noOcr: true },
+    async steps(page) {
+      await page.getByRole("tab", { name: "Konversi", exact: true }).click();
+      await page.getByRole("button", { name: "Kenali Teks (OCR)", exact: true }).click();
+      await page.getByText(/Model OCR belum terpasang/).waitFor();
+    },
+  },
   compare: {
     session: [`${docsFolder}\\Draf Perjanjian v1.pdf`, `${docsFolder}\\Draf Perjanjian v2.pdf`],
     async steps(page) {

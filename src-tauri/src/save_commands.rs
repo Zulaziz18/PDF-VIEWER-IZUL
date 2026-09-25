@@ -106,7 +106,11 @@ pub async fn redact_apply(
         .annots
         .redaction(doc)
         .ok_or_else(|| "Belum ada tanda redaksi di dokumen ini.".to_string())?;
-    let report = save_with(&state, doc, target, Some(&redaction)).await?;
+    let rewrite = saving::Rewrite {
+        redaction: Some(redaction),
+        ocr: None,
+    };
+    let report = save_with(&state, doc, target, Some(&rewrite)).await?;
     let saved = PathBuf::from(&report.path);
     let cover = crate::thumbs::file_for(&state.data_dir, &saved);
     if cover.exists() {
@@ -171,11 +175,11 @@ pub async fn redact_preview(
     })
 }
 
-async fn save_with(
+pub(crate) async fn save_with(
     state: &AppState,
     doc: u64,
     target: Option<String>,
-    redaction: Option<&saving::Redaction>,
+    rewrite: Option<&saving::Rewrite>,
 ) -> CmdResult<SaveReport> {
     let (path, file_id, page_count) = doc_path(state, doc)?;
     if let Some(target) = &target {
@@ -189,7 +193,7 @@ async fn save_with(
         &path,
         page_count,
         target.as_deref(),
-        redaction,
+        rewrite,
     )
     .await?;
 

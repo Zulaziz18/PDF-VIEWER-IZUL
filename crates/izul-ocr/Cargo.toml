@@ -1,0 +1,18 @@
+[package]
+name = "izul-ocr"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# Local OCR (SPEC 17, Phase 7): `ocrs`, pure Rust — nothing to build in C++ on
+# the user's machine. The models are not in the repository; see
+# vendor/ocrs/fetch.sh and the licence note in CLAUDE.md before shipping them.
+[dependencies]
+izul-pdf.workspace = true
+thiserror.workspace = true
+ocrs = { version = "=0.13.1", default-features = false, features = ["rten"] }
+rten = { version = "0.26", default-features = false, features = ["rten_format"] }
+
+[lints]
+workspace = true

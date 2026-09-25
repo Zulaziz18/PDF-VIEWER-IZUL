@@ -10,6 +10,7 @@ name = "izul-worker"
 path = "src/main.rs"
 
 [dependencies]
+izul-ocr.workspace = true
 izul-pdf.workspace = true
 izul-ipc.workspace = true
 izul-model.workspace = true

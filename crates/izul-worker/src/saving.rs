@@ -23,6 +23,9 @@ pub struct Workbench {
     work: HashMap<DocId, Document>,
     blobs: HashMap<u64, Vec<u8>>,
     next_blob: u64,
+    /// The OCR engine, loaded on first use and kept: loading it takes a few
+    /// milliseconds, but 12 MB of models read again for every page would not.
+    ocr: Option<(String, izul_ocr::Ocr)>,
 }
 
 impl std::fmt::Debug for Workbench {
@@ -44,6 +47,8 @@ pub enum Failure {
     /// A redaction that could not be done, or did not verify. The detail is
     /// shown to the user as it is.
     Redact(Option<DocId>, String),
+    /// OCR could not run (models missing or unreadable, or the engine failed).
+    Ocr(Option<DocId>, String),
 }
 
 impl Workbench {
@@ -70,6 +75,20 @@ impl Workbench {
             .min(bytes.len());
         let data = bytes.get(start..end).unwrap_or_default().to_vec();
         Ok(Response::BlobBytes { blob, data })
+    }
+
+    /// Loads the OCR engine from `models` unless it is loaded from there.
+    fn ocr(&mut self, models: &str) -> Result<(), Failure> {
+        if self.ocr.as_ref().is_none_or(|(dir, _)| dir != models) {
+            let dir = std::path::Path::new(models);
+            let engine = izul_ocr::Ocr::load(
+                &dir.join("text-detection.rten"),
+                &dir.join("text-recognition.rten"),
+            )
+            .map_err(|e| Failure::Ocr(None, e.to_string()))?;
+            self.ocr = Some((models.to_string(), engine));
+        }
+        Ok(())
     }
 
     fn work(&self, doc: DocId) -> Result<&Document, Failure> {
@@ -311,6 +330,32 @@ impl Workbench {
                 }
                 Ok(Response::RedactionVerified {
                     pages: pages.len() as u32,
+                })
+            }
+            Request::WorkOcr {
+                doc,
+                page,
+                models,
+                force,
+            } => {
+                if !self.work.contains_key(&doc) {
+                    return Err(Failure::NoWorkingCopy(doc));
+                }
+                self.ocr(&models)?;
+                let (Some(work), Some((_, ocr))) = (self.work.get(&doc), self.ocr.as_ref()) else {
+                    return Err(Failure::NoWorkingCopy(doc));
+                };
+                let outcome = izul_ocr::ocr_page(work, page, ocr, force).map_err(|e| match e {
+                    izul_ocr::OcrError::Pdf(p) => Failure::Pdf(Some(doc), p),
+                    other => Failure::Ocr(Some(doc), other.to_string()),
+                })?;
+                Ok(Response::WorkOcrDone {
+                    doc,
+                    page,
+                    words: match outcome {
+                        izul_ocr::PageOutcome::HadText => None,
+                        izul_ocr::PageOutcome::Read { words } => Some(words),
+                    },
                 })
             }
             Request::WorkFrames { doc } => {

@@ -186,7 +186,7 @@ export async function applyRedaction(doc: number, asCopy: boolean): Promise<bool
 }
 
 /** Closes the tab and opens `path` in its place. */
-async function reopen(doc: number, path: string): Promise<void> {
+export async function reopen(doc: number, path: string): Promise<void> {
   const ws = useWorkspace.getState();
   const index = ws.tabs.findIndex((x) => x.doc === doc);
   await ws.closeTab(doc);

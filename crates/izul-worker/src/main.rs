@@ -532,7 +532,8 @@ where
         | Request::WorkArrange { .. }
         | Request::WorkRedact { .. }
         | Request::VerifyRedacted { .. }
-        | Request::WorkFrames { .. }) => {
+        | Request::WorkFrames { .. }
+        | Request::WorkOcr { .. }) => {
             let engine = sess.engine();
             let viewing =
                 |doc: DocId, page: u32| sess.get(doc).map(|open| open.doc.izul_annots(page));
@@ -548,6 +549,16 @@ where
                 Err(saving::Failure::Encode(detail)) => {
                     tracing::warn!(%detail, "enkode gagal");
                     fail_kind(channel, id, None, ErrorKind::EngineFault, "encode.failed").await
+                }
+                Err(saving::Failure::Ocr(doc, detail)) => {
+                    tracing::warn!(%detail, "OCR gagal");
+                    let payload = Response::Error {
+                        doc,
+                        kind: ErrorKind::EngineFault,
+                        message_id: "ocr.failed".to_string(),
+                        detail,
+                    };
+                    reply(channel, id, payload).await
                 }
                 Err(saving::Failure::Redact(doc, detail)) => {
                     tracing::warn!(%detail, "redaksi ditolak");

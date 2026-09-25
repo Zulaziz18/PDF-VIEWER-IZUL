@@ -21,7 +21,7 @@ use izul_model::geom::{PageFrame, PdfRectF, RotationQuarter};
 /// So the worker announces this number the moment it connects, and the
 /// supervisor refuses a worker that does not match. Bump it whenever anything
 /// in [`Request`] or [`Response`] changes shape.
-pub const PROTOCOL_VERSION: u32 = 8;
+pub const PROTOCOL_VERSION: u32 = 9;
 
 /// Identifies one open document within a worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -276,6 +276,19 @@ pub enum Request {
     WorkFrames {
         doc: DocId,
     },
+    /// On the working copy: reads one page with local OCR and writes what it
+    /// read onto the page as invisible text (`izul_ocr::ocr_page`). One page
+    /// per request, so a worker is never silent long enough for the heartbeat
+    /// to take it for hung, and the UI can report progress and stop between
+    /// pages. `models` is the folder holding the two `.rten` files. A page
+    /// that already has text is left alone unless `force`. Answered with
+    /// `WorkOcrDone`.
+    WorkOcr {
+        doc: DocId,
+        page: u32,
+        models: String,
+        force: bool,
+    },
 }
 
 /// The areas to redact on one page of a [`Request::WorkRedact`].
@@ -447,6 +460,12 @@ pub enum Response {
         doc: DocId,
         /// One per page, in page order.
         frames: Vec<PageFrame>,
+    },
+    WorkOcrDone {
+        doc: DocId,
+        page: u32,
+        /// Words written, or `None` when the page already had text.
+        words: Option<u32>,
     },
 }
 
@@ -633,6 +652,29 @@ mod tests {
         assert_eq!(
             index(postcard::to_allocvec(&Request::WorkFrames { doc: DocId(1) }).unwrap()),
             26
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Request::WorkOcr {
+                    doc: DocId(1),
+                    page: 0,
+                    models: String::new(),
+                    force: false
+                })
+                .unwrap()
+            ),
+            27
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Response::WorkOcrDone {
+                    doc: DocId(1),
+                    page: 0,
+                    words: None
+                })
+                .unwrap()
+            ),
+            19
         );
         assert_eq!(
             index(

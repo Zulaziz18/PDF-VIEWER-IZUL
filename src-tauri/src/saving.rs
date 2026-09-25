@@ -98,6 +98,54 @@ pub struct Redaction {
     pub doomed: BTreeSet<u64>,
 }
 
+/// Local OCR on save (Phase 7): which pages to read, and how to report.
+///
+/// The pages are read one request at a time, after the page map and any
+/// redaction are applied and before the annotations go in. Between pages the
+/// job reports progress and looks at `cancel`; a cancelled job fails the save
+/// and nothing is written — "stop" leaves the file as it was.
+#[derive(Clone)]
+pub struct OcrJob {
+    /// Display pages of the result, 0-based.
+    pub pages: Vec<u32>,
+    /// Read pages that already have text as well.
+    pub force: bool,
+    /// Folder holding `text-detection.rten` and `text-recognition.rten`.
+    pub models: PathBuf,
+    pub progress: Option<Arc<dyn Fn(u32, u32) + Send + Sync>>,
+    pub cancel: Arc<std::sync::atomic::AtomicBool>,
+}
+
+impl std::fmt::Debug for OcrJob {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("OcrJob")
+            .field("pages", &self.pages.len())
+            .field("force", &self.force)
+            .field("models", &self.models)
+            .finish()
+    }
+}
+
+/// What OCR did, for the user.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct OcrSummary {
+    pub pages_read: u32,
+    /// Pages left alone because they already had text.
+    pub pages_had_text: u32,
+    pub words: u32,
+}
+
+/// Changes to the document's content made while saving, beyond the
+/// annotations: redaction (Phase 6) and OCR (Phase 7).
+#[derive(Debug, Clone, Default)]
+pub struct Rewrite {
+    pub redaction: Option<Redaction>,
+    pub ocr: Option<OcrJob>,
+}
+
+/// The message a cancelled OCR job fails the save with.
+pub const OCR_CANCELLED: &str = "OCR dibatalkan; berkas tidak diubah.";
+
 /// What a redaction took out, summed over its pages, for the user.
 #[derive(Debug, Clone, Default, serde::Serialize)]
 pub struct RedactionSummary {
@@ -140,8 +188,16 @@ pub async fn build_current(
     annots: &AnnotState,
     doc: u64,
     source: &str,
-    redaction: Option<&Redaction>,
-) -> Out<(Vec<u8>, Vec<u32>, u32, Option<Vec<RedactedPageWire>>)> {
+    rewrite: Option<&Rewrite>,
+) -> Out<(
+    Vec<u8>,
+    Vec<u32>,
+    u32,
+    Option<Vec<RedactedPageWire>>,
+    Option<OcrSummary>,
+)> {
+    let redaction = rewrite.and_then(|r| r.redaction.as_ref());
+    let ocr = rewrite.and_then(|r| r.ocr.as_ref());
     let worker = worker_of(pool, doc).await?;
     annots.ensure_all_metrics(pool, doc).await?;
     let empty = BTreeSet::new();
@@ -216,6 +272,12 @@ pub async fn build_current(
             },
             None => None,
         };
+        // OCR writes into the page content: after the redaction (never under
+        // what is taken out, never bringing it back), before our annotations.
+        let read = match ocr {
+            Some(job) => Some(run_ocr(&worker, doc, job).await?),
+            None => None,
+        };
         expect_work(
             &worker,
             Request::WorkPlaceholders {
@@ -232,11 +294,11 @@ pub async fn build_current(
             other => return Err(format!("balasan tak terduga: {other:?}")),
         };
         let bytes = expect_blob(&worker, Request::WorkSave { doc: DocId(doc) }).await?;
-        Ok((bytes, redacted, frames))
+        Ok((bytes, redacted, frames, read))
     }
     .await;
     let _ = ask(&worker, Request::WorkClose { doc: DocId(doc) }).await;
-    let (pdfium, redacted, frames) = built?;
+    let (pdfium, redacted, frames, read) = built?;
     if let Some((obj, _)) = objects
         .iter()
         .find(|(o, _)| o.page as usize >= frames.len())
@@ -261,7 +323,46 @@ pub async fn build_current(
         }
         other => other.to_string(),
     })?;
-    Ok((bytes, pages, objects.len() as u32, redacted))
+    Ok((bytes, pages, objects.len() as u32, redacted, read))
+}
+
+async fn run_ocr(worker: &Worker, doc: u64, job: &OcrJob) -> Out<OcrSummary> {
+    use std::sync::atomic::Ordering;
+    let total = job.pages.len() as u32;
+    let mut summary = OcrSummary::default();
+    for (done, &page) in job.pages.iter().enumerate() {
+        if job.cancel.load(Ordering::Relaxed) {
+            return Err(OCR_CANCELLED.to_string());
+        }
+        if let Some(report) = &job.progress {
+            report(done as u32, total);
+        }
+        let reply = ask(
+            worker,
+            Request::WorkOcr {
+                doc: DocId(doc),
+                page,
+                models: job.models.to_string_lossy().to_string(),
+                force: job.force,
+            },
+        )
+        .await?;
+        match reply {
+            Response::WorkOcrDone { words: Some(n), .. } => {
+                summary.pages_read += 1;
+                summary.words += n;
+            }
+            Response::WorkOcrDone { words: None, .. } => summary.pages_had_text += 1,
+            other => return Err(format!("balasan tak terduga: {other:?}")),
+        }
+    }
+    if job.cancel.load(Ordering::Relaxed) {
+        return Err(OCR_CANCELLED.to_string());
+    }
+    if let Some(report) = &job.progress {
+        report(total, total);
+    }
+    Ok(summary)
 }
 
 /// A worker's refusal to redact, as the user reads it. The worker's detail is
@@ -330,6 +431,8 @@ pub struct SaveReport {
     pub restructured: Option<Vec<(f32, f32)>>,
     /// The save applied redaction marks, and this is what they took out.
     pub redaction: Option<RedactionSummary>,
+    /// The save ran OCR, and this is what it read.
+    pub ocr: Option<OcrSummary>,
 }
 
 /// Saves `doc` to `target` (its own file when `None`).
@@ -344,14 +447,15 @@ pub async fn save(
     source: &str,
     page_count: u32,
     target: Option<&str>,
-    redaction: Option<&Redaction>,
+    rewrite: Option<&Rewrite>,
 ) -> Out<SaveReport> {
+    let redaction = rewrite.and_then(|r| r.redaction.as_ref());
     let target_path = PathBuf::from(target.unwrap_or(source));
     let mapped = annots.page_map(doc).map(|m| m.len() as u32);
     // A map changes how many pages the result has; verify against that.
     let page_count = mapped.unwrap_or(page_count);
-    let (bytes, pages, count, redacted) =
-        build_current(pool, annots, doc, source, redaction).await?;
+    let (bytes, pages, count, redacted, read) =
+        build_current(pool, annots, doc, source, rewrite).await?;
     let worker = worker_of(pool, doc).await?;
     let pending = write_verified(
         &worker,
@@ -431,6 +535,7 @@ pub async fn save(
         annotations: count,
         restructured,
         redaction: redacted.as_deref().map(RedactionSummary::of),
+        ocr: read,
     })
 }
 
@@ -443,7 +548,7 @@ async fn current_as_temp(
     source: &str,
     scratch: &Path,
 ) -> Out<PendingWrite> {
-    let (bytes, _, _, _) = build_current(pool, annots, doc, source, None).await?;
+    let (bytes, _, _, _, _) = build_current(pool, annots, doc, source, None).await?;
     std::fs::create_dir_all(scratch).map_err(|e| e.to_string())?;
     PendingWrite::write(&scratch.join(format!("ekspor-{doc}.pdf")), &bytes)
         .map_err(|e| e.to_string())
@@ -680,4 +785,21 @@ pub async fn read_saved(
         objects.push(obj);
     }
     Ok(objects)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The frontend recognises a cancelled run by this exact text
+    /// (`OCR_CANCELLED` in `src/app/ocr.ts`); a reworded message there or
+    /// here would turn "stopped" into "failed".
+    #[test]
+    fn the_cancel_message_matches_the_frontend() {
+        let ts = include_str!("../../src/app/ocr.ts");
+        assert!(
+            ts.contains(&format!("\"{OCR_CANCELLED}\"")),
+            "src/app/ocr.ts"
+        );
+    }
 }

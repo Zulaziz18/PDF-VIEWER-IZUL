@@ -67,6 +67,8 @@ export interface UiState {
   exporting: ExportKind | null;
   /** The apply-redaction dialog is open (Phase 6). */
   redacting: boolean;
+  /** The "Kenali Teks (OCR)" dialog is open (Phase 7). */
+  ocring: boolean;
   setRibbon(tab: RibbonTab): void;
   armMarkup(kind: MarkupKind | null): void;
   setAboutOpen(open: boolean): void;
@@ -80,6 +82,7 @@ export interface UiState {
   notify(notice: Notice | null): void;
   setExporting(kind: ExportKind | null): void;
   setRedacting(open: boolean): void;
+  setOcring(open: boolean): void;
 }
 
 export const useUi = create<UiState>((set, get) => ({
@@ -99,6 +102,7 @@ export const useUi = create<UiState>((set, get) => ({
   notice: null,
   exporting: null,
   redacting: false,
+  ocring: false,
   ask(spec) {
     const previous = get().prompt;
     if (previous) previous.resolve(previous.spec.cancelId);
@@ -120,5 +124,8 @@ export const useUi = create<UiState>((set, get) => ({
   },
   setRedacting(redacting) {
     set({ redacting });
+  },
+  setOcring(ocring) {
+    set({ ocring });
   },
 }));

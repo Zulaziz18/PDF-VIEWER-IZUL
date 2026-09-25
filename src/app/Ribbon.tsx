@@ -594,7 +594,8 @@ function ProtectPanel(): JSX.Element {
 }
 
 /**
- * "Konversi": the three conversions that need nothing but the PDF engine.
+ * "Konversi": the conversions that need nothing but the PDF engine, and OCR
+ * (Phase 7), which runs on this machine too.
  * WPS's converters to Word, Excel and PowerPoint are absent — they are not
  * something PDFium can do, and SPEC 2 rules out sending the file anywhere
  * that could.
@@ -619,6 +620,8 @@ function ConvertPanel(): JSX.Element {
         onClick={() => ui().setExporting("pages")}
       />
       <RibbonButton icon="flatten" tone="violet" label={t("convert.flat")} hint={t("convert.flatHint")} onClick={() => void exportFlat()} />
+      <RibbonDivider />
+      <RibbonButton icon="ocr" tone="teal" label={t("ocr.button")} hint={t("ocr.hint")} onClick={() => ui().setOcring(true)} />
       <RibbonDivider />
       <RibbonButton icon="saveAs" tone="blue" label={t("menu.saveAs")} hint={`${t("menu.saveAs")} (Ctrl+Shift+S)`} onClick={() => void saveDocument(undefined, "saveAs")} />
     </>

@@ -12,6 +12,9 @@ dist
 # script that fetches it is tracked. See vendor/pdfium/fetch.sh.
 /vendor/pdfium/*
 !/vendor/pdfium/fetch.sh
+# OCR models (Phase 7): pinned by SHA-256 in the script that fetches them.
+/vendor/ocrs/*
+!/vendor/ocrs/fetch.sh
 
 # Benchmark fixtures are hundreds of megabytes and are regenerated
 # deterministically from a fixed seed by bench/make_fixtures.py. The manifest
@@ -31,6 +34,8 @@ dist
 !/bench/results/phase3-*
 !/bench/results/phase4-*
 !/bench/results/phase5-*
+!/bench/results/phase6-*
+!/bench/results/phase7-*
 
 # Python byte cache from the fixture generator.
 __pycache__/

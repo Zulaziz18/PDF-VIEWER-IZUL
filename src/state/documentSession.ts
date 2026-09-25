@@ -129,6 +129,16 @@ export interface SaveReport {
   readonly restructured: ReadonlyArray<[number, number]> | null;
   /** The save applied redaction marks, and this is what they took out. */
   readonly redaction: RedactionSummary | null;
+  /** The save ran OCR, and this is what it read (Phase 7). */
+  readonly ocr?: OcrSummary | null;
+}
+
+/** What `ocr_apply` read (Phase 7). */
+export interface OcrSummary {
+  readonly pages_read: number;
+  /** Pages left alone because they already had text. */
+  readonly pages_had_text: number;
+  readonly words: number;
 }
 
 /** What `redact_apply` took out, summed over pages (Phase 6). */

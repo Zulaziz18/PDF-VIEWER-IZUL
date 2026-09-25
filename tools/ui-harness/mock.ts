@@ -59,6 +59,8 @@ export interface HarnessFlags {
   readonly diskChanged?: boolean;
   /** The export history has rows. */
   readonly exports?: boolean;
+  /** The OCR models are not installed. */
+  readonly noOcr?: boolean;
 }
 
 declare global {
@@ -207,6 +209,13 @@ export function installMocks(data: HarnessData): void {
         case "plugin:window|is_maximized":
         case "plugin:window|is_fullscreen":
           return false;
+        case "ocr_available":
+          return flags.noOcr !== true;
+        case "ocr_progress":
+          return { running: true, done: 2, total: 5 };
+        case "ocr_apply":
+          // The "ocrrunning" scene photographs the dialog mid-run.
+          return new Promise(() => {});
         default:
           // Everything else is a notification the backend would act on and
           // answer with nothing: activate, reorder, set_generation, trim…

@@ -41,6 +41,7 @@ pub mod compare;
 pub mod folders;
 pub mod indexing;
 pub mod logging;
+pub mod ocr;
 pub mod pagemap;
 pub mod protocol;
 pub mod render;
@@ -187,6 +188,7 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
         annots: Arc::new(annots::AnnotState::new()),
         stamps: parking_lot::Mutex::new(std::collections::HashMap::new()),
         hidden: pagemap::HiddenSources::default(),
+        ocr: ocr::OcrRuns::default(),
     };
 
     let title = version::title_bar_text(&v);
@@ -297,6 +299,10 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
             save_commands::save_document,
             save_commands::redact_apply,
             save_commands::redact_preview,
+            ocr::ocr_available,
+            ocr::ocr_apply,
+            ocr::ocr_progress,
+            ocr::ocr_cancel,
             save_commands::export_document,
             save_commands::export_history,
             save_commands::autosave_drafts,

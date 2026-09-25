@@ -51,6 +51,8 @@ pub struct AppState {
     /// Worker documents that render pages brought in from other files
     /// (Phase 5, `pagemap.rs`).
     pub hidden: crate::pagemap::HiddenSources,
+    /// OCR runs in flight (Phase 7).
+    pub ocr: crate::ocr::OcrRuns,
 }
 
 impl std::fmt::Debug for AppState {

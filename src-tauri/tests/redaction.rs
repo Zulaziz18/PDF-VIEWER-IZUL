@@ -297,7 +297,10 @@ async fn marked_text_is_gone_from_the_file_and_nothing_else_is() {
         &path.to_string_lossy(),
         3,
         Some(&out.to_string_lossy()),
-        Some(&redaction),
+        Some(&saving::Rewrite {
+            redaction: Some(redaction.clone()),
+            ocr: None,
+        }),
     )
     .await
     .unwrap();
@@ -376,7 +379,10 @@ async fn a_redaction_that_cannot_be_done_writes_nothing() {
         &path.to_string_lossy(),
         3,
         Some(&out.to_string_lossy()),
-        Some(&redaction),
+        Some(&saving::Rewrite {
+            redaction: Some(redaction.clone()),
+            ocr: None,
+        }),
     )
     .await
     .expect_err("harus ditolak");

@@ -125,6 +125,11 @@ const ICONS = {
   redactArea: "select_object",
   redactSearch: "search_square",
   redactApply: "shield_checkmark",
+  // Phase 7: OCR, background removal, forms, text editing.
+  ocr: "scan_text",
+  removeBackground: "wand",
+  formFill: "form",
+  editText: "text_edit_style",
 };
 const SIZES = [20, 24];
 

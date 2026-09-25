@@ -46,6 +46,11 @@ jobs:
         shell: bash
         run: ./vendor/pdfium/fetch.sh
 
+      # The OCR models (Phase 7), pinned by SHA-256 like PDFium is by tag.
+      - name: Fetch the pinned OCR models
+        shell: bash
+        run: ./vendor/ocrs/fetch.sh
+
       - name: Formatting
         run: cargo fmt --all --check
 
@@ -96,6 +101,13 @@ jobs:
           sudo apt-get install -y poppler-utils mupdf-tools fonts-dejavu-core fonts-liberation
           python3 -m pip install --quiet pdfminer.six
           python3 tools/redaction-proof/run.py --out redaction-proof.txt
+
+      # Phase 7: scanned pages read by the application's own OCR, then read
+      # back by four extractors that are not PDFium — accuracy, word
+      # positions, and a render that must not change by one pixel.
+      - name: OCR proof
+        if: runner.os == 'Linux'
+        run: python3 tools/ocr-proof/run.py --out ocr-proof.txt
 
   frontend:
     name: Frontend
