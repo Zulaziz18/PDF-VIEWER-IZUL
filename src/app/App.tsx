@@ -106,7 +106,7 @@ export function App(): React.JSX.Element {
     >
       {!bare && <TitleBar />}
       {error !== null && (
-        <div role="alert" className="px-3 py-2 bg-[var(--izul-danger)] text-white text-[13px]">
+        <div role="alert" className="px-3 py-2 bg-[var(--izul-danger-fill)] text-[var(--izul-on-danger)] text-[13px]">
           {t("err.open")}: {error}
         </div>
       )}

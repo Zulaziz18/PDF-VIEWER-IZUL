@@ -145,3 +145,13 @@ export function fitTextLayer(host: HTMLElement): void {
     }
   }
 }
+
+/**
+ * Where page `page`'s layer goes among the layers already there (their page
+ * numbers, in DOM order): before the first later page. A screen reader reads
+ * the DOM in its order, and pages arrive in the order they scroll into view.
+ */
+export function layerSlot(present: readonly number[], page: number): number {
+  const at = present.findIndex((p) => p > page);
+  return at < 0 ? present.length : at;
+}

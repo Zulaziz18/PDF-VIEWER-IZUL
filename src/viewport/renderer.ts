@@ -60,7 +60,8 @@ import {
   snapAngle,
 } from "@/annots/interaction";
 import type { TextChar } from "./textLayer";
-import { buildTextLayer, fitTextLayer, groupIntoLines } from "./textLayer";
+import { buildTextLayer, fitTextLayer, groupIntoLines, layerSlot } from "./textLayer";
+import { t } from "@/i18n";
 import type { Priority, TileRef } from "./tileSource";
 import {
   loadTile,
@@ -731,8 +732,18 @@ export class ViewportRenderer {
         document,
       );
       layer.dataset["page"] = String(page);
+      // One named group per page, so a screen reader can move page by page.
+      layer.setAttribute("role", "group");
+      layer.setAttribute("aria-label", `${t("status.page")} ${page + 1}`);
       this.#host.textLayer.querySelector(`[data-page="${page}"]`)?.remove();
-      this.#host.textLayer.appendChild(layer);
+      // In page order, whatever order they scrolled into view in: a screen
+      // reader reads the DOM in its order (Phase 8).
+      const present = Array.from(this.#host.textLayer.children) as HTMLElement[];
+      const slot = layerSlot(
+        present.map((el) => Number(el.dataset["page"])),
+        page,
+      );
+      this.#host.textLayer.insertBefore(layer, present[slot] ?? null);
       fitTextLayer(layer);
       this.#textSignatures.set(page, signature);
     }

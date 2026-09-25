@@ -172,7 +172,9 @@ function FileRow(props: { row: Row; selected: boolean; pinnable: boolean }): JSX
         props.selected
           ? "bg-[var(--izul-accent-soft)]"
           : "hover:bg-[var(--izul-surface-raised)] focus-visible:bg-[var(--izul-surface-raised)]",
-        row.available ? "" : "opacity-50",
+        // Dimmed text rather than a faded row: at half opacity the dim
+        // columns fell to 2.0:1 (Phase 8, axe).
+        row.available ? "" : "text-[var(--izul-text-dim)] [&_svg]:opacity-50",
       ].join(" ")}
     >
       <td className="pl-4 pr-2">
@@ -183,6 +185,7 @@ function FileRow(props: { row: Row; selected: boolean; pinnable: boolean }): JSX
             <FileBadge size={26} />
           )}
           <span className="truncate text-[13px]">{row.name}</span>
+          {!row.available && <span className="sr-only">{t("empty.missing")}</span>}
           {props.pinnable && (
             <button
               type="button"

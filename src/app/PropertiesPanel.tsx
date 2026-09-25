@@ -201,19 +201,21 @@ export function PropertiesPanel(): React.JSX.Element | null {
 
       {!redact && (
         <section>
-          <label className="block text-[12px] text-[var(--izul-text-dim)] mb-1">
-            {t("props.opacity")} — {Math.round(first.opacity * 100)}%
+          <label className="block text-[12px] text-[var(--izul-text-dim)]">
+            <span className="block mb-1">
+              {t("props.opacity")} — {Math.round(first.opacity * 100)}%
+            </span>
+            <input
+              type="range"
+              min={10}
+              max={100}
+              value={Math.round(first.opacity * 100)}
+              onChange={(e) =>
+                apply((o) => ({ ...structuredClone(o), opacity: Number(e.target.value) / 100 }))
+              }
+              className="w-full"
+            />
           </label>
-          <input
-            type="range"
-            min={10}
-            max={100}
-            value={Math.round(first.opacity * 100)}
-            onChange={(e) =>
-              apply((o) => ({ ...structuredClone(o), opacity: Number(e.target.value) / 100 }))
-            }
-            className="w-full"
-          />
         </section>
       )}
 
@@ -244,18 +246,20 @@ export function PropertiesPanel(): React.JSX.Element | null {
 
       {width !== null && (
         <section>
-          <label className="block text-[12px] text-[var(--izul-text-dim)] mb-1">
-            {t("props.strokeWidth")} — {width.toFixed(1)} pt
+          <label className="block text-[12px] text-[var(--izul-text-dim)]">
+            <span className="block mb-1">
+              {t("props.strokeWidth")} — {width.toFixed(1)} pt
+            </span>
+            <input
+              type="range"
+              min={0.5}
+              max={20}
+              step={0.5}
+              value={width}
+              onChange={(e) => apply((o) => withStrokeWidth(o, Number(e.target.value)))}
+              className="w-full"
+            />
           </label>
-          <input
-            type="range"
-            min={0.5}
-            max={20}
-            step={0.5}
-            value={width}
-            onChange={(e) => apply((o) => withStrokeWidth(o, Number(e.target.value)))}
-            className="w-full"
-          />
         </section>
       )}
 
@@ -291,15 +295,17 @@ export function PropertiesPanel(): React.JSX.Element | null {
 
       {text !== null && (
         <section>
-          <label className="block text-[12px] text-[var(--izul-text-dim)] mb-1">
-            {t("props.text")}
+          <label className="block text-[12px] text-[var(--izul-text-dim)]">
+            <span className="block mb-1">
+              {t("props.text")}
+            </span>
+            <textarea
+              value={text}
+              rows={4}
+              onChange={(e) => apply((o) => withText(o, e.target.value))}
+              className="w-full rounded-[8px] bg-[var(--izul-canvas)] border border-[var(--izul-border)] px-2 py-1.5 text-[13px]"
+            />
           </label>
-          <textarea
-            value={text}
-            rows={4}
-            onChange={(e) => apply((o) => withText(o, e.target.value))}
-            className="w-full rounded-[8px] bg-[var(--izul-canvas)] border border-[var(--izul-border)] px-2 py-1.5 text-[13px]"
-          />
         </section>
       )}
 

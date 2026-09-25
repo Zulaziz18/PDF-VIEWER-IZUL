@@ -26,11 +26,16 @@ export const TAB_DRAG_TYPE = "application/x-izul-tab";
 
 function Divider(props: { axis: "x" | "y"; host: React.RefObject<HTMLDivElement | null> }): JSX.Element {
   const vertical = props.axis === "x";
+  const ratio = useWorkspace((s) => s.panels.ratio[props.axis]);
   return (
+    // A focusable separator is a slider to a screen reader: it needs its value.
     <div
       role="separator"
       aria-orientation={vertical ? "vertical" : "horizontal"}
       aria-label={t("panels.divider")}
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={Math.round(ratio * 100)}
       tabIndex={0}
       onKeyDown={(e) => {
         const step = e.key === (vertical ? "ArrowLeft" : "ArrowUp") ? -0.05 : e.key === (vertical ? "ArrowRight" : "ArrowDown") ? 0.05 : 0;

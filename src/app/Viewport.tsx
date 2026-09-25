@@ -239,6 +239,7 @@ export function Viewport(props: {
           <div
             ref={textRef}
             className={`izul-text-layer absolute inset-0 ${tool === null ? "select-text" : "pointer-events-none"}`}
+            role="document"
             aria-label={t("viewport.textLayer")}
           />
         </div>

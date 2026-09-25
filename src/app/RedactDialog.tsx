@@ -141,7 +141,7 @@ export function RedactDialog(): JSX.Element | null {
             <button
               type="submit"
               disabled={running || preview === null || preview.marks === 0}
-              className="h-9 px-4 rounded-[8px] text-[13px] bg-[var(--izul-danger)] text-white font-medium hover:brightness-110 disabled:opacity-40"
+              className="h-9 px-4 rounded-[8px] text-[13px] bg-[var(--izul-danger-fill)] text-[var(--izul-on-danger)] font-medium hover:brightness-110 disabled:opacity-40"
             >
               {running ? t("redact.running") : t("redact.go")}
             </button>

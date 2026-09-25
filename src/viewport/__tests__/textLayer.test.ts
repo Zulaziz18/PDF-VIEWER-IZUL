@@ -6,7 +6,7 @@
 
 import { describe, expect, it } from "vitest";
 import type { TextChar } from "../textLayer";
-import { groupIntoLines } from "../textLayer";
+import { groupIntoLines, layerSlot } from "../textLayer";
 
 /** A character box on a line whose baseline sits at `bottom`. */
 function ch(c: string, left: number, bottom: number, w = 6, h = 10): TextChar {
@@ -65,5 +65,19 @@ describe("groupIntoLines", () => {
     expect(line?.bottom).toBe(96);
     expect(line?.right).toBe(22);
     expect(line?.top).toBe(110);
+  });
+});
+
+describe("layerSlot", () => {
+  // Scrolling up brings page 2 in after page 3 is already there; appended,
+  // a screen reader would read page 3 and then page 2.
+  it("puts a page before the later pages already there", () => {
+    expect(layerSlot([3, 4], 2)).toBe(0);
+    expect(layerSlot([1, 4], 2)).toBe(1);
+  });
+
+  it("puts the last page last, and the first into an empty layer", () => {
+    expect(layerSlot([1, 2], 3)).toBe(2);
+    expect(layerSlot([], 7)).toBe(0);
   });
 });

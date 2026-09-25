@@ -93,6 +93,12 @@ describe("shortcuts", () => {
     expect(shortcuts.commandFor(press("Escape"), { typing: false, dialog: true })).toBeNull();
   });
 
+  it("leaves a key alone that a focused control already handled", async () => {
+    const { shortcuts } = await load();
+    const handled = { ...press("o", { ctrl: true }), defaultPrevented: true };
+    expect(shortcuts.commandFor(handled, page)).toBeNull();
+  });
+
   it("pauses while F1 waits for a new key", async () => {
     const { shortcuts, useKeymap } = await load();
     useKeymap.getState().setRecording("file.open");

@@ -19,7 +19,7 @@
  */
 
 import { spawn, spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { deflateSync } from "node:zlib";
@@ -331,7 +331,11 @@ const SCENES = {
     session: OPEN_ALL,
     flags: { dirty: true },
     async steps(page) {
-      await page.getByRole("button", { name: /^Tutup tab — / }).first().click();
+      // The keyboard's way to close a tab (Phase 8): the close cross is a
+      // mouse target only, so the tab itself takes Delete.
+      const tab = page.getByRole("tab").nth(1);
+      await tab.focus();
+      await page.keyboard.press("Delete");
       await page.getByRole("dialog").waitFor();
     },
   },
@@ -612,6 +616,8 @@ async function newPage({ width, height, theme, scale, scene }) {
     viewport: { width, height },
     deviceScaleFactor: scale,
     colorScheme: theme,
+    // `--forced`: Windows high-contrast mode, as `forced-colors` (SPEC 14).
+    forcedColors: args.forced === "true" ? "active" : "none",
     locale: "id-ID",
     timezoneId: "Asia/Jakarta",
   });
@@ -732,6 +738,45 @@ async function newPage({ width, height, theme, scale, scene }) {
 const sizes = (args.size ? [args.size] : ["1366x768", "1920x1080"]).map((s) => s.split("x").map(Number));
 const themes = args.theme ? [args.theme] : ["light", "dark"];
 const scenes = args.scene ? args.scene.split(",") : Object.keys(SCENES);
+
+// `--axe`: an accessibility audit of every shot (SPEC 14), with axe-core —
+// WCAG 2.x A and AA, contrast included. The page's own pixels are a canvas
+// and not judged; the text layer over it is transparent on purpose (the
+// selection layer) and is left out of the contrast rule for that reason.
+const audits = [];
+async function audit(page) {
+  await page.addScriptTag({ path: join(ROOT, "node_modules/axe-core/axe.min.js") });
+  return page.evaluate(async () => {
+    const r = await window.axe.run(document, {
+      runOnly: { type: "tag", values: ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa"] },
+      rules: { "color-contrast": { selector: "*:not(.izul-text-page *)" } },
+    });
+    return r.violations.map((v) => ({
+      id: v.id,
+      impact: v.impact,
+      help: v.help,
+      nodes: v.nodes.slice(0, 4).map((n) => ({ target: n.target.join(" "), summary: (n.failureSummary ?? "").split("\n").slice(1, 2).join(" ") })),
+      count: v.nodes.length,
+    }));
+  });
+}
+function writeAudit(rows) {
+  const lines = ["Audit aksesibilitas (axe-core 4.13.0, WCAG 2.1 A + AA)", ""];
+  let total = 0;
+  for (const r of rows) {
+    const n = r.found.reduce((a, v) => a + v.count, 0);
+    total += n;
+    lines.push(`${r.scene.padEnd(16)} ${r.size.padEnd(10)} ${r.theme.padEnd(6)} ${n === 0 ? "bersih" : `${n} pelanggaran`}`);
+    for (const v of r.found) {
+      lines.push(`    ${v.id} (${v.impact}, ${v.count}): ${v.help}`);
+      for (const node of v.nodes) lines.push(`        ${node.target}  ${node.summary}`);
+    }
+  }
+  lines.push("", `Total: ${total} pelanggaran di ${rows.length} tangkapan.`);
+  const out = args["axe-out"] ?? join(OUT, "a11y.txt");
+  writeFileSync(out, lines.join("\n") + "\n");
+  console.log(`  audit: ${out} — ${total} pelanggaran`);
+}
 const scale = Number(args.scale ?? 1);
 mkdirSync(OUT, { recursive: true });
 
@@ -753,10 +798,12 @@ if (args.serve === "true") {
         const file = join(OUT, `${scene}-${width}x${height}-${theme}${suffix}.png`);
         await page.screenshot({ path: file });
         console.log(`  ${file}`);
+        if (args.axe === "true") audits.push({ scene, size: `${width}x${height}`, theme, found: await audit(page) });
         await page.context().close();
       }
     }
   }
+  if (args.axe === "true") writeAudit(audits);
   await browser.close();
   await server.close();
   helper.stdin.end();

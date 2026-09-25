@@ -28,7 +28,13 @@ export interface KeyContext {
 }
 
 /** The command a key press runs now, or `null`. Pure apart from the stores. */
-export function commandFor(e: KeyLike, where: KeyContext): string | null {
+export function commandFor(
+  e: KeyLike & { readonly defaultPrevented?: boolean },
+  where: KeyContext,
+): string | null {
+  // A control that handled the key itself owns it: Delete on a focused tab
+  // closes the tab, not the selected annotation (Phase 8).
+  if (e.defaultPrevented === true) return null;
   const keymap = useKeymap.getState();
   // The F1 dialog is waiting for a new key: that key is its answer.
   if (keymap.recording !== null) return null;
