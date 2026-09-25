@@ -3,8 +3,11 @@
 //! An image wholly inside an area is simply not drawn any more. One that is
 //! only partly inside keeps its pixels outside the area; the pixels inside are
 //! set to zero in every component — a constant, so nothing of what was there
-//! survives — and the image is written again, uncompressed-then-Flate, as a
-//! new object used only by this page. Other pages that draw the same image
+//! survives — and the image is written again as a new object used only by
+//! this page: a JPEG as a JPEG again, with its own quantisation tables and
+//! subsampling (so the rest of it loses next to nothing and the file does not
+//! grow — as Flate over decoded pixels, a 145 MB scan became 469 MB), and
+//! everything else as Flate. Other pages that draw the same image
 //! keep the original, which is correct: redaction is of *this* place.
 //!
 //! What cannot be decoded here (`JPXDecode`, `JBIG2Decode`, `CCITTFaxDecode`)
@@ -174,15 +177,132 @@ pub fn placement(ctm: &Matrix, areas: &[Rect]) -> (bool, bool) {
 }
 
 /// Samples, ready to edit, and whether they came out of a JPEG.
-fn samples(pdf: Option<&Pdf<'_>>, dict: &Dict, data: &[u8], l: &Layout) -> Result<Option<Vec<u8>>> {
+/// The samples, and — for a JPEG — how it was encoded.
+fn samples(
+    pdf: Option<&Pdf<'_>>,
+    dict: &Dict,
+    data: &[u8],
+    l: &Layout,
+) -> Result<Option<(Vec<u8>, Option<JpegParams>)>> {
     let decoded = filters::decode(pdf, dict, data)?;
-    let mut raw = match decoded.codec {
-        None => decoded.data,
-        Some((codec, _)) if codec == b"DCTDecode" => jpeg(&decoded.data, l)?,
+    let (mut raw, params) = match decoded.codec {
+        None => (decoded.data, None),
+        Some((codec, _)) if codec == b"DCTDecode" => {
+            let params = jpeg_params(&decoded.data);
+            (jpeg(&decoded.data, l)?, params)
+        }
         Some(_) => return Ok(None),
     };
     raw.resize(l.row_bytes() * l.h, 0);
-    Ok(Some(raw))
+    Ok(Some((raw, params)))
+}
+
+/// What a JPEG was encoded with: quantisation tables in natural order (luma,
+/// then chroma when there is colour) and the luma sampling factors.
+#[derive(Debug, Clone, PartialEq)]
+struct JpegParams {
+    luma: [u16; 64],
+    chroma: Option<[u16; 64]>,
+    h: u8,
+    v: u8,
+}
+
+/// Zigzag position → natural (row-major) position (ITU-T T.81 Figure A.6).
+const ZIGZAG: [usize; 64] = [
+    0, 1, 8, 16, 9, 2, 3, 10, 17, 24, 32, 25, 18, 11, 4, 5, 12, 19, 26, 33, 40, 48, 41, 34, 27, 20,
+    13, 6, 7, 14, 21, 28, 35, 42, 49, 56, 57, 50, 43, 36, 29, 22, 15, 23, 30, 37, 44, 51, 58, 59,
+    52, 45, 38, 31, 39, 46, 53, 60, 61, 54, 47, 55, 62, 63,
+];
+
+/// Reads the DQT and SOF segments of a baseline or progressive JPEG. `None`
+/// for anything it does not follow; the caller then writes Flate instead.
+fn jpeg_params(data: &[u8]) -> Option<JpegParams> {
+    let mut tables: [Option<[u16; 64]>; 4] = [None; 4];
+    let mut comps: Vec<(u8, u8)> = Vec::new(); // (sampling byte, table)
+    let mut i = 2;
+    if data.get(..2)? != [0xFF, 0xD8] {
+        return None;
+    }
+    while i + 4 <= data.len() {
+        if *data.get(i)? != 0xFF {
+            return None;
+        }
+        let marker = *data.get(i + 1)?;
+        if marker == 0xFF {
+            i += 1;
+            continue;
+        }
+        let len = usize::from(u16::from_be_bytes([*data.get(i + 2)?, *data.get(i + 3)?]));
+        let body = data.get(i + 4..i + 2 + len)?;
+        match marker {
+            0xDB => {
+                let mut at = 0;
+                while at < body.len() {
+                    let pq = body.get(at)? >> 4;
+                    let tq = usize::from(body.get(at)? & 0x0F);
+                    at += 1;
+                    let mut t = [0u16; 64];
+                    for &nat in &ZIGZAG {
+                        let v = if pq == 0 {
+                            u16::from(*body.get(at)?)
+                        } else {
+                            u16::from_be_bytes([*body.get(at)?, *body.get(at + 1)?])
+                        };
+                        at += if pq == 0 { 1 } else { 2 };
+                        *t.get_mut(nat)? = v;
+                    }
+                    *tables.get_mut(tq)? = Some(t);
+                }
+            }
+            0xC0..=0xC2 => {
+                let n = usize::from(*body.get(5)?);
+                for c in 0..n {
+                    comps.push((*body.get(6 + c * 3 + 1)?, *body.get(6 + c * 3 + 2)?));
+                }
+            }
+            0xDA => break,
+            _ => {}
+        }
+        i += 2 + len;
+    }
+    let &(hv, lt) = comps.first()?;
+    let luma = (*tables.get(usize::from(lt))?)?;
+    let chroma = match comps.get(1) {
+        Some(&(_, ct)) => Some((*tables.get(usize::from(ct))?)?),
+        None => None,
+    };
+    Some(JpegParams {
+        luma,
+        chroma,
+        h: hv >> 4,
+        v: hv & 0x0F,
+    })
+}
+
+/// The cleared samples as a JPEG made the way the original was. `None` when
+/// that cannot be done faithfully (CMYK, a size or sampling the encoder does
+/// not take).
+fn encode_jpeg(buf: &[u8], l: &Layout, p: &JpegParams) -> Option<Vec<u8>> {
+    use jpeg_encoder::{ColorType, Encoder, QuantizationTableType, SamplingFactor};
+    let color = match (l.comps, l.bpc) {
+        (1, 8) => ColorType::Luma,
+        (3, 8) => ColorType::Rgb,
+        _ => return None,
+    };
+    let w = u16::try_from(l.w).ok()?;
+    let h = u16::try_from(l.h).ok()?;
+    let mut out = Vec::new();
+    let mut enc = Encoder::new(&mut out, 100);
+    let chroma = p.chroma.unwrap_or(p.luma);
+    enc.set_quantization_tables(
+        QuantizationTableType::Custom(Box::new(p.luma)),
+        QuantizationTableType::Custom(Box::new(chroma)),
+    );
+    if l.comps == 3 {
+        enc.set_sampling_factor(SamplingFactor::from_factors(p.h, p.v)?);
+    }
+    enc.encode(buf, w, h, color).ok()?;
+    Some(out)
 }
 
 /// Decodes a JPEG to samples in the colour space the PDF declares: grey, RGB
@@ -256,7 +376,7 @@ pub fn redact(
     let Some(l) = layout(pdf, dict, resources) else {
         return Ok(ImageFate::Remove { unsupported: true });
     };
-    let Some(mut buf) = samples(pdf, dict, data, &l)? else {
+    let Some((mut buf, jpeg_made)) = samples(pdf, dict, data, &l)? else {
         return Ok(ImageFate::Remove { unsupported: true });
     };
     let pixels = covered_pixels(&l, ctm, areas);
@@ -287,6 +407,9 @@ pub fn redact(
         }
         hex.push(b'>');
         hex
+    } else if let Some(j) = jpeg_made.as_ref().and_then(|p| encode_jpeg(&buf, &l, p)) {
+        out.set(b"Filter", Obj::name("DCTDecode"));
+        j
     } else {
         out.set(b"Filter", Obj::name("FlateDecode"));
         deflate(&buf)
@@ -369,6 +492,83 @@ mod tests {
         for row in raw.chunks(4) {
             assert_eq!(row, [200, 200, 0, 0]);
         }
+    }
+
+    /// A colour JPEG, partly covered, comes back as a JPEG made with the same
+    /// tables and subsampling: the covered half dark, the other half as it
+    /// was to within rounding, and no bigger than a JPEG — where decoded
+    /// pixels under Flate made a 145 MB scan 469 MB.
+    #[test]
+    fn a_jpeg_stays_a_jpeg_with_its_own_tables() {
+        let (w, h) = (64usize, 64usize);
+        let mut px = Vec::with_capacity(w * h * 3);
+        for y in 0..h {
+            for x in 0..w {
+                px.extend_from_slice(&[(x * 4) as u8, (y * 4) as u8, 180]);
+            }
+        }
+        let mut src = Vec::new();
+        let mut enc = jpeg_encoder::Encoder::new(&mut src, 80);
+        enc.set_sampling_factor(jpeg_encoder::SamplingFactor::R_4_2_0);
+        enc.encode(&px, w as u16, h as u16, jpeg_encoder::ColorType::Rgb)
+            .unwrap();
+        let mut d = gray(64, 64);
+        d.set(b"ColorSpace", Obj::name("DeviceRGB"));
+        d.set(b"Filter", Obj::name("DCTDecode"));
+        let ctm = Matrix::new(64.0, 0.0, 0.0, 64.0, 0.0, 0.0);
+        // The right half, x 32..64.
+        let area = [Rect::new(32.0, -1.0, 100.0, 100.0)];
+        let fate = redact(None, &d, &src, &ctm, &area, None, false).unwrap();
+        let ImageFate::Replace { dict, data, .. } = fate else {
+            panic!("{fate:?}")
+        };
+        assert_eq!(dict.name(b"Filter"), Some(&b"DCTDecode"[..]));
+        assert_eq!(jpeg_params(&data), jpeg_params(&src));
+        assert!(jpeg_params(&src).is_some_and(|p| (p.h, p.v) == (2, 2)));
+        assert!(
+            data.len() < src.len() * 2,
+            "{} vs {}",
+            data.len(),
+            src.len()
+        );
+        let l = Layout {
+            w,
+            h,
+            comps: 3,
+            bpc: 8,
+        };
+        let before = jpeg(&src, &l).unwrap();
+        let after = jpeg(&data, &l).unwrap();
+        let mut worst_kept = 0u8;
+        let mut worst_cleared = 0u8;
+        for y in 0..h {
+            for x in 0..w {
+                for c in 0..3 {
+                    let i = (y * w + x) * 3 + c;
+                    // One 16-pixel MCU either side of the edge mixes both.
+                    if x < 16 {
+                        worst_kept = worst_kept.max(before[i].abs_diff(after[i]));
+                    } else if x >= 48 {
+                        worst_cleared = worst_cleared.max(after[i]);
+                    }
+                }
+            }
+        }
+        assert!(worst_kept <= 6, "kept half moved by {worst_kept}");
+        assert!(worst_cleared <= 6, "cleared half still has {worst_cleared}");
+    }
+
+    #[test]
+    fn a_jpegs_tables_are_read_in_natural_order() {
+        // Annex K luma table at quality 50 is the table itself.
+        let mut src = Vec::new();
+        let enc = jpeg_encoder::Encoder::new(&mut src, 50);
+        enc.encode(&[128u8; 64], 8, 8, jpeg_encoder::ColorType::Luma)
+            .unwrap();
+        let p = jpeg_params(&src).unwrap();
+        assert_eq!(&p.luma[..8], &[16, 11, 10, 16, 24, 40, 51, 61]);
+        assert_eq!(p.luma[8], 12);
+        assert!(p.chroma.is_none());
     }
 
     #[test]

@@ -368,7 +368,7 @@ export const id = {
   "about.sandboxReal": "Pekerja berjalan dalam Job Object Windows",
   "about.sandboxDev": "Pengurungan pengembangan (bukan batas keamanan)",
   "about.logs": "Folder log",
-  "about.licenses": "Ikon: Fluent UI System Icons (MIT, Microsoft). Mesin PDF: PDFium (BSD-3).",
+  "about.licenses": "Ikon: Fluent UI System Icons (MIT, Microsoft). Mesin PDF: PDFium (BSD-3). Perangkat lunak ini sebagian didasarkan pada karya Independent JPEG Group.",
   "about.close": "Tutup",
 
   "err.open": "Dokumen tidak dapat dibuka",

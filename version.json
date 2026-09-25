@@ -1,9 +1,9 @@
 {
   "name": "PDF Studio Izul",
   "codename": "Atlas",
-  "version": "7.0.0-alpha.5",
-  "phase": "5",
-  "phaseName": "Operasi Halaman, Split View & Banding",
+  "version": "7.0.0-alpha.6",
+  "phase": "6",
+  "phaseName": "Redaksi Sejati",
   "buildChannel": "dev",
   "pdfiumVersion": "151.0.7881.0",
   "minWindows": "10.0.19041",

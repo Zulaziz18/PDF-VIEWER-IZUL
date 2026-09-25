@@ -107,11 +107,15 @@ fn run(engine: &'static Engine, case: &Case) -> Result<serde_json::Value, String
             }),
         }
     }
+    let started = std::time::Instant::now();
     let (redacted, results) = redact_document(&doc, &requests).map_err(|e| match e {
         RedactFailure::Pdf(e) => e.to_string(),
         RedactFailure::Refused(s) => s,
     })?;
     let bytes = redacted.save_to_vec().map_err(|e| e.to_string())?;
+    // What the user waits for: redaction with its verification, then the
+    // save — not the text extraction this tool does around it for the proof.
+    let millis = started.elapsed().as_secs_f64() * 1000.0;
     std::fs::write(&case.out, &bytes).map_err(|e| e.to_string())?;
     let texts: Vec<String> = (0..redacted.page_count())
         .map(|p| redacted.page_text(p).unwrap_or_default())
@@ -135,7 +139,7 @@ fn run(engine: &'static Engine, case: &Case) -> Result<serde_json::Value, String
         })
         .collect();
     Ok(
-        json!({ "pages": pages, "pdfium_text": texts, "pdfium_before": before, "bytes": bytes.len() }),
+        json!({ "pages": pages, "pdfium_text": texts, "pdfium_before": before, "bytes": bytes.len(), "ms": millis }),
     )
 }
 
