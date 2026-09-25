@@ -678,6 +678,99 @@ pratinjau 512 px).
 otomatis); split view hanya satu dokumen per panel; perbedaan visual belum
 ditampilkan di harness screenshot (mock tidak merender).
 
+## Keadaan Fase 6 (Redaksi Sejati, 25 September 2026)
+
+Selesai di branch `claude/pdf-studio-izul-v7-fase-6` (PR #5, base fase-5).
+Laporan SPEC 18 ada di badan PR #5. Kriteria lulus SPEC dibuktikan oleh
+`tools/redaction-proof/run.py` (juga dijalankan CI di ubuntu) →
+`bench/results/phase6-redaction.txt`: **LULUS**, 12 kasus × 6 alat.
+
+**Arsitektur** (rincian di kepala `crates/izul-redact/src/lib.rs` dan
+`crates/izul-pdf/src/redaction.rs`):
+
+- PDFium tidak punya API redaksi. `izul-redact` (tanpa PDFium) membaca berkas
+  yang baru ditulis PDFium, menafsirkan content stream (CTM, status teks, lebar
+  glyph), membuang yang ada di area, dan **menulis ulang seluruh berkas** —
+  hanya objek yang masih terjangkau. Inkremental tidak boleh: stream lama
+  tetap ada di berkas.
+- `izul_pdf::redaction::redact_document` adalah **satu-satunya** rutin, dipakai
+  pekerja (`WorkRedact`), harness UI, dan alat bukti (`bench --bin
+  redact-proof`). Jangan membuat jalur kedua; yang dibuktikan harus yang
+  dikirim.
+- Alur simpan: WorkOpen → WorkArrange → **WorkRedact** → WorkPlaceholders →
+  WorkSave → izul-write → temp → VerifyFile → **VerifyRedacted** → rename.
+- Tanda redaksi di UI berada di **ruang tampilan**; `plan_areas` mengubahnya
+  ke ruang pengguna (`PageGeometry::from_display`) dan melebarkannya ke kotak
+  utuh karakter yang pusatnya di dalam. Pemeriksaan kedua
+  (`check_left_as_shown`) sengaja **tidak** lewat `from_display` — kalau
+  konversinya salah, pemeriksaan yang memakai konversi yang sama ikut salah
+  (terbukti: mutasi `from_display` dulu lolos verifikasi pekerja).
+- Aturan glyph: dibuang bila pusatnya di area **atau** ≥ 25 % kotaknya
+  tertutup; teks tak terlihat (Tr 3) dinilai dari origin-nya. Glyph yang
+  terbawa keluar area ditutup warna area (`PageReport::beyond`).
+- Gambar: di dalam area → tidak digambar; sebagian → piksel dinolkan, JPEG
+  **ditulis ulang sebagai JPEG** dengan tabel kuantisasi dan subsampling
+  aslinya (`jpeg_params` di `image.rs`); JPX/JBIG2/CCITT dihapus utuh.
+
+**Temuan terukur (jangan ditebak ulang):**
+
+- PDFium **memotong** `/Widths` ke unit bulat (443,8477 → 443). MuPDF
+  **membulatkan** ke unit terdekat (terukur 0,0056 pt vs prediksi 0,00553 pt).
+  Poppler memakai lebar persis — sama dengan celah TJ yang kita tulis, jadi di
+  poppler tidak ada yang bergeser sama sekali. Karena itu toleransi geser di
+  pekerja 1/1000 em per glyph (PDFium) dan di alat bukti 0,5/1000 em per glyph
+  (MuPDF), 0,01 pt mutlak (poppler).
+- MuPDF menaruh glyph pada grid subpiksel: menggeser satu baris 0,0056 pt
+  **tanpa redaksi apa pun** mengubah piksel sebesar 65 pada 72 dpi (0,002 pt:
+  nol). Perbandingan render mentah karena itu tidak berarti; alat bukti memakai
+  toleransi ketetanggaan 3×3 pada 288 dpi plus perbandingan posisi kata.
+- `FPDF_SaveAsCopy` menulis ulang angka real dengan presisi f32
+  (556,1523 → 556,15228) — bukan kita.
+- Area dari PDFium datang sebagai `f32`; kotak glyph kita berbeda
+  seperseratus poin dari kotak PDFium, makanya `SPILL_SLACK` 0,05 pt.
+- JPEG yang dinolkan lalu di-Flate: pindaian 145 MB → 469 MB. Sebagai JPEG
+  dengan tabel asli: 104 MB, PSNR 70 dB di luar area.
+
+**Cacat yang ditemukan dan pelajarannya:**
+
+1. **Alat bukti yang pertama "gagal" karena pembandingnya, bukan redaksinya**
+   (selisih render 65 di luar area). Sebelum mengubah ambang, diukur dulu
+   apa yang menyebabkannya: geser 0,0056 pt tanpa redaksi memberi angka yang
+   sama persis. Baru sesudah itu kriterianya diganti — dan ditambah empat
+   mutasi sengaja yang **harus** tertangkap, supaya ambang yang dilonggarkan
+   tidak diam-diam menjadi ambang yang tidak bisa gagal.
+2. **Separuh huruf lenyap di luar kotak** (teks miring). Ditemukan oleh
+   kriteria yang sama begitu ia benar. Glyph yang dibuang utuh harus ditutup
+   di tempatnya, dan laporannya jujur soal apa yang diambil di luar area.
+3. **Berkas membengkak 3×** — hanya ketahuan dari benchmark ukuran, bukan dari
+   test. Sekarang ada di `bench/results/phase6-linux.txt`.
+4. Mutasi pada `from_display` lolos verifikasi pekerja → pemeriksaan kedua
+   yang independen (lihat di atas).
+
+**Cacat lama yang ditemukan di fase ini, belum diperbaiki (dijadwalkan awal
+Fase 7):** koordinat anotasi biasa ada di ruang tampilan
+(`src/viewport/annotLayer.ts` `toPagePoint`: origin kiri-bawah halaman
+*terlihat*, `/Rotate` bawaan sudah diterapkan, tanpa offset MediaBox), tetapi
+`izul-write` menulisnya **langsung** sebagai `/Rect`/`/QuadPoints`/`/InkList`
+dan impor membacanya kembali tanpa konversi (tidak ada rujukan ke
+MediaBox/Rotate di `izul-write/src` maupun `src-tauri/src/annots.rs`).
+Anotasi buatan aplikasi ini tampak benar di aplikasi ini sendiri (ditulis dan
+dibaca dengan kesalahan yang sama), tetapi menurut kode, di Edge/Acrobat
+anotasi pada halaman ber-`/Rotate` atau MediaBox tidak di titik nol akan salah
+tempat, dan anotasi buatan program lain di halaman seperti itu akan salah
+tempat di sini. Belum diuji dengan berkas sungguhan — uji itu langkah pertama
+perbaikannya. Dokumen biasa tidak terdampak. Komentar di
+`izul-model/src/annot.rs` ("always PDF user space") karena itu **keliru**.
+Redaksi tidak terdampak (sudah lewat `from_display`). Perbaikannya:
+konversi di batas simpan/impor lewat `PageGeometry`, AP diberi `/Matrix`
+rotasi, test round-trip dengan halaman `corner_page` yang sudah ada.
+
+**Belum / diketahui:** dokumen terenkripsi tidak bisa diredaksi; font tanpa
+lebar yang terbaca ditolak; redaksi belum diuji di Acrobat sungguhan
+(langkahnya di TESTING.md "Fase 6"); `npm audit` 2 moderate di `vitest` (dev).
+Lisensi baru `jpeg-encoder` (MIT/Apache + IJG, atribusi di README dan
+kotak Tentang).
+
 ## Alur kerja proyek ini
 
 - Branch per fase: `claude/pdf-studio-izul-v7-fase-4` (Langkah 0 + Fase 4,
@@ -700,8 +793,8 @@ ditampilkan di harness screenshot (mock tidak merender).
   "Keadaan Fase N" di berkas ini sebelum lanjut.
 - Total 9 fase (0–8). Fase 0 dan 1 selesai dan disetujui pengguna; Fase 2 dan
   Fase 3 selesai (satu branch, PR #2); Langkah 0 dan Fase 4 selesai (PR #3);
-  Fase 5 selesai (PR #4). Fase 6 berikutnya di
-  `claude/pdf-studio-izul-v7-fase-6`, bercabang dari fase-5.
+  Fase 5 selesai (PR #4); Fase 6 selesai (PR #5). Fase 7 berikutnya di
+  `claude/pdf-studio-izul-v7-fase-7`, bercabang dari fase-6.
   Fase 5–8 dikerjakan berturut-turut tanpa menunggu persetujuan, atas
   keputusan pengguna.
 - Panduan menjalankan & menguji aplikasi di Windows (untuk pemula) ada di

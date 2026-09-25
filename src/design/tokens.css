@@ -34,6 +34,8 @@
   /* Text on an accent-filled button: 4.5:1 or better in both themes (SPEC 14). */
   --izul-on-accent: #ffffff;
   --izul-danger: #d1343c;
+  /* Behind the warning a destructive dialog shows (Phase 6: redaction). */
+  --izul-danger-soft: #fdecec;
   --izul-unsaved: #e07b26;
   /* Brand mark only: the "PDF" file badge and the active ribbon tab's rule,
      which is where WPS puts its component colour. Never a status colour. */
@@ -81,6 +83,7 @@
   --izul-accent: #6f9dff;
   --izul-accent-soft: #24324d;
   --izul-warning-soft: #3d3020;
+  --izul-danger-soft: #3d2224;
   --izul-on-accent: #0b1a33;
   --izul-brand: #ff6b6b;
 

@@ -51,10 +51,10 @@ import {
   boundsOf,
   handleAt,
   handlePoint,
+  handlesFor,
   normalise,
   pick,
   pickInside,
-  RESIZE_HANDLES,
   resized,
   scaleBetween,
   snapAngle,
@@ -849,7 +849,8 @@ export class ViewportRenderer {
     // Handles are drawn at a fixed pixel size so they stay usable at any zoom.
     ctx.fillStyle = "#ffffff";
     const half = HANDLE_SIZE / 2;
-    const marks: HandleId[] = selected.length === 1 ? [...RESIZE_HANDLES, "rotate"] : [];
+    const only = selected.length === 1 ? selected[0] : undefined;
+    const marks: HandleId[] = only ? handlesFor(only.kind) : [];
     for (const handle of marks) {
       const p = toContentPoint(box, handlePoint(bounds, handle));
       const x = p.x - view.x;
@@ -930,7 +931,8 @@ export class ViewportRenderer {
     const selected = this.#selectedObjects();
     const bounds = boundsOf(selected);
     if (bounds && selected.length === 1) {
-      const handle = handleAt(bounds, point, box.zoom);
+      const only = selected[0];
+      const handle = only ? handleAt(bounds, point, box.zoom, handlesFor(only.kind)) : null;
       if (handle) {
         this.#gesture = {
           kind: handle === "rotate" ? "rotate" : "resize",

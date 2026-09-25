@@ -1,0 +1,11 @@
+Fase 6 — redaksi: waktu dan ukuran berkas (linux x86_64)
+Satu area (72,600)-(400,700) di halaman pertama, lalu di setiap halaman. Waktu = redaksi +
+verifikasi PDFium + simpan, build release. Tidak ada target di SPEC; angka ini rujukan.
+
+berkas           halaman   waktu s   asli MB  hasil MB    glyph  gambar
+text-500p.pdf          1      0.07       1.0       1.0      596       0
+text-500p.pdf        500      4.25       1.0       1.0   300259       0
+mixed-500p.pdf         1      2.49      52.4      52.5        0       1
+mixed-500p.pdf       500     26.53      52.4      62.9        0     500
+scan-500p.pdf          1      1.89     144.5     144.4        0       1
+scan-500p.pdf        500     30.86     144.5     104.2        0     500

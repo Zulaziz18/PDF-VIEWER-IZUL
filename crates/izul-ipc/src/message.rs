@@ -21,7 +21,7 @@ use izul_model::geom::{PdfRectF, RotationQuarter};
 /// So the worker announces this number the moment it connects, and the
 /// supervisor refuses a worker that does not match. Bump it whenever anything
 /// in [`Request`] or [`Response`] changes shape.
-pub const PROTOCOL_VERSION: u32 = 6;
+pub const PROTOCOL_VERSION: u32 = 7;
 
 /// Identifies one open document within a worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -252,6 +252,55 @@ pub enum Request {
         pages: Vec<ArrangePage>,
         sources: Vec<String>,
     },
+    // ---- Phase 6 (appended; see `PROTOCOL_VERSION`). ---------------------
+    /// On the working copy: takes out everything inside the areas (true
+    /// redaction, `izul-redact`), then checks the result with PDFium before
+    /// it becomes the working copy. Answered with `WorkRedacted`.
+    WorkRedact {
+        doc: DocId,
+        pages: Vec<RedactPageWire>,
+    },
+    /// Opens a written file and checks that no character is left in the
+    /// areas — the same check, on the bytes that are about to replace the
+    /// user's file. Answered with `RedactionVerified`.
+    VerifyRedacted {
+        path: String,
+        /// Page, and its areas in user space as `WorkRedacted` returned them.
+        pages: Vec<(u32, Vec<PdfRectF>)>,
+    },
+}
+
+/// The areas to redact on one page of a [`Request::WorkRedact`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RedactPageWire {
+    pub page: u32,
+    pub areas: Vec<RedactAreaWire>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct RedactAreaWire {
+    /// In display space, as annotations are (origin bottom-left of the page
+    /// as shown, its own `/Rotate` applied).
+    pub rect: PdfRectF,
+    /// Fill colour afterwards, 0..1 RGB; `None` leaves the area empty.
+    pub fill: Option<[f32; 3]>,
+}
+
+/// What was taken out of one page.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RedactedPageWire {
+    pub page: u32,
+    /// The areas as redacted: user space, widened to whole characters.
+    pub areas: Vec<PdfRectF>,
+    pub glyphs: u32,
+    pub images_removed: u32,
+    pub images_cleared: u32,
+    /// Images removed whole because their format cannot be partly cleared.
+    pub images_unsupported: u32,
+    pub paths: u32,
+    pub forms: u32,
+    pub annotations: u32,
+    pub marked_content: u32,
 }
 
 /// One page of a [`Request::WorkArrange`].
@@ -376,6 +425,14 @@ pub enum Response {
     Verified {
         page_count: u32,
         izul_annots: u32,
+    },
+    // ---- Phase 6, appended ------------------------------------------------
+    WorkRedacted {
+        doc: DocId,
+        pages: Vec<RedactedPageWire>,
+    },
+    RedactionVerified {
+        pages: u32,
     },
 }
 
@@ -521,6 +578,27 @@ mod tests {
                 .unwrap()
             ),
             22
+        );
+        // Phase 5's last variants, pinned when Phase 6 appended after them.
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Response::Verified {
+                    page_count: 0,
+                    izul_annots: 0
+                })
+                .unwrap()
+            ),
+            15
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Request::WorkRedact {
+                    doc: DocId(1),
+                    pages: vec![]
+                })
+                .unwrap()
+            ),
+            24
         );
         assert_eq!(
             index(

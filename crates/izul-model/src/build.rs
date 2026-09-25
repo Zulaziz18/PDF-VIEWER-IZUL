@@ -322,10 +322,44 @@ fn markup(dl: &mut DisplayList, obj: &AnnotObject, quads: &[PdfRectF], color: Rg
                     blend: BlendMode::Normal,
                 });
             }
+            AnnotKind::Redact => {
+                // The mark, not the result: a red frame over a light red
+                // wash, so what is marked stays readable until it is applied.
+                dl.push(DisplayOp::FillPath {
+                    path: Path::rect(*quad),
+                    color: REDACT_WASH,
+                    rule: FillRule::NonZero,
+                    blend: BlendMode::Normal,
+                });
+                dl.push(DisplayOp::StrokePath {
+                    path: Path::rect(*quad),
+                    color: REDACT_FRAME,
+                    style: StrokeStyle {
+                        width: 1.0,
+                        miter_limit: 10.0,
+                        ..Default::default()
+                    },
+                    blend: BlendMode::Normal,
+                });
+            }
             _ => {}
         }
     }
 }
+
+/// How a redaction mark looks before it is applied.
+pub const REDACT_FRAME: Rgba = Rgba {
+    r: 0.898,
+    g: 0.282,
+    b: 0.302,
+    a: 1.0,
+};
+pub const REDACT_WASH: Rgba = Rgba {
+    r: 0.898,
+    g: 0.282,
+    b: 0.302,
+    a: 0.15,
+};
 
 fn polyline(points: &[PdfPointF], closed: bool) -> Path {
     let mut iter = points.iter().copied();
@@ -821,6 +855,7 @@ mod tests {
                     font: FontSpec::default(),
                 },
             ),
+            markup_obj(Redact),
         ]
     }
 

@@ -273,9 +273,17 @@ async fn open_annotate_save_reopen_and_edit_again() {
     assert!(state.is_dirty(1));
 
     // Save over the file itself.
-    let report = saving::save(&live.pool, &state, 1, &path.to_string_lossy(), pages, None)
-        .await
-        .unwrap();
+    let report = saving::save(
+        &live.pool,
+        &state,
+        1,
+        &path.to_string_lossy(),
+        pages,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     assert_eq!(report.annotations, made.len() as u32);
     assert!(!state.is_dirty(1), "a save leaves nothing unsaved");
     let saved = std::fs::read(&path).unwrap();
@@ -329,9 +337,17 @@ async fn open_annotate_save_reopen_and_edit_again() {
     moved.translate(10.0, -20.0);
     state2.replace(2, vec![moved.clone()]).unwrap();
     live.pool.write().await.release(DocId(1)).await.unwrap();
-    saving::save(&live.pool, &state2, 2, &path.to_string_lossy(), pages, None)
-        .await
-        .unwrap();
+    saving::save(
+        &live.pool,
+        &state2,
+        2,
+        &path.to_string_lossy(),
+        pages,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
 
     let (_, third) = live.reopen(3, &path).await;
     assert_eq!(
@@ -366,6 +382,7 @@ async fn save_as_moves_the_tab_and_leaves_the_original() {
         &path.to_string_lossy(),
         pages,
         Some(&copy.to_string_lossy()),
+        None,
     )
     .await
     .unwrap();

@@ -120,6 +120,11 @@ const ICONS = {
   windows: "window_multiple",
   compare: "split_vertical",
   link: "link",
+  // Phase 6: redaction.
+  redactText: "text_grammar_dismiss",
+  redactArea: "select_object",
+  redactSearch: "search_square",
+  redactApply: "shield_checkmark",
 };
 const SIZES = [20, 24];
 

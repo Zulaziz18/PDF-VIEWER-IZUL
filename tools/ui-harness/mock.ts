@@ -154,6 +154,7 @@ export function installMocks(data: HarnessData): void {
         case "page_text":
         case "annot_list":
         case "annot_display_lists":
+        case "redact_preview":
           return window.__harnessBackend ? window.__harnessBackend(cmd, args) : [];
         case "file_status":
           return {

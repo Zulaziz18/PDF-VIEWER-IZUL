@@ -1039,6 +1039,30 @@ pub async fn annot_add(
     state.annots.add(doc, object).map_err(|e| e.to_string())
 }
 
+/// Inserts several objects as one undo step. Pages the editor has not read
+/// yet are read first: an object on a page whose own annotations were never
+/// imported would make the next save drop them.
+#[tauri::command]
+pub async fn annot_add_many(
+    state: tauri::State<'_, AppState>,
+    doc: u64,
+    objects: Vec<AnnotObject>,
+) -> CmdResult<(Vec<AnnotObject>, EditResult)> {
+    let mut pages: Vec<u32> = objects.iter().map(|o| o.page).collect();
+    pages.sort_unstable();
+    pages.dedup();
+    for page in pages {
+        if !state.annots.is_imported(doc, page) {
+            crate::saving::import_page(&state.pool, &state.annots, doc, page).await?;
+        }
+    }
+    prepare_fonts(&state, doc, &objects).await?;
+    state
+        .annots
+        .add_many(doc, objects)
+        .map_err(|e| e.to_string())
+}
+
 /// Replaces objects as one undo step — every finished gesture, and every
 /// change from the properties panel.
 #[tauri::command]

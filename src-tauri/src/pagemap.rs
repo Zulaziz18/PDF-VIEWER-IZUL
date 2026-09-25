@@ -261,7 +261,7 @@ pub async fn view(state: &AppState, doc: u64) -> CmdResult<PagesView> {
 }
 
 /// Reads every page's saved annotations into the editor, once.
-async fn ensure_all_imported(state: &AppState, doc: u64) -> CmdResult<()> {
+pub(crate) async fn ensure_all_imported(state: &AppState, doc: u64) -> CmdResult<()> {
     if state.annots.all_imported(doc) {
         return Ok(());
     }

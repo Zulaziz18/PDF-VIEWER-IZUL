@@ -38,6 +38,49 @@ Test integrasi (`crash_isolation`) membaca PDFium langsung dari
 aplikasi secara otomatis pada setiap `cargo build`. Tidak ada langkah salin
 manual yang diperlukan di kedua kasus — cukup `vendor/pdfium/fetch.sh` di atas.
 
+## Hasil Fase 6
+
+| Suite | Jumlah | Status |
+|---|---|---|
+| `izul-model` (… + jenis ke-14 `Redact`) | 77 | lulus |
+| `izul-ipc` (… + indeks `WorkRedact`/`VerifyRedacted` terpatok) | 23 | lulus |
+| `izul-store` | 49 | lulus |
+| **`izul-redact`** (parser, filter, font, interpreter konten, gambar, JPEG→JPEG, glyph terbawa ditutup, anotasi/field/struktur) | 58 | lulus |
+| `izul-pdf` (… + **perencanaan area, pemeriksaan tersisa/bergeser, redaksi dokumen nyata**, golden `redact`) | 67 | lulus |
+| `izul-render` | 29 | lulus |
+| `izul-write` (… + `/Redact` standar) | 31 | lulus |
+| `izul-worker` | 9 | lulus |
+| `izul-app` | 103 | lulus |
+| `crash_isolation` + `render_pipeline` + `render_end_to_end` + `save_round_trip` + `page_ops` | 32 | lulus |
+| **`redaction`** (pekerja nyata: /Rotate 90 + MediaBox bergeser, lapisan OCR, font tanpa lebar ditolak) | 2 | lulus |
+| `izul-bench` (`multidoc`) | 3 | lulus |
+| **Total Rust** | **483** | **lulus** |
+| Frontend | 183 | lulus |
+| **Total** | **666** | **lulus** |
+
+**Bukti kriteria lulus SPEC** ("teks yang diredaksi tidak dapat ditemukan lagi
+oleh alat ekstraksi mana pun") — hasilnya di `bench/results/phase6-redaction.txt`,
+dijalankan juga oleh CI (langkah *Redaction proof*, ubuntu):
+
+```bash
+sudo apt-get install -y poppler-utils mupdf-tools fonts-dejavu-core fonts-liberation
+python3 -m pip install reportlab pikepdf pypdf pillow pdfminer.six
+python3 tools/redaction-proof/run.py
+```
+
+Dua belas kasus, enam alat. "t/b" berarti alat itu tidak menemukan rahasia
+bahkan di berkas asli (misalnya pypdf tidak membaca `/ActualText`), jadi tidak
+dihitung sebagai bukti. Di luar area, render MuPDF 288 dpi dan posisi kata
+menurut poppler dan MuPDF dibandingkan sebelum/sesudah; empat perubahan kecil
+yang disengaja (geser 0,5 pt dan 0,05 pt, kotak abu-abu 3 pt, warna teks)
+membuktikan pemeriksaan itu bisa gagal.
+
+Waktu dan ukuran (`python3 tools/redaction-proof/bench.py`, build release,
+satu area per halaman di fixture 500 halaman) ada di
+`bench/results/phase6-linux.txt`: teks 500 halaman 4,3 s; pindaian 500 halaman
+30,9 s dan berkas **mengecil** 144,5 → 104,2 MB; campuran 26,5 s, 52,4 → 62,9 MB.
+SPEC tidak memberi target untuk redaksi.
+
 ## Hasil Fase 5
 
 | Suite | Jumlah | Status |
@@ -611,6 +654,33 @@ Seperti Fase 4: **pakai salinan**, karena menyimpan menimpa berkas.
       kedua sisi, dan bilah atas menyebut jumlah perbedaan di halaman itu.
 - [ ] Mode Banding dengan dua PDF hasil pindaian (tanpa teks): bagian yang
       berbeda tetap ditandai (visual).
+
+### Fase 6
+
+**Pakai salinan berkas** — redaksi menghapus isi untuk selamanya.
+
+- [ ] Pita **Lindungi** → Tandai Teks, lalu pilih sebaris teks: muncul kotak
+      bergaris merah. Bisa dipindah, diubah ukuran, dan Ctrl+Z menghapusnya.
+- [ ] Tandai Area: seret kotak di atas sebuah gambar/foto.
+- [ ] Cari & Tandai: ketik sebuah kata yang muncul beberapa kali → "Tandai
+      semua hasil": semua kemunculannya bertanda.
+- [ ] Simpan (Ctrl+S) **tanpa** menerapkan: muncul peringatan bahwa isi di
+      bawah tanda masih ada di berkas.
+- [ ] Terapkan Redaksi: dialog menyebut jumlah tanda dan halaman; pilih
+      "Sebagai berkas baru" → Terapkan. Jendela Simpan menawarkan nama
+      `… (diredaksi).pdf`. Sesudahnya tab itu menampilkan berkas hasil, area
+      yang ditandai hitam, dan pesan menyebut berapa karakter/gambar dihapus.
+      Buka berkas aslinya lagi: tidak berubah sama sekali.
+- [ ] Di berkas hasil, tekan Ctrl+F dan cari kata yang tadi diredaksi: **tidak
+      ditemukan**. Blok teks di sekitar kotak hitam lalu salin–tempel ke
+      Notepad: kata itu tidak ikut.
+- [ ] Buka berkas hasil di **Edge** dan **Chrome**, cari kata yang sama dengan
+      Ctrl+F: tidak ditemukan. Teks di sekitarnya tetap di tempatnya dan tetap
+      bisa dicari.
+- [ ] Redaksi di atas foto: bagian foto di luar kotak tetap utuh dan tajam;
+      ukuran berkas hasil tidak berlipat dibanding aslinya.
+- [ ] Opsional, bila punya Adobe Acrobat Reader: buka berkas hasil, cari kata
+      yang diredaksi — tidak ditemukan.
 
 ### Menyusul (fase terkait)
 

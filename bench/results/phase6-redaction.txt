@@ -1,0 +1,46 @@
+Fase 6 — bukti redaksi: rahasia dicari ulang oleh enam alat ekstraksi
+
+hilang = alat menemukan rahasia di berkas asli dan tidak lagi di hasil redaksi
+t/b    = alat tidak menemukan rahasia bahkan di berkas asli (tidak membuktikan apa pun)
+Piksel = wilayah gambar di bawah rahasia kini seragam; Luar area = render MuPDF 288 dpi sebelum/sesudah sama di luar area
+Luar   = bagian yang ikut diambil di luar area (glyph yang sebagian besar di dalam area — ditutup warna area —,
+         gambar atau anotasi yang dibuang utuh); dilaporkan redaksi sendiri dan dikecualikan dari 'luar area'
+Geser  = pergeseran terbesar kata di luar area, poppler/MuPDF, dalam pt (batas poppler 0.01;
+         MuPDF membulatkan /Widths, batasnya 0.0005 em per glyph yang dibuang)
+
+kasus         glyph  gbr anot luar  PDFium      poppler     MuPDF       pypdf       pdfminer    isi mentah  piksel    luar area  geser         
+-----------------------------------------------------------------------------------------------------------------------------------------------
+std14            13    0    0    0  hilang      hilang      hilang      hilang      hilang      hilang      -         sama       0.0000/0.0000 
+truetype         13    0    0    1  hilang      hilang      hilang      hilang      hilang      hilang      -         sama       0.0000/0.0056 
+cid              13    0    0    1  hilang      hilang      hilang      hilang      hilang      t/b         -         sama       0.0000/0.0107 
+tj-spacing       13    0    0    0  hilang      hilang      hilang      hilang      hilang      hilang      -         sama       0.0000/0.0000 
+rotated          16    0    0    3  hilang      t/b         hilang      hilang      hilang      hilang      -         sama       0.0000/0.0000 
+form             13    0    0    0  hilang      hilang      hilang      hilang      hilang      hilang      -         sama       0.0000/0.0000 
+ocr-scan         23    1    0    0  hilang      hilang      hilang      hilang      hilang      hilang      seragam   sama       0.0000/0.0000 
+inline-image      0    1    0    0  t/b         t/b         t/b         t/b         t/b         t/b         seragam   sama       0.0000/0.0000 
+type3            13    0    0    0  hilang      hilang      hilang      hilang      hilang      hilang      -         sama       0.0000/0.0001 
+actualtext       15    0    0    0  hilang      hilang      t/b         t/b         t/b         hilang      -         sama       0.0000/0.0000 
+annotations       0    0    2    0  t/b         hilang      hilang      t/b         t/b         hilang      -         sama       0.0000/0.0000 
+page-rotate      14    0    0    0  hilang      hilang      hilang      hilang      hilang      hilang      -         sama       0.0000/0.0000 
+
+Kasus:
+  std14         Helvetica standar-14 tanpa /Widths
+  truetype      TrueType tertanam (subset, lebar pecahan)
+  cid           Type0 CID Identity-H (DejaVu Sans tertanam)
+  tj-spacing    TJ dengan kerning, Tc, Tw, Tz
+  rotated       Teks diputar 30 derajat
+  form          Teks di dalam Form XObject bermatriks
+  ocr-scan      Pindaian JPEG + lapisan OCR tak terlihat (Tr 3)
+  inline-image  Gambar inline berisi teks (piksel)
+  type3         Font Type 3 dengan ToUnicode
+  actualtext    Teks pengganti /ActualText di marked content
+  annotations   Isi anotasi FreeText dan nilai field formulir
+  page-rotate   Halaman /Rotate 90 dengan MediaBox tidak di titik nol
+
+Kewarasan pemeriksaan (tiap perubahan kecil di luar area harus tertangkap):
+  ok halaman digeser 0,5 pt: selisih maks 253
+  ok kotak abu-abu 3x3 pt digambar: selisih maks 51
+  ok warna teks jadi abu gelap: selisih maks 76
+  ok halaman digeser 0,05 pt: geser 0.0500 pt
+
+HASIL: LULUS — tidak ada alat yang menemukan rahasia di hasil redaksi

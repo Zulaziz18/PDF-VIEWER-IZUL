@@ -124,7 +124,7 @@ export interface DisplayListOut {
   readonly ops: DisplayList;
 }
 
-/** The thirteen kinds of SPEC 11.2. */
+/** The thirteen kinds of SPEC 11.2, and Phase 6's redaction mark. */
 export type AnnotKind =
   | "Highlight"
   | "Underline"
@@ -138,7 +138,8 @@ export type AnnotKind =
   | "Ellipse"
   | "Polygon"
   | "Note"
-  | "Stamp";
+  | "Stamp"
+  | "Redact";
 
 export const ANNOT_KINDS: readonly AnnotKind[] = [
   "Highlight",
@@ -154,7 +155,12 @@ export const ANNOT_KINDS: readonly AnnotKind[] = [
   "Polygon",
   "Note",
   "Stamp",
+  "Redact",
 ];
+
+/** The colour a redaction mark fills its area with once applied, unless the
+ * user picks another. */
+export const REDACT_FILL: Rgba = { r: 0, g: 0, b: 0, a: 1 };
 
 export type TextAlign = "Left" | "Center" | "Right" | "Justify";
 export type NoteIcon = "Comment" | "Note" | "Help";

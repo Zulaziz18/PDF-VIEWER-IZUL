@@ -29,6 +29,21 @@ const SWATCHES: readonly Rgba[] = [
   rgba(255, 255, 255),
 ];
 
+/** What a redaction area can become once applied: opaque, and plain. */
+const REDACT_SWATCHES: readonly Rgba[] = [
+  rgba(0, 0, 0),
+  rgba(64, 64, 64),
+  rgba(128, 128, 128),
+  rgba(255, 255, 255),
+];
+
+/** Whether a colour is this swatch, alpha aside (a highlight keeps its own). */
+function sameHue(a: Rgba | null, b: Rgba): boolean {
+  if (a === null) return false;
+  const near = (x: number, y: number): boolean => Math.abs(x - y) < 1 / 255;
+  return near(a.r, b.r) && near(a.g, b.g) && near(a.b, b.b);
+}
+
 function colorOf(obj: AnnotObject): Rgba | null {
   const p = obj.payload;
   if ("Markup" in p) return p.Markup.color;
@@ -139,6 +154,11 @@ export function PropertiesPanel(): React.JSX.Element | null {
   const width = strokeWidthOf(first);
   const text = objects.length === 1 ? textOf(first) : null;
   const font = objects.length === 1 ? fontOf(first) : null;
+  // A redaction mark's colour is what its area becomes once applied, and the
+  // mark itself always looks the same — so no opacity, and its own palette.
+  const redact = objects.every((o) => o.kind === "Redact");
+  const swatches = redact ? REDACT_SWATCHES : SWATCHES;
+  const colorLabel = redact ? t("redact.fill") : t("props.color");
 
   const apply = (map: (obj: AnnotObject) => AnnotObject): void => {
     void store().replaceAnnots(objects.map(map));
@@ -158,37 +178,43 @@ export function PropertiesPanel(): React.JSX.Element | null {
 
       {color !== null && (
         <section>
-          <h3 className="text-[12px] text-[var(--izul-text-dim)] mb-1.5">{t("props.color")}</h3>
+          <h3 className="text-[12px] text-[var(--izul-text-dim)] mb-1.5">{colorLabel}</h3>
           <div className="flex flex-wrap gap-1.5">
-            {SWATCHES.map((swatch, i) => (
+            {swatches.map((swatch, i) => (
               <button
                 key={i}
                 type="button"
-                aria-label={`${t("props.color")} ${i + 1}`}
+                aria-label={`${colorLabel} ${i + 1}`}
+                aria-pressed={sameHue(color, swatch)}
                 onClick={() => apply((o) => withColor(o, swatch))}
                 style={{ background: cssColor(swatch) }}
-                className="w-6 h-6 rounded-[6px] border border-[var(--izul-border)]"
+                className={[
+                  "w-6 h-6 rounded-[6px] border border-[var(--izul-border)]",
+                  sameHue(color, swatch) ? "outline outline-2 outline-offset-2 outline-[var(--izul-accent)]" : "",
+                ].join(" ")}
               />
             ))}
           </div>
         </section>
       )}
 
-      <section>
-        <label className="block text-[12px] text-[var(--izul-text-dim)] mb-1">
-          {t("props.opacity")} — {Math.round(first.opacity * 100)}%
-        </label>
-        <input
-          type="range"
-          min={10}
-          max={100}
-          value={Math.round(first.opacity * 100)}
-          onChange={(e) =>
-            apply((o) => ({ ...structuredClone(o), opacity: Number(e.target.value) / 100 }))
-          }
-          className="w-full"
-        />
-      </section>
+      {!redact && (
+        <section>
+          <label className="block text-[12px] text-[var(--izul-text-dim)] mb-1">
+            {t("props.opacity")} — {Math.round(first.opacity * 100)}%
+          </label>
+          <input
+            type="range"
+            min={10}
+            max={100}
+            value={Math.round(first.opacity * 100)}
+            onChange={(e) =>
+              apply((o) => ({ ...structuredClone(o), opacity: Number(e.target.value) / 100 }))
+            }
+            className="w-full"
+          />
+        </section>
+      )}
 
       {width !== null && (
         <section>
@@ -262,19 +288,22 @@ export function PropertiesPanel(): React.JSX.Element | null {
           />
           {t("props.locked")}
         </label>
-        <label className="text-[12px] text-[var(--izul-text-dim)]">
-          {t("props.rotation")} — {Math.round(first.rotation)}°
-          <input
-            type="range"
-            min={-180}
-            max={180}
-            value={Math.round(first.rotation)}
-            onChange={(e) =>
-              apply((o) => ({ ...structuredClone(o), rotation: Number(e.target.value) }))
-            }
-            className="w-full"
-          />
-        </label>
+        {/* No rotation for redaction marks: what is applied is upright. */}
+        {!redact && (
+          <label className="text-[12px] text-[var(--izul-text-dim)]">
+            {t("props.rotation")} — {Math.round(first.rotation)}°
+            <input
+              type="range"
+              min={-180}
+              max={180}
+              value={Math.round(first.rotation)}
+              onChange={(e) =>
+                apply((o) => ({ ...structuredClone(o), rotation: Number(e.target.value) }))
+              }
+              className="w-full"
+            />
+          </label>
+        )}
       </section>
 
       <button

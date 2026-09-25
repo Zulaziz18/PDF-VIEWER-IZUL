@@ -24,6 +24,8 @@ import { useDocument } from "@/state/documentStore";
 import type { SearchScope } from "@/state/documentStore";
 import { useWorkspace } from "@/state/workspaceStore";
 import { viewport } from "./viewportHandle";
+import { markSearchResults } from "./redaction";
+import { Icon } from "@/design/Icon";
 import { t } from "@/i18n";
 
 /** How long the typing has to stop before a query is sent. */
@@ -47,6 +49,7 @@ export function SearchPanel(): React.JSX.Element | null {
   const search = useDocument((s) => s.search);
   const inputRef = useRef<HTMLInputElement>(null);
   const [progress, setProgress] = useState<IndexProgress | null>(null);
+  const [marking, setMarking] = useState(false);
 
   // Debounced on the query's own epoch: every keystroke raises it, so this
   // effect re-arms rather than stacking one timer per character.
@@ -185,6 +188,24 @@ export function SearchPanel(): React.JSX.Element | null {
           <p role="alert" className="text-[12px] text-[var(--izul-danger)]">
             {search.error}
           </p>
+        )}
+        {/* Redaction's "search and mark" (Phase 6): every hit in this
+            document, in one undo step. Not for the library: marks belong to
+            the document in front. */}
+        {((search.scope === "document" && results.length > 0) ||
+          (search.scope === "regex" && search.query.trim().length > 0)) && (
+          <button
+            type="button"
+            disabled={marking}
+            onClick={() => {
+              setMarking(true);
+              void markSearchResults().finally(() => setMarking(false));
+            }}
+            className="h-8 px-2 flex items-center justify-center gap-1.5 rounded-[8px] text-[12px] border border-[var(--izul-border)] hover:bg-[var(--izul-surface-raised)] disabled:opacity-50"
+          >
+            <Icon name="redactText" size={16} tone="rose" />
+            {t("redact.markAll")}
+          </button>
         )}
       </div>
 

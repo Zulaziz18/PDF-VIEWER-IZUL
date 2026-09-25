@@ -253,9 +253,17 @@ async fn rearranged_pages_are_saved_in_order_with_their_annotations() {
     });
     assert_eq!(state.resolved_pages(1).len(), 6);
 
-    let report = saving::save(&live.pool, &state, 1, &path.to_string_lossy(), 4, None)
-        .await
-        .unwrap();
+    let report = saving::save(
+        &live.pool,
+        &state,
+        1,
+        &path.to_string_lossy(),
+        4,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     let sizes = report.restructured.clone().expect("a page map was applied");
     assert_eq!(sizes.len(), 6);
     // The foreign page was turned a quarter: its sizes come back swapped.
@@ -327,14 +335,30 @@ async fn a_second_save_after_a_rearrangement_changes_nothing_further() {
             },
         )
         .unwrap();
-    let first = saving::save(&live.pool, &state, 1, &path.to_string_lossy(), 3, None)
-        .await
-        .unwrap();
+    let first = saving::save(
+        &live.pool,
+        &state,
+        1,
+        &path.to_string_lossy(),
+        3,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     assert!(first.restructured.is_some());
     state.add(1, rect(0, "sesudah")).unwrap();
-    let second = saving::save(&live.pool, &state, 1, &path.to_string_lossy(), 3, None)
-        .await
-        .unwrap();
+    let second = saving::save(
+        &live.pool,
+        &state,
+        1,
+        &path.to_string_lossy(),
+        3,
+        None,
+        None,
+    )
+    .await
+    .unwrap();
     assert!(second.restructured.is_none());
     live.open(2, &path).await;
     assert_eq!(

@@ -10,7 +10,11 @@
 
 use std::collections::HashMap;
 
-use izul_ipc::message::{ArrangePage, DocId, Request, Response, SavedAnnotWire, BLOB_CHUNK};
+use izul_ipc::message::{
+    ArrangePage, DocId, RedactPageWire, RedactedPageWire, Request, Response, SavedAnnotWire,
+    BLOB_CHUNK,
+};
+use izul_pdf::redaction::{check_left, redact_document, AreaRequest, PageRequest, RedactFailure};
 use izul_pdf::{ArrangeSource, Arranged, Document, Engine, PdfError, Quality};
 
 /// Working copies and blobs, per worker.
@@ -37,6 +41,9 @@ pub enum Failure {
     NoWorkingCopy(DocId),
     NoBlob,
     Encode(String),
+    /// A redaction that could not be done, or did not verify. The detail is
+    /// shown to the user as it is.
+    Redact(Option<DocId>, String),
 }
 
 impl Workbench {
@@ -289,10 +296,72 @@ impl Workbench {
                     izul_annots,
                 })
             }
+            Request::WorkRedact { doc, pages } => {
+                let pages = self.redact(doc, &pages)?;
+                Ok(Response::WorkRedacted { doc, pages })
+            }
+            Request::VerifyRedacted { path, pages } => {
+                let copy = engine
+                    .open_copied(&path, None)
+                    .map_err(|e| Failure::Pdf(None, e))?;
+                for (page, areas) in &pages {
+                    let after = copy.char_layout(*page).map_err(|e| Failure::Pdf(None, e))?;
+                    check_left(areas, &after)
+                        .map_err(|e| Failure::Redact(None, format!("halaman {}: {e}", page + 1)))?;
+                }
+                Ok(Response::RedactionVerified {
+                    pages: pages.len() as u32,
+                })
+            }
             other => Err(Failure::Encode(format!(
                 "bukan permintaan Fase 4: {other:?}"
             ))),
         }
+    }
+
+    /// Redacts the working copy (`izul_pdf::redaction::redact_document`,
+    /// the routine the proof tool runs too). On any failure the working copy
+    /// is left as it was.
+    fn redact(
+        &mut self,
+        doc: DocId,
+        pages: &[RedactPageWire],
+    ) -> Result<Vec<RedactedPageWire>, Failure> {
+        let requests: Vec<PageRequest> = pages
+            .iter()
+            .map(|p| PageRequest {
+                page: p.page,
+                areas: p
+                    .areas
+                    .iter()
+                    .map(|a| AreaRequest {
+                        rect: a.rect,
+                        fill: a.fill,
+                    })
+                    .collect(),
+            })
+            .collect();
+        let (copy, results) = redact_document(self.work(doc)?, &requests).map_err(|e| match e {
+            RedactFailure::Pdf(e) => Failure::Pdf(Some(doc), e),
+            RedactFailure::Refused(detail) => Failure::Redact(Some(doc), detail),
+        })?;
+        copy.set_strip_izul(false);
+        self.work.insert(doc, copy);
+        Ok(results
+            .into_iter()
+            .map(|r| RedactedPageWire {
+                page: r.page,
+                areas: r.areas,
+                glyphs: r.counts.glyphs,
+                images_removed: r.counts.images_removed,
+                images_cleared: r.counts.images_cleared,
+                images_unsupported: r.counts.images_unsupported,
+                paths: r.counts.paths,
+                forms: r.counts.forms,
+                annotations: r.annotations,
+                marked_content: r.counts.marked_content,
+            })
+            .collect())
     }
 }
 

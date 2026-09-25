@@ -18,7 +18,7 @@ import type {
   Rgba,
   ShapeStyle,
 } from "./types";
-import { rgba, NEW_OBJECT_ID } from "./types";
+import { rgba, NEW_OBJECT_ID, REDACT_FILL } from "./types";
 
 /** What the tools draw with until the user changes it. */
 export interface AnnotStyle {
@@ -167,6 +167,10 @@ export function objectFromDrawn(
       payload = { Stamp: { label: "DISETUJUI", color: style.color, font: { ...style.font } } };
       rect = atLeast(drawn.rect, 90);
       break;
+    case "Redact":
+      // A dragged area is one quad; applying fills it with the mark's colour.
+      payload = { Markup: { quads: [atLeast(drawn.rect)], color: REDACT_FILL } };
+      break;
     case "Highlight":
     case "Underline":
     case "StrikeOut":
@@ -201,7 +205,7 @@ function rectCorners(rect: PdfRect): PdfPoint[] {
 
 /** A text-markup object over the quads of a selection (SPEC 11.2). */
 export function markupFromQuads(
-  kind: "Highlight" | "Underline" | "StrikeOut",
+  kind: "Highlight" | "Underline" | "StrikeOut" | "Redact",
   page: number,
   quads: readonly PdfRect[],
   style: AnnotStyle,
@@ -230,8 +234,10 @@ export function markupFromQuads(
       Markup: {
         quads: [...quads],
         // A highlight is a wash of colour; an underline is a line, and a
-        // half-transparent line reads as a mistake.
-        color: kind === "Highlight" ? style.highlightColor : style.color,
+        // half-transparent line reads as a mistake. A redaction mark's colour
+        // is what its area becomes once applied, black unless changed.
+        color:
+          kind === "Redact" ? REDACT_FILL : kind === "Highlight" ? style.highlightColor : style.color,
       },
     },
   };

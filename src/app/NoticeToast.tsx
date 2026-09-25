@@ -15,7 +15,9 @@ export function NoticeToast(): JSX.Element | null {
   const notice = useUi((s) => s.notice);
 
   useEffect(() => {
-    if (!notice || notice.kind !== "ok") return;
+    // An ok with a detail carries a warning worth reading ("the marks are
+    // saved but not applied"); it stays until closed.
+    if (!notice || notice.kind !== "ok" || notice.detail) return;
     const timer = window.setTimeout(() => {
       if (useUi.getState().notice === notice) useUi.getState().notify(null);
     }, OK_MS);

@@ -3,6 +3,79 @@
 Semua perubahan penting per fase. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/);
 versi mengikuti `version.json` sebagai sumber tunggal.
 
+## [7.0.0-alpha.6] — Fase 6: Redaksi Sejati
+
+Bagian dokumen yang ditandai kini bisa **dihapus sungguhan** dari berkas —
+bukan ditutup kotak hitam yang teksnya masih bisa disalin dari bawahnya.
+Kriteria SPEC ("teks yang diredaksi tidak dapat ditemukan lagi oleh alat
+ekstraksi mana pun") diuji dengan enam alat yang tidak berbagi kode:
+`bench/results/phase6-redaction.txt`, **LULUS** di dua belas jenis halaman.
+
+### Bagaimana redaksi bekerja
+
+PDFium tidak punya API redaksi, jadi pekerjaannya dilakukan sendiri oleh
+crate baru `izul-redact`: membaca berkas yang baru ditulis PDFium, menafsirkan
+content stream setiap halaman yang ditandai (matriks, status teks, lebar
+glyph dari font), membuang apa pun di dalam area, lalu **menulis ulang seluruh
+berkas** — bukan pembaruan inkremental, yang akan menyisakan stream lama utuh
+di dalam berkas. Hasilnya dibuka ulang oleh pekerja dengan PDFium dan
+diperiksa dua kali (tidak ada karakter tersisa di area; tidak ada karakter di
+luar area yang bergeser; pemeriksaan kedua lewat jalur konversi koordinat yang
+berbeda), lalu sekali lagi pada berkas sementara sebelum menggantikan berkas
+tujuan. Satu rutin (`izul_pdf::redaction::redact_document`) dipakai pekerja,
+harness screenshot, dan alat bukti — yang dibuktikan adalah yang dikirim.
+
+### Ditambahkan
+
+- **Pita Lindungi**: Tandai Teks, Tandai Area, Cari & Tandai (tandai semua
+  hasil pencarian sekaligus, termasuk pola), Terapkan Redaksi.
+- **Tanda redaksi** sebagai anotasi `/Redact` standar: bisa dipindah, diubah
+  ukurannya, diberi warna isi, dan di-undo selama belum diterapkan. Tanda
+  yang disimpan tanpa diterapkan diperingatkan — isinya masih ada di berkas.
+- **Dialog Terapkan Redaksi**: jumlah tanda dan halaman, anotasi yang ikut
+  terhapus, peringatan tidak bisa dibatalkan, dan pilihan simpan sebagai
+  berkas baru (bawaan, `nama (diredaksi).pdf`) atau timpa.
+- Yang dihapus: glyph (termasuk teks tak terlihat lapisan OCR), gambar di
+  dalam area, piksel gambar yang tertutup sebagian, path di dalam area, isi
+  form XObject, `/ActualText`/`/Alt` di atas konten yang dibuang, anotasi dan
+  field formulir di area, gambar mini halaman (`/Thumb`), dan metadata
+  halaman. Sesudah menimpa berkas, sampul "berkas terbaru" dan indeks
+  pencarian lamanya ikut dihapus — keduanya salinan isi yang diredaksi.
+- `tools/redaction-proof/`: dua belas kasus (standard-14, TrueType tertanam,
+  CID, TJ berkerning, teks miring, form, pindaian + OCR, gambar inline,
+  Type 3, ActualText, anotasi/field, halaman /Rotate dengan MediaBox
+  bergeser), dicari ulang oleh PDFium, poppler, MuPDF, pypdf, pdfminer, dan
+  isi mentah berkas; dijalankan CI di ubuntu.
+- `tools/redaction-proof/bench.py` → `bench/results/phase6-linux.txt`.
+- IPC: `WorkRedact`, `VerifyRedacted` (+ balasannya) di ujung enum;
+  `PROTOCOL_VERSION` 6 → 7. Anotasi jenis ke-14 `Redact` di `izul-model`.
+
+### Diperbaiki (ditemukan oleh alat bukti sebelum rilis)
+
+- **Huruf yang sebagian besar di bawah tanda hilang separuh di luar kotak.**
+  Glyph yang ≥ 25 % tertutup dibuang utuh (sisanya akan tetap terbaca), tetapi
+  bagiannya di luar kotak lenyap tanpa ditutup — paling terlihat di teks
+  miring. Kini kotak glyph itu ikut diwarnai warna tanda, dan laporan redaksi
+  mencatat setiap bagian yang diambil di luar area.
+- **Pindaian membengkak 3× setelah diredaksi** (145 MB → 469 MB): gambar JPEG
+  yang dinolkan sebagian ditulis ulang sebagai piksel mentah. Kini ditulis
+  sebagai JPEG lagi dengan tabel kuantisasi dan subsampling aslinya: 104 MB,
+  mutu di luar area praktis tak berubah (PSNR 70 dB), dan 500 halaman
+  diredaksi dalam 31 detik, bukan 99.
+- Catatan pengukuran di Fase 6 (2/n) keliru soal MuPDF: MuPDF **membulatkan**
+  `/Widths` ke unit terdekat (terukur 0,0056 pt, diprediksi 0,00553 pt);
+  poppler-lah yang memakai lebar persis.
+
+### Diketahui
+
+- Gambar JPEG 2000, JBIG2, dan faks yang tersentuh tanda dihapus **utuh**
+  (tidak bisa dihapus sebagian di sini) dan dilaporkan di pesan hasil.
+- Font tanpa informasi lebar yang bisa dibaca ditolak — redaksi dibatalkan
+  dengan pesan, bukan ditebak.
+- Redaksi dokumen terenkripsi belum didukung.
+- Lisensi baru pihak ketiga: `jpeg-encoder` (MIT/Apache-2.0 + IJG); kalimat
+  atribusi IJG ada di README dan kotak Tentang.
+
 ## [7.0.0-alpha.5] — Fase 5: Operasi Halaman, Split View & Banding
 
 Halaman kini bisa disusun: dihapus, dipindah, diputar, diduplikat, disisip

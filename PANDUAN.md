@@ -268,6 +268,50 @@ dibandingkan dengan halaman ke-1, dan seterusnya — kalau salah satu dokumen
 punya halaman sisipan, pindahkan dulu halamannya supaya sejajar. Tekan
 **Selesai** untuk keluar.
 
+### Menghapus informasi rahasia (redaksi)
+
+Redaksi berbeda dari menutup teks dengan kotak hitam biasa. Kotak hitam biasa
+hanya *menutupi* — teks di bawahnya masih bisa dicari, disalin, atau dibaca
+program lain. Redaksi **menghapus** teks, gambar, dan anotasi di bawah tanda
+dari berkasnya, lalu mewarnai tempatnya.
+
+Caranya, di tab pita **Lindungi**:
+
+1. **Tandai** bagian yang mau dihapus. Ada tiga cara:
+   - **Tandai Teks** — pilih teksnya (seperti menyorot), lalu tekan tombol
+     ini. Bisa juga tekan dulu, baru pilih teksnya.
+   - **Tandai Area** — seret kotak di atas bagian mana pun: teks, foto, tanda
+     tangan hasil pindaian.
+   - **Cari & Tandai** — ketik kata atau pola (misalnya nomor rekening), lalu
+     "Tandai semua hasil" untuk menandai semua kemunculannya sekaligus.
+
+   Tanda tampil sebagai kotak bergaris merah. Selama belum diterapkan, tanda
+   bisa dipindah, diubah ukurannya, dihapus, atau dibatalkan dengan Ctrl+Z.
+   Warna hasil akhirnya (bawaan hitam) diatur di panel properti.
+2. Periksa sekali lagi semua halaman, lalu tekan **Terapkan Redaksi**.
+3. Di dialog, pilih **Sebagai berkas baru** (disarankan). Aplikasi menawarkan
+   nama `nama berkas (diredaksi).pdf`; berkas aslinya tidak diubah. Pilihan
+   **Timpa berkas ini** menghapus isi aslinya untuk selamanya.
+
+Sesudah diterapkan, aplikasi memeriksa sendiri hasilnya dengan membuka berkas
+itu lagi: kalau masih ada karakter tersisa di bawah tanda, atau teks lain ikut
+bergeser, redaksi **dibatalkan** dan berkas tidak ditulis — Anda akan melihat
+pesan alasannya.
+
+Yang perlu diketahui:
+
+- **Menyimpan tanda belum sama dengan menerapkan.** Tanda yang disimpan (Ctrl+S)
+  tanpa diterapkan tetap berupa tanda; isi di bawahnya **masih ada** di berkas.
+  Aplikasi memperingatkan hal ini.
+- Huruf yang sebagian besar tertutup tanda ikut dihapus utuh, dan kotak
+  warnanya ikut melebar sedikit menutupi huruf itu.
+- Gambar berformat khusus (JPEG 2000, JBIG2, faks) yang tersentuh tanda
+  dihapus **seluruhnya**, karena tidak bisa dihapus sebagian. Pesan hasil
+  menyebutkannya.
+- Dokumen yang dilindungi kata sandi belum bisa diredaksi. Font yang
+  informasinya tidak lengkap membuat redaksi ditolak dengan pesan, bukan
+  ditebak.
+
 ### Yang perlu diketahui soal anotasi di fase ini
 
 - Kotak teks, stempel, dan catatan memakai font standar PDF (Helvetica, Times,

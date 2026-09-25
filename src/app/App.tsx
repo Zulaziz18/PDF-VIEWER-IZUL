@@ -26,6 +26,7 @@ import { FileBanner } from "./FileBanner";
 import { NoticeToast } from "./NoticeToast";
 import { PanelGrid } from "./PanelGrid";
 import { PromptDialog } from "./PromptDialog";
+import { RedactDialog } from "./RedactDialog";
 import { SplitDialog } from "./SplitDialog";
 import { Home } from "./Home";
 import { PropertiesPanel } from "./PropertiesPanel";
@@ -111,6 +112,7 @@ export function App(): React.JSX.Element {
       <About />
       <ExportDialog />
       <SplitDialog />
+      <RedactDialog />
       <PromptDialog />
       <NoticeToast />
     </div>

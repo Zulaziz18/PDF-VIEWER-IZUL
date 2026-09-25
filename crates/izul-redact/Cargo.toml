@@ -1,0 +1,21 @@
+[package]
+name = "izul-redact"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# True redaction (SPEC 17, Phase 6). No PDFium: PDFium has no redaction API,
+# so this crate reads the document PDFium has just written, takes the content
+# out of the marked areas itself, and writes the whole file again. The worker
+# then reopens the result with PDFium to verify it (see izul-worker).
+[dependencies]
+thiserror.workspace = true
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+weezl = "0.1"
+zune-jpeg = "0.5"
+zune-core = "0.5"
+jpeg-encoder = "0.7"
+
+[lints]
+workspace = true

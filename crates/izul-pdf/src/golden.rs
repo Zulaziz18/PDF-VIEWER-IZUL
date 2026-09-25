@@ -194,6 +194,13 @@ pub(crate) fn sample(kind: AnnotKind) -> AnnotObject {
                 color: Rgba::from_rgb8(255, 210, 0, 0.6),
             }
         }
+        AnnotKind::Redact => AnnotPayload::Markup {
+            quads: vec![
+                PdfRectF::new(30.0, 70.0, 200.0, 90.0),
+                PdfRectF::new(30.0, 40.0, 140.0, 60.0),
+            ],
+            color: Rgba::BLACK,
+        },
         AnnotKind::FreeText => AnnotPayload::FreeText {
             text: "Paritas diuji per jenis anotasi".into(),
             font: FontSpec {
@@ -627,6 +634,7 @@ golden_test!(ellipse_matches_its_baseline, AnnotKind::Ellipse);
 golden_test!(polygon_matches_its_baseline, AnnotKind::Polygon);
 golden_test!(note_matches_its_baseline, AnnotKind::Note);
 golden_test!(stamp_matches_its_baseline, AnnotKind::Stamp);
+golden_test!(redact_matches_its_baseline, AnnotKind::Redact);
 
 /// Rotation and opacity go through a different path in both backends — a
 /// transform and an `/ExtGState` — so they get their own baseline rather than

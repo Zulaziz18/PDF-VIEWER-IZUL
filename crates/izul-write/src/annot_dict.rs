@@ -140,6 +140,16 @@ pub fn annotation_dict(obj: &AnnotObject, rect_: PdfRectF, ap: u32, metadata: &s
 
     let mut contents = obj.author_note.clone();
     match &obj.payload {
+        AnnotPayload::Markup { quads, color } if obj.kind == AnnotKind::Redact => {
+            // A mark not yet applied (§12.5.6.23): the areas, and in /IC the
+            // colour they are filled with once applied. The red of the mark
+            // itself is in the appearance stream.
+            d.push_str(&format!(
+                "/QuadPoints{}/IC{}",
+                quad_points(quads),
+                rgb(*color)
+            ));
+        }
         AnnotPayload::Markup { quads, color } => {
             d.push_str(&format!(
                 "/C{}/QuadPoints{}",
@@ -292,6 +302,27 @@ mod tests {
         assert!(d.contains("/M(D:20260923030405Z)"));
         assert!(d.contains("/F 4"));
         assert!(d.contains("/AP<</N 12 0 R>>/IzulObj({})>>"));
+    }
+
+    /// A redaction mark is the standard annotation Acrobat applies: its areas
+    /// in /QuadPoints and the colour they become in /IC — not /C, which would
+    /// tint the mark itself in other readers.
+    #[test]
+    fn a_redaction_mark_is_a_standard_redact_annotation() {
+        let o = obj(
+            AnnotKind::Redact,
+            AnnotPayload::Markup {
+                quads: vec![PdfRectF::new(10.0, 10.0, 50.0, 20.0)],
+                color: Rgba::BLACK,
+            },
+        );
+        let d = dict(&o);
+        assert!(d.starts_with("<</Type/Annot/Subtype/Redact/"), "{d}");
+        assert!(
+            d.contains("/QuadPoints[10 20 50 20 10 10 50 10]/IC[0 0 0]"),
+            "{d}"
+        );
+        assert!(!d.contains("/C["), "{d}");
     }
 
     #[test]

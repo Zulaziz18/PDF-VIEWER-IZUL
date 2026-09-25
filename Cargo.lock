@@ -1917,11 +1917,12 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 
 [[package]]
 name = "izul-app"
-version = "7.0.0-alpha.5"
+version = "7.0.0-alpha.6"
 dependencies = [
  "image",
  "izul-ipc",
  "izul-model",
+ "izul-redact",
  "izul-render",
  "izul-store",
  "izul-write",
@@ -1946,12 +1947,13 @@ dependencies = [
 
 [[package]]
 name = "izul-bench"
-version = "7.0.0-alpha.5"
+version = "7.0.0-alpha.6"
 dependencies = [
  "image",
  "izul-ipc",
  "izul-model",
  "izul-pdf",
+ "izul-redact",
  "izul-render",
  "izul-write",
  "parking_lot",
@@ -1964,7 +1966,7 @@ dependencies = [
 
 [[package]]
 name = "izul-integration-tests"
-version = "7.0.0-alpha.5"
+version = "7.0.0-alpha.6"
 dependencies = [
  "izul-ipc",
  "izul-model",
@@ -1975,7 +1977,7 @@ dependencies = [
 
 [[package]]
 name = "izul-ipc"
-version = "7.0.0-alpha.5"
+version = "7.0.0-alpha.6"
 dependencies = [
  "izul-model",
  "libc",
@@ -1990,7 +1992,7 @@ dependencies = [
 
 [[package]]
 name = "izul-model"
-version = "7.0.0-alpha.5"
+version = "7.0.0-alpha.6"
 dependencies = [
  "postcard",
  "serde",
@@ -1999,11 +2001,12 @@ dependencies = [
 
 [[package]]
 name = "izul-pdf"
-version = "7.0.0-alpha.5"
+version = "7.0.0-alpha.6"
 dependencies = [
  "flate2",
  "image",
  "izul-model",
+ "izul-redact",
  "izul-write",
  "memmap2",
  "pdfium-render",
@@ -2014,8 +2017,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "izul-redact"
+version = "7.0.0-alpha.6"
+dependencies = [
+ "flate2",
+ "jpeg-encoder",
+ "thiserror 2.0.20",
+ "weezl",
+ "zune-core",
+ "zune-jpeg",
+]
+
+[[package]]
 name = "izul-render"
-version = "7.0.0-alpha.5"
+version = "7.0.0-alpha.6"
 dependencies = [
  "izul-ipc",
  "izul-model",
@@ -2028,7 +2043,7 @@ dependencies = [
 
 [[package]]
 name = "izul-store"
-version = "7.0.0-alpha.5"
+version = "7.0.0-alpha.6"
 dependencies = [
  "blake3",
  "rusqlite",
@@ -2041,7 +2056,7 @@ dependencies = [
 
 [[package]]
 name = "izul-worker"
-version = "7.0.0-alpha.5"
+version = "7.0.0-alpha.6"
 dependencies = [
  "image",
  "izul-ipc",
@@ -2056,7 +2071,7 @@ dependencies = [
 
 [[package]]
 name = "izul-write"
-version = "7.0.0-alpha.5"
+version = "7.0.0-alpha.6"
 dependencies = [
  "flate2",
  "image",
@@ -2186,6 +2201,12 @@ dependencies = [
  "quote",
  "syn 2.0.119",
 ]
+
+[[package]]
+name = "jpeg-encoder"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a0370574b86f7eca156b9f298392b5e69a23f8c86f3f865add60bbc2e79467a6"
 
 [[package]]
 name = "js-sys"

@@ -42,11 +42,11 @@ interface DraftInfo {
 }
 
 /** Fills `{name}`-style holes in a translated string. */
-function fill(text: string, values: Record<string, string | number>): string {
+export function fill(text: string, values: Record<string, string | number>): string {
   return text.replace(/\{(\w+)\}/g, (hole, key: string) => String(values[key] ?? hole));
 }
 
-function nameOf(path: string): string {
+export function nameOf(path: string): string {
   return path.split(/[\\/]/).pop() ?? path;
 }
 
@@ -119,9 +119,15 @@ export async function saveDocument(
     // The file now holds the rearranged pages; the tab lays itself out from
     // the file again, and page numbers start meaning file pages once more.
     if (report.restructured) await session.getState().refreshPages();
+    // A mark saved is not a redaction: what is under it is still in the file.
+    // Someone who marked and pressed Ctrl+S may believe otherwise, so say so.
+    const unapplied = [...session.getState().annots.values()].some((list) =>
+      list.some((o) => o.kind === "Redact"),
+    );
     useUi.getState().notify({
       kind: "ok",
       text: fill(t("save.done"), { name: nameOf(report.path), size: formatBytes(report.bytes) }),
+      ...(unapplied ? { detail: t("redact.unappliedSaved") } : {}),
     });
     return true;
   } catch (e) {

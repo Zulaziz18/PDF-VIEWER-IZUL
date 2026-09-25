@@ -512,6 +512,17 @@ impl AnnotState {
         &self,
         doc: u64,
     ) -> Result<(Vec<u32>, Vec<(AnnotObject, izul_model::DisplayList)>), String> {
+        self.write_set_without(doc, &BTreeSet::new())
+    }
+
+    /// [`AnnotState::write_set`] without the objects in `exclude` — the marks
+    /// and objects a redaction takes with it.
+    #[allow(clippy::type_complexity)]
+    pub fn write_set_without(
+        &self,
+        doc: u64,
+        exclude: &BTreeSet<u64>,
+    ) -> Result<(Vec<u32>, Vec<(AnnotObject, izul_model::DisplayList)>), String> {
         let fonts = self.fonts.lock();
         self.with(doc, |e| {
             let mut pages: BTreeSet<u32> = e.imported.clone();
@@ -529,7 +540,7 @@ impl AnnotState {
                 pages.insert(obj.page);
             }
             let mut objects = Vec::with_capacity(e.doc.len());
-            for obj in e.doc.iter() {
+            for obj in e.doc.iter().filter(|o| !exclude.contains(&o.id.0)) {
                 let list = izul_model::build::display_list(obj, &*fonts).map_err(|err| {
                     format!(
                         "anotasi {} di halaman {} tidak dapat digambar ({err}); penyimpanan dibatalkan agar tidak hilang",
@@ -622,6 +633,36 @@ impl AnnotState {
                 .commit(&mut edits.doc, vec![Op::Insert(Box::new(obj))])?;
             Self::changed(edits);
             Ok((created, Self::result(edits, Some(page))))
+        })
+    }
+
+    /// Inserts several objects as one undo step — every search hit marked
+    /// for redaction at once, say, which the user undoes with one Ctrl+Z.
+    pub fn add_many(
+        &self,
+        doc: u64,
+        objects: Vec<AnnotObject>,
+    ) -> Result<(Vec<AnnotObject>, EditResult), EditError> {
+        self.with(doc, |edits| {
+            let mut created: Vec<AnnotObject> = Vec::with_capacity(objects.len());
+            let mut ops: Transaction = Vec::with_capacity(objects.len());
+            for mut obj in objects {
+                // `fresh_id` counts up and never repeats, so ids handed out
+                // earlier in this batch cannot come back.
+                let clash =
+                    edits.doc.get(obj.id).is_some() || created.iter().any(|o| o.id == obj.id);
+                if obj.id.0 == 0 || clash {
+                    obj.id = edits.doc.fresh_id();
+                }
+                obj.recompute_rect();
+                created.push(obj.clone());
+                ops.push(Op::Insert(Box::new(obj)));
+            }
+            if !ops.is_empty() {
+                edits.stack.commit(&mut edits.doc, ops)?;
+                Self::changed(edits);
+            }
+            Ok((created, Self::result(edits, None)))
         })
     }
 
@@ -778,6 +819,84 @@ impl AnnotState {
             e.imported = (0..file_pages).collect();
             e.all_imported = true;
             e.map_revision += 1;
+        });
+    }
+
+    // ---- Phase 6: redaction ------------------------------------------------
+
+    /// What applying the redaction marks of `doc` would do: the areas per
+    /// page, and every object that goes with them — the marks themselves, and
+    /// any annotation of ours lying over a marked area (a note on a redacted
+    /// line would otherwise carry its words straight back into the file).
+    /// `None` when there are no marks.
+    pub fn redaction(&self, doc: u64) -> Option<crate::saving::Redaction> {
+        use izul_ipc::message::{RedactAreaWire, RedactPageWire};
+        use izul_model::annot::{AnnotKind, AnnotPayload};
+        self.with(doc, |e| {
+            let mut pages: std::collections::BTreeMap<u32, Vec<RedactAreaWire>> =
+                std::collections::BTreeMap::new();
+            let mut doomed = BTreeSet::new();
+            for obj in e.doc.iter().filter(|o| o.kind == AnnotKind::Redact) {
+                let AnnotPayload::Markup { quads, color } = &obj.payload else {
+                    continue;
+                };
+                doomed.insert(obj.id.0);
+                let fill = Some([color.r, color.g, color.b]);
+                let areas = pages.entry(obj.page).or_default();
+                // The interface offers no rotate handle for a mark; a mark that
+                // arrives turned all the same (an older draft, another build)
+                // is redacted over the upright box around what it shows —
+                // more than it covers, never less.
+                let centre = (
+                    (obj.rect.left + obj.rect.right) / 2.0,
+                    (obj.rect.bottom + obj.rect.top) / 2.0,
+                );
+                areas.extend(quads.iter().map(|q| RedactAreaWire {
+                    rect: rotated_bounds(*q, centre, obj.rotation),
+                    fill,
+                }));
+            }
+            if pages.is_empty() {
+                return None;
+            }
+            for obj in e.doc.iter() {
+                let over = pages.get(&obj.page).is_some_and(|areas| {
+                    areas.iter().any(|a| {
+                        let (r, q) = (obj.rect, a.rect);
+                        r.left < q.right && q.left < r.right && r.bottom < q.top && q.bottom < r.top
+                    })
+                });
+                if over {
+                    doomed.insert(obj.id.0);
+                }
+            }
+            Some(crate::saving::Redaction {
+                pages: pages
+                    .into_iter()
+                    .map(|(page, areas)| RedactPageWire { page, areas })
+                    .collect(),
+                doomed,
+            })
+        })
+    }
+
+    /// After a redaction is saved: its marks and the objects it took are gone
+    /// from the editor, and so is the history — undoing the removal of a mark
+    /// would bring back a mark over content that no longer exists.
+    pub fn after_redaction(&self, doc: u64, doomed: &BTreeSet<u64>) {
+        self.with(doc, |e| {
+            let ops: Transaction = e
+                .doc
+                .iter()
+                .filter(|o| doomed.contains(&o.id.0))
+                .cloned()
+                .map(|o| Op::Delete(Box::new(o)))
+                .collect();
+            if !ops.is_empty() {
+                let _ = e.stack.commit(&mut e.doc, ops);
+            }
+            e.stack = CommandStack::default();
+            Self::changed(e);
         });
     }
 
@@ -1073,5 +1192,89 @@ mod image_tests {
             state.image(2, 0).is_some(),
             "dokumen lain tidak ikut terhapus"
         );
+    }
+}
+
+/// The upright box around `r` turned `degrees` counter-clockwise about
+/// `centre`.
+fn rotated_bounds(
+    r: izul_model::geom::PdfRectF,
+    centre: (f32, f32),
+    degrees: f32,
+) -> izul_model::geom::PdfRectF {
+    if degrees.rem_euclid(360.0) == 0.0 {
+        return r;
+    }
+    let (s, c) = degrees.to_radians().sin_cos();
+    let turn = |x: f32, y: f32| {
+        let (dx, dy) = (x - centre.0, y - centre.1);
+        (centre.0 + dx * c - dy * s, centre.1 + dx * s + dy * c)
+    };
+    let pts = [
+        turn(r.left, r.bottom),
+        turn(r.right, r.bottom),
+        turn(r.right, r.top),
+        turn(r.left, r.top),
+    ];
+    let xs = pts.iter().map(|p| p.0);
+    let ys = pts.iter().map(|p| p.1);
+    izul_model::geom::PdfRectF::new(
+        xs.clone().fold(f32::MAX, f32::min),
+        ys.clone().fold(f32::MAX, f32::min),
+        xs.fold(f32::MIN, f32::max),
+        ys.fold(f32::MIN, f32::max),
+    )
+}
+
+#[cfg(test)]
+mod redaction_tests {
+    use super::*;
+    use izul_model::annot::{AnnotId, AnnotKind, AnnotObject, AnnotPayload};
+    use izul_model::display::Rgba;
+    use izul_model::geom::PdfRectF;
+
+    fn mark(rotation: f32) -> AnnotObject {
+        let mut o = AnnotObject::new(
+            AnnotId(0),
+            0,
+            AnnotKind::Redact,
+            PdfRectF::new(0.0, 0.0, 0.0, 0.0),
+            AnnotPayload::Markup {
+                quads: vec![PdfRectF::new(100.0, 100.0, 200.0, 120.0)],
+                color: Rgba::BLACK,
+            },
+        );
+        o.recompute_rect();
+        o.rotation = rotation;
+        o
+    }
+
+    #[test]
+    fn a_turned_mark_redacts_the_box_around_what_it_shows() {
+        let state = AnnotState::new();
+        state.add(1, mark(90.0)).unwrap();
+        let r = state.redaction(1).unwrap();
+        let area = r.pages[0].areas[0].rect;
+        // 100x20 about (150, 110), turned a quarter: 20 wide, 100 tall.
+        assert!(
+            (area.left - 140.0).abs() < 1e-3 && (area.right - 160.0).abs() < 1e-3,
+            "{area:?}"
+        );
+        assert!(
+            (area.bottom - 60.0).abs() < 1e-3 && (area.top - 160.0).abs() < 1e-3,
+            "{area:?}"
+        );
+    }
+
+    #[test]
+    fn an_upright_mark_is_its_quads() {
+        let state = AnnotState::new();
+        state.add(1, mark(0.0)).unwrap();
+        let r = state.redaction(1).unwrap();
+        assert_eq!(
+            r.pages[0].areas[0].rect,
+            PdfRectF::new(100.0, 100.0, 200.0, 120.0)
+        );
+        assert_eq!(r.pages[0].areas[0].fill, Some([0.0, 0.0, 0.0]));
     }
 }

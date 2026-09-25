@@ -8,13 +8,14 @@ members = [
     "crates/izul-worker",
     "crates/izul-store",
     "crates/izul-write",
+    "crates/izul-redact",
     "bench",
     "tests-integration",
     "src-tauri",
 ]
 
 [workspace.package]
-version = "7.0.0-alpha.5"
+version = "7.0.0-alpha.6"
 edition = "2021"
 rust-version = "1.94"
 license = "Proprietary"
@@ -27,6 +28,7 @@ izul-render = { path = "crates/izul-render" }
 izul-ipc = { path = "crates/izul-ipc" }
 izul-store = { path = "crates/izul-store" }
 izul-write = { path = "crates/izul-write" }
+izul-redact = { path = "crates/izul-redact" }
 
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }

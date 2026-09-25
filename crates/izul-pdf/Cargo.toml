@@ -6,6 +6,8 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+# Phase 6: the redactor, driven and checked from here (`redaction.rs`).
+izul-redact.workspace = true
 izul-model.workspace = true
 pdfium-render.workspace = true
 memmap2.workspace = true

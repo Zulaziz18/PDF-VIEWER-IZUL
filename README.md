@@ -64,3 +64,10 @@ dicatat sebagai belum terbukti, bukan dilewatkan diam-diam.
 
 PDFium: BSD-3-Clause (`vendor/pdfium/*/LICENSE`). Tauri, React, dan seluruh
 crate: MIT atau Apache-2.0. Tidak ada beban copyleft.
+
+Satu pengecualian yang wajib disebut: `jpeg-encoder` (dipakai redaksi untuk
+menulis ulang gambar JPEG) berlisensi (MIT atau Apache-2.0) **dan IJG**.
+Lisensi IJG meminta dokumentasi program menyatakan: *perangkat lunak ini
+sebagian didasarkan pada karya Independent JPEG Group* (this software is based
+in part on the work of the Independent JPEG Group). Kalimat itu juga ada di
+kotak Tentang aplikasi.

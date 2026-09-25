@@ -529,7 +529,9 @@ where
         | Request::BlobRead { .. }
         | Request::BlobDrop { .. }
         | Request::VerifyFile { .. }
-        | Request::WorkArrange { .. }) => {
+        | Request::WorkArrange { .. }
+        | Request::WorkRedact { .. }
+        | Request::VerifyRedacted { .. }) => {
             let engine = sess.engine();
             let viewing =
                 |doc: DocId, page: u32| sess.get(doc).map(|open| open.doc.izul_annots(page));
@@ -545,6 +547,16 @@ where
                 Err(saving::Failure::Encode(detail)) => {
                     tracing::warn!(%detail, "enkode gagal");
                     fail_kind(channel, id, None, ErrorKind::EngineFault, "encode.failed").await
+                }
+                Err(saving::Failure::Redact(doc, detail)) => {
+                    tracing::warn!(%detail, "redaksi ditolak");
+                    let payload = Response::Error {
+                        doc,
+                        kind: ErrorKind::Corrupt,
+                        message_id: "redact.failed".to_string(),
+                        detail,
+                    };
+                    reply(channel, id, payload).await
                 }
             }
         }
