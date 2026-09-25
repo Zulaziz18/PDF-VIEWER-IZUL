@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use izul_model::geom::{PdfRectF, RotationQuarter};
+use izul_model::geom::{PageFrame, PdfRectF, RotationQuarter};
 
 /// Version of the wire protocol in this build.
 ///
@@ -21,7 +21,7 @@ use izul_model::geom::{PdfRectF, RotationQuarter};
 /// So the worker announces this number the moment it connects, and the
 /// supervisor refuses a worker that does not match. Bump it whenever anything
 /// in [`Request`] or [`Response`] changes shape.
-pub const PROTOCOL_VERSION: u32 = 7;
+pub const PROTOCOL_VERSION: u32 = 12;
 
 /// Identifies one open document within a worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -268,6 +268,101 @@ pub enum Request {
         /// Page, and its areas in user space as `WorkRedacted` returned them.
         pages: Vec<(u32, Vec<PdfRectF>)>,
     },
+    // ---- Phase 7 (appended; see `PROTOCOL_VERSION`). ---------------------
+    /// Where each page of the working copy puts display space in user space
+    /// — asked after the pages are in their final order, because annotations
+    /// are kept in display space and must be written in user space.
+    /// Answered with `WorkFramesReady`.
+    WorkFrames {
+        doc: DocId,
+    },
+    /// On the working copy: reads one page with local OCR and writes what it
+    /// read onto the page as invisible text (`izul_ocr::ocr_page`). One page
+    /// per request, so a worker is never silent long enough for the heartbeat
+    /// to take it for hung, and the UI can report progress and stop between
+    /// pages. `models` is the folder holding the two `.rten` files. A page
+    /// that already has text is left alone unless `force`. Answered with
+    /// `WorkOcrDone`.
+    WorkOcr {
+        doc: DocId,
+        page: u32,
+        models: String,
+        force: bool,
+    },
+    /// Adds bytes to a blob in the worker, for input too large for one frame
+    /// (a picture). `blob` 0 starts a new one. Answered with `BlobAppended`.
+    BlobAppend {
+        blob: u64,
+        data: Vec<u8>,
+    },
+    /// Makes the background of the picture in `blob` (PNG or JPEG bytes)
+    /// transparent with the segmentation model (`izul_ocr::background`). The
+    /// input blob is consumed. Answered with `BackgroundRemoved`.
+    RemoveBackground {
+        blob: u64,
+        /// The ONNX Runtime library, and the model.
+        runtime: String,
+        model: String,
+        kind: BackgroundKind,
+    },
+    /// Every form widget of the open document (`izul_pdf::forms`). Answered
+    /// with `FormFieldsReady`.
+    FormFields {
+        doc: DocId,
+    },
+    /// Fills fields through PDFium's form-fill environment, which builds the
+    /// widgets' appearances again. `working`: on the working copy (a save);
+    /// otherwise on the open document itself, so the page shows the value
+    /// before it is saved. Answered with `FormFilled`.
+    FillForm {
+        doc: DocId,
+        working: bool,
+        values: Vec<(String, izul_model::FormValue)>,
+    },
+    /// Replaces the text in `rect` (display space) on `page` of the working
+    /// copy with `text`, within one line (`izul_pdf::textedit`), checked with
+    /// PDFium before it answers `TextReplaced`.
+    WorkReplaceText {
+        doc: DocId,
+        page: u32,
+        rect: PdfRectF,
+        text: String,
+    },
+}
+
+/// One widget of a form field, as `FormFields` reports it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FormWidgetWire {
+    pub page: u32,
+    /// Display space.
+    pub rect: PdfRectF,
+    pub name: String,
+    pub kind: FormKindWire,
+    pub read_only: bool,
+    pub value: String,
+    pub checked: bool,
+    /// A checkbox or radio widget's "on" name.
+    pub export: String,
+    pub options: Vec<String>,
+    pub selected: Vec<u32>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FormKindWire {
+    Text { multiline: bool },
+    CheckBox,
+    Radio,
+    ComboBox { editable: bool },
+    ListBox { multiple: bool },
+    Other,
+}
+
+/// What a picture is, for [`Request::RemoveBackground`]. The user says; it
+/// cannot be told from the picture (see `izul_ocr::background::Kind`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BackgroundKind {
+    Photo,
+    OnPaper,
 }
 
 /// The areas to redact on one page of a [`Request::WorkRedact`].
@@ -433,6 +528,50 @@ pub enum Response {
     },
     RedactionVerified {
         pages: u32,
+    },
+    // ---- Phase 7, appended ------------------------------------------------
+    WorkFramesReady {
+        doc: DocId,
+        /// One per page, in page order.
+        frames: Vec<PageFrame>,
+    },
+    WorkOcrDone {
+        doc: DocId,
+        page: u32,
+        /// Words written, or `None` when the page already had text.
+        words: Option<u32>,
+    },
+    BlobAppended {
+        blob: u64,
+        len: u64,
+    },
+    /// The picture as a PNG with alpha, waiting in `blob`.
+    BackgroundRemoved {
+        blob: u64,
+        len: u64,
+        /// Where the model ran ("DirectML", or "CPU" with the reason).
+        device: String,
+        /// The paper refinement ran (`BackgroundKind::OnPaper` on a plain,
+        /// light background).
+        paper: bool,
+    },
+    FormFieldsReady {
+        doc: DocId,
+        widgets: Vec<FormWidgetWire>,
+    },
+    FormFilled {
+        doc: DocId,
+        /// Widgets changed.
+        changed: u32,
+        /// Pages whose widgets changed, for repainting.
+        pages: Vec<u32>,
+    },
+    TextReplaced {
+        doc: DocId,
+        /// What was there, as PDFium read it.
+        before: String,
+        /// Glyphs taken out.
+        glyphs: u32,
     },
 }
 
@@ -610,6 +749,145 @@ mod tests {
                 .unwrap()
             ),
             23
+        );
+    }
+
+    #[test]
+    fn phase_seven_variants_are_appended() {
+        let index = |bytes: Vec<u8>| bytes[0];
+        assert_eq!(
+            index(postcard::to_allocvec(&Request::WorkFrames { doc: DocId(1) }).unwrap()),
+            26
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Request::WorkOcr {
+                    doc: DocId(1),
+                    page: 0,
+                    models: String::new(),
+                    force: false
+                })
+                .unwrap()
+            ),
+            27
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Request::BlobAppend {
+                    blob: 0,
+                    data: vec![]
+                })
+                .unwrap()
+            ),
+            28
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Request::RemoveBackground {
+                    blob: 1,
+                    runtime: String::new(),
+                    model: String::new(),
+                    kind: BackgroundKind::Photo
+                })
+                .unwrap()
+            ),
+            29
+        );
+        assert_eq!(
+            index(postcard::to_allocvec(&Response::BlobAppended { blob: 1, len: 0 }).unwrap()),
+            20
+        );
+        assert_eq!(
+            index(postcard::to_allocvec(&Request::FormFields { doc: DocId(1) }).unwrap()),
+            30
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Request::FillForm {
+                    doc: DocId(1),
+                    working: false,
+                    values: vec![]
+                })
+                .unwrap()
+            ),
+            31
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Response::FormFieldsReady {
+                    doc: DocId(1),
+                    widgets: vec![]
+                })
+                .unwrap()
+            ),
+            22
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Response::FormFilled {
+                    doc: DocId(1),
+                    changed: 0,
+                    pages: vec![]
+                })
+                .unwrap()
+            ),
+            23
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Request::WorkReplaceText {
+                    doc: DocId(1),
+                    page: 0,
+                    rect: PdfRectF::new(0.0, 0.0, 1.0, 1.0),
+                    text: String::new()
+                })
+                .unwrap()
+            ),
+            32
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Response::TextReplaced {
+                    doc: DocId(1),
+                    before: String::new(),
+                    glyphs: 0
+                })
+                .unwrap()
+            ),
+            24
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Response::BackgroundRemoved {
+                    blob: 1,
+                    len: 0,
+                    device: String::new(),
+                    paper: false
+                })
+                .unwrap()
+            ),
+            21
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Response::WorkOcrDone {
+                    doc: DocId(1),
+                    page: 0,
+                    words: None
+                })
+                .unwrap()
+            ),
+            19
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Response::WorkFramesReady {
+                    doc: DocId(1),
+                    frames: vec![]
+                })
+                .unwrap()
+            ),
+            18
         );
     }
 

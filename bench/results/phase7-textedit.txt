@@ -1,0 +1,35 @@
+Bukti penyuntingan teks asli (Fase 7)
+========================================
+
+Kasus: nama di ujung baris, lebih panjang: "Budi Santoso" -> "Rina Wulandari"
+  ya     diterima oleh rutin aplikasi (glyph diganti: 12)
+  ya     poppler membaca teks baru, teks lama hilang: ['Nama peserta: Rina Wulandari']
+  ya     poppler seluruh halaman terbaca sama selain penggantian
+  ya     MuPDF   membaca teks baru, teks lama hilang: ['Nama peserta: Rina Wulandari']
+  ya     MuPDF   seluruh halaman terbaca sama selain penggantian
+  ya     pypdf   membaca teks baru, teks lama hilang: ['Nama peserta: Rina Wulandari']
+  ya     pypdf   seluruh halaman terbaca sama selain penggantian
+  ya     poppler piksel berubah di luar bagian yang diganti: 0
+  ya     poppler piksel berubah di bagian yang diganti: 706 (harus > 0)
+  ya     MuPDF   piksel berubah di luar bagian yang diganti: 0
+  ya     MuPDF   piksel berubah di bagian yang diganti: 694 (harus > 0)
+
+Kasus: kata di tengah baris, lebih pendek: "Serbaguna" -> "Utama"
+  ya     diterima oleh rutin aplikasi (glyph diganti: 9)
+  ya     poppler membaca teks baru, teks lama hilang: ['Tempat: Aula Utama Kampus Timur']
+  ya     poppler seluruh halaman terbaca sama selain penggantian
+  ya     MuPDF   membaca teks baru, teks lama hilang: ['Tempat: Aula Utama']
+  ya     MuPDF   seluruh halaman terbaca sama selain penggantian (baris dipecah di celah)
+  ya     pypdf   membaca teks baru, teks lama hilang: ['Tempat: Aula Utama Kampus Timur']
+  ya     pypdf   seluruh halaman terbaca sama selain penggantian
+  ya     poppler piksel berubah di luar bagian yang diganti: 0
+  ya     poppler piksel berubah di bagian yang diganti: 595 (harus > 0)
+  ya     MuPDF   piksel berubah di luar bagian yang diganti: 0
+  ya     MuPDF   piksel berubah di bagian yang diganti: 570 (harus > 0)
+
+Penolakan (berkas tidak ditulis):
+  ya     font Helvetica tidak tertanam: font "Helvetica" tidak tertanam di berkas, jadi pembaca lain bisa menggambar huruf yang berbeda
+  ya     huruf yang tidak ada di subset: font "AAAAAA+DejaVuSans" di berkas ini tidak punya huruf "é" — hanya huruf yang sudah tertanam yang bisa dipakai
+  ya     teks pengganti menabrak kata berikutnya: teks pengganti terlalu panjang: menabrak "k" di sebelahnya
+
+HASIL: LULUS

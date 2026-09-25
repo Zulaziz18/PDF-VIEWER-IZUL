@@ -23,10 +23,13 @@ import { About } from "./About";
 import { BottomBar } from "./BottomBar";
 import { ExportDialog } from "./ExportDialog";
 import { FileBanner } from "./FileBanner";
+import { FormBanner } from "./FormsPanel";
 import { NoticeToast } from "./NoticeToast";
 import { PanelGrid } from "./PanelGrid";
 import { PromptDialog } from "./PromptDialog";
 import { RedactDialog } from "./RedactDialog";
+import { OcrDialog } from "./OcrDialog";
+import { TextEditDialog } from "./TextEditDialog";
 import { SplitDialog } from "./SplitDialog";
 import { Home } from "./Home";
 import { PropertiesPanel } from "./PropertiesPanel";
@@ -95,6 +98,7 @@ export function App(): React.JSX.Element {
           <MenuBar />
           <Ribbon />
           <FileBanner />
+          <FormBanner />
           <div
             className={[
               "flex-1 min-h-0 flex border-t border-[var(--izul-border)]",
@@ -113,6 +117,8 @@ export function App(): React.JSX.Element {
       <ExportDialog />
       <SplitDialog />
       <RedactDialog />
+      <OcrDialog />
+      <TextEditDialog />
       <PromptDialog />
       <NoticeToast />
     </div>

@@ -106,7 +106,12 @@ pub async fn redact_apply(
         .annots
         .redaction(doc)
         .ok_or_else(|| "Belum ada tanda redaksi di dokumen ini.".to_string())?;
-    let report = save_with(&state, doc, target, Some(&redaction)).await?;
+    let rewrite = saving::Rewrite {
+        redaction: Some(redaction),
+        ocr: None,
+        text: None,
+    };
+    let report = save_with(&state, doc, target, Some(&rewrite)).await?;
     let saved = PathBuf::from(&report.path);
     let cover = crate::thumbs::file_for(&state.data_dir, &saved);
     if cover.exists() {
@@ -171,11 +176,11 @@ pub async fn redact_preview(
     })
 }
 
-async fn save_with(
+pub(crate) async fn save_with(
     state: &AppState,
     doc: u64,
     target: Option<String>,
-    redaction: Option<&saving::Redaction>,
+    rewrite: Option<&saving::Rewrite>,
 ) -> CmdResult<SaveReport> {
     let (path, file_id, page_count) = doc_path(state, doc)?;
     if let Some(target) = &target {
@@ -189,7 +194,7 @@ async fn save_with(
         &path,
         page_count,
         target.as_deref(),
-        redaction,
+        rewrite,
     )
     .await?;
 
@@ -422,7 +427,7 @@ pub fn draft_status(state: tauri::State<'_, AppState>, doc: u64) -> CmdResult<Op
 /// that has since changed, unless `force` — which only a reload the user asked
 /// for sets.
 #[tauri::command]
-pub fn draft_restore(
+pub async fn draft_restore(
     state: tauri::State<'_, AppState>,
     doc: u64,
     force: bool,
@@ -438,7 +443,11 @@ pub fn draft_restore(
     }
     let snap: Snapshot = serde_json::from_slice(&draft.blob).map_err(|e| e.to_string())?;
     state.annots.restore(doc, snap);
-    Ok(state.annots.edit_state(doc))
+    let mut result = state.annots.edit_state(doc);
+    // Form values in the draft go into the open document too, or the page
+    // would show the file's values until the next save (Phase 7).
+    result.repaint = crate::forms::show(&state, doc, state.annots.form_values(doc)).await?;
+    Ok(result)
 }
 
 /// Throws the draft away — the "don't save" answer when a tab closes.

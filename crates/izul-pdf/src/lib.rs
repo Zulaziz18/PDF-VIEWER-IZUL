@@ -33,10 +33,12 @@ pub mod error;
 mod ffi_guard;
 pub mod find;
 pub mod fonts;
+pub mod forms;
 pub mod geom;
 #[cfg(test)]
 mod golden;
 pub mod izul;
+pub mod ocr_layer;
 pub mod outline;
 pub mod redaction;
 pub mod render;
@@ -44,6 +46,7 @@ pub mod sys;
 #[cfg(test)]
 pub mod test_support;
 pub mod text;
+pub mod textedit;
 
 pub use arrange::{ArrangeSource, Arranged};
 pub use engine::{Document, Engine, PageGeometry};

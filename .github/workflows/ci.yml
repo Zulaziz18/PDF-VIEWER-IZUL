@@ -46,6 +46,17 @@ jobs:
         shell: bash
         run: ./vendor/pdfium/fetch.sh
 
+      # The OCR models (Phase 7), pinned by SHA-256 like PDFium is by tag.
+      - name: Fetch the pinned OCR models
+        shell: bash
+        run: ./vendor/ocrs/fetch.sh
+
+      # ONNX Runtime (DirectML build on Windows) and the background model,
+      # pinned by SHA-256 (Phase 7).
+      - name: Fetch ONNX Runtime and the background model
+        shell: bash
+        run: ./vendor/onnx/fetch.sh
+
       - name: Formatting
         run: cargo fmt --all --check
 
@@ -96,6 +107,47 @@ jobs:
           sudo apt-get install -y poppler-utils mupdf-tools fonts-dejavu-core fonts-liberation
           python3 -m pip install --quiet pdfminer.six
           python3 tools/redaction-proof/run.py --out redaction-proof.txt
+
+      # Phase 7: scanned pages read by the application's own OCR, then read
+      # back by four extractors that are not PDFium — accuracy, word
+      # positions, and a render that must not change by one pixel.
+      - name: OCR proof
+        if: runner.os == 'Linux'
+        run: python3 tools/ocr-proof/run.py --out ocr-proof.txt
+
+      # Phase 7: "Hapus Latar" scored against masks drawn with the pictures.
+      - name: Background removal proof
+        if: runner.os == 'Linux'
+        run: python3 tools/background-proof/run.py --out background-proof.txt
+
+      # Phase 7: a form filled by the worker's routine reads as filled in
+      # pypdf, poppler and MuPDF — values and appearances — while the same
+      # values written as /V alone must fail.
+      - name: Form filling proof
+        if: runner.os == 'Linux'
+        run: python3 tools/form-proof/run.py --out form-proof.txt
+
+      # Phase 7: text replaced by the worker's routine reads as replaced in
+      # poppler, MuPDF and pypdf, no pixel outside the replaced span changes,
+      # and what cannot be done exactly is refused with its reason.
+      - name: Text editing proof
+        if: runner.os == 'Linux'
+        run: python3 tools/textedit-proof/run.py --out textedit-proof.txt
+
+      # The Windows runtime as the application loads it: onnxruntime.dll and
+      # DirectML.dll beside the executable (src-tauri/build.rs put them in
+      # target/debug). Prints where the model ran — DirectML on the runner's
+      # software adapter, or the CPU and why — and fails only if nothing ran.
+      - name: DirectML probe
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          python3 tools/background-proof/make_pictures.py probe
+          ./target/debug/bg-probe.exe target/debug/onnxruntime.dll vendor/onnx/u2netp.onnx probe/stempel.png probe/stempel.out.png
+          # No GPU here: once more with DirectML allowed on the software adapter,
+          # so the model runs through DirectML itself, not only up to its
+          # choice of device.
+          BG_ANY_ADAPTER=1 BG_KIND=paper ./target/debug/bg-probe.exe target/debug/onnxruntime.dll vendor/onnx/u2netp.onnx probe/stempel.png probe/stempel.dml.png
 
   frontend:
     name: Frontend

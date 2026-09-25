@@ -1,0 +1,26 @@
+Fase 7 — bukti pengisian formulir: isian terbaca dan tergambar di pembaca lain
+
+nilai   = /V (dan /AS untuk kotak centang/radio) menurut pypdf sesuai yang diisi
+poppler, MuPDF = teks isian ikut terbaca dari tampilan (appearance) widget yang digambar pembaca itu
+gambar  = render MuPDF: widget yang seharusnya menyala berubah, yang lain tidak
+Kotak centang memakai keadaan /Ya (bukan /Yes); radio memakai /umum, /pelajar, /pengajar.
+
+Aplikasi (izul_pdf::forms, lewat lingkungan form-fill PDFium):
+isian     nilai (pypdf)                   nilai  poppler  MuPDF  gambar
+nama      Siti Rahayu                        ya       ya     ya       -
+alamat    Jl. Contoh No. 12  Bandung         ya       ya     ya       -
+setuju    /Ya                                ya       ya     ya      ya
+kategori  /pelajar                           ya       ya     ya      ya
+kota      Surabaya                           ya       ya     ya       -
+sesi      Siang                              ya       ya     ya      ya
+
+Pembanding: nilai yang sama ditulis cara naif (hanya /V, /AS /Yes) dengan pikepdf — harus gagal:
+isian     nilai (pypdf)                   nilai  poppler  MuPDF  gambar
+nama      Siti Rahayu                        ya    TIDAK  TIDAK       -
+alamat    Jl. Contoh No. 12 Bandung          ya    TIDAK  TIDAK       -
+setuju    /Yes                            TIDAK       ya     ya      ya
+kategori  /pelajar                        TIDAK       ya     ya   TIDAK
+kota      Surabaya                           ya    TIDAK  TIDAK       -
+sesi      Siang                              ya       ya     ya   TIDAK
+
+HASIL: LULUS

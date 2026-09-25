@@ -148,6 +148,63 @@ pub fn redact(input: &[u8], requests: &[PageAreas]) -> Result<(Vec<u8>, Vec<Page
     Ok((pdf.write()?, reports))
 }
 
+/// Replaces the text in `area` on `page` with `text` (Phase 7's limited
+/// editing of a document's own text), and returns the new file and how many
+/// glyphs were taken out.
+///
+/// The glyphs in the area go as in a redaction, and `text` is written where
+/// the first of them was, in the same font, followed by a number taking the
+/// pen back by its width — so everything after the area on the line, and
+/// everything else on the page, is exactly where it was. Only text is
+/// touched: no path, picture, form or annotation is judged against the area.
+///
+/// Refused, with a reason the user reads ([`RedactError::Edit`]), when the
+/// area holds nothing, spans more than one line or font, the font is not
+/// embedded, or it has no glyph for a character of `text` (`Font::encode`).
+/// A longer text is not refused here — it may run into what follows it,
+/// which the worker checks with PDFium on the result.
+pub fn replace_text(input: &[u8], page: u32, area: Rect, text: &str) -> Result<(Vec<u8>, u32)> {
+    let mut pdf = Pdf::parse(input)?;
+    let pages = pdf.pages()?;
+    let page_ref = *pages.get(page as usize).ok_or(RedactError::NoPage(page))?;
+    let mut dict = pdf
+        .resolve_dict(&Obj::Ref(page_ref))?
+        .ok_or(RedactError::NoPage(page))?;
+    let resources = match pdf.inherited(&dict, b"Resources")? {
+        Some(r) => pdf.resolve_dict(&r)?.unwrap_or_default(),
+        None => Dict::new(),
+    };
+    let content = contents_of(&pdf, &dict)?;
+    let (outcome, removed, placed) = {
+        let mut env = Env::new(&mut pdf, vec![area]);
+        env.replace = Some(interp::Replace::new(text.to_string()));
+        let outcome = run(&mut env, &content, &resources, Matrix::IDENTITY, 0)?;
+        let placed = env.replace.as_ref().is_some_and(|r| r.placed);
+        (outcome, env.counts.glyphs, placed)
+    };
+    let Some(body) = outcome.content.filter(|_| placed) else {
+        return Err(RedactError::Edit(
+            "tidak ada teks halaman di bagian yang dipilih".into(),
+        ));
+    };
+    let mut sdict = Dict::new();
+    sdict.set(b"Filter", Obj::name("FlateDecode"));
+    let content_ref = pdf.add(Stored::Stream(Stream {
+        dict: sdict,
+        data: deflate(&body),
+    }));
+    dict.set(b"Contents", Obj::Ref(content_ref));
+    // A thumbnail of the page as it was would show the old text.
+    dict.remove(b"Thumb");
+    if !outcome.touched_mcids.is_empty() {
+        // Replacement text over what changed (`/ActualText`) would be read
+        // instead of it; it goes, as in a redaction.
+        strip_structure(&mut pdf, page_ref, &outcome.touched_mcids)?;
+    }
+    pdf.set(page_ref.num, Stored::Obj(Obj::Dict(dict)));
+    Ok((pdf.write()?, removed))
+}
+
 fn contents_of(pdf: &Pdf<'_>, page: &Dict) -> Result<Vec<u8>> {
     let parts: Vec<Obj> = match page.get(b"Contents") {
         None => Vec::new(),

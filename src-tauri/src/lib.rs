@@ -36,17 +36,21 @@
 )]
 
 pub mod annots;
+pub mod background;
 pub mod commands;
 pub mod compare;
 pub mod folders;
+pub mod forms;
 pub mod indexing;
 pub mod logging;
+pub mod ocr;
 pub mod pagemap;
 pub mod protocol;
 pub mod render;
 pub mod save_commands;
 pub mod saving;
 pub mod supervisor;
+pub mod textedit;
 pub mod textsearch;
 pub mod thumbs;
 pub mod version;
@@ -187,6 +191,7 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
         annots: Arc::new(annots::AnnotState::new()),
         stamps: parking_lot::Mutex::new(std::collections::HashMap::new()),
         hidden: pagemap::HiddenSources::default(),
+        ocr: ocr::OcrRuns::default(),
     };
 
     let title = version::title_bar_text(&v);
@@ -297,6 +302,15 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
             save_commands::save_document,
             save_commands::redact_apply,
             save_commands::redact_preview,
+            ocr::ocr_available,
+            ocr::ocr_apply,
+            ocr::ocr_progress,
+            ocr::ocr_cancel,
+            background::background_available,
+            background::annot_remove_background,
+            forms::form_fields,
+            forms::form_set,
+            textedit::text_replace,
             save_commands::export_document,
             save_commands::export_history,
             save_commands::autosave_drafts,

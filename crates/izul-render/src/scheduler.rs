@@ -244,6 +244,11 @@ impl RenderService {
         tracing::debug!(doc, dropped, "cache dokumen dilepas");
     }
 
+    /// Forgets the cached tiles of one page whose content changed.
+    pub fn invalidate_page(&self, doc: u64, page: u32) -> usize {
+        self.cache.lock().forget_page(doc, page)
+    }
+
     /// Releases a tab's full-resolution bitmaps, keeping its previews (SPEC 10).
     pub fn trim(&self, doc: u64) -> usize {
         self.cache.lock().trim_document(doc)

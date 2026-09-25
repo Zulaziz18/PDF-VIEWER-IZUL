@@ -3,6 +3,78 @@
 Semua perubahan penting per fase. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/);
 versi mengikuti `version.json` sebagai sumber tunggal.
 
+## [7.0.0-alpha.7] — Fase 7: Kecerdasan
+
+Empat kemampuan baru, semuanya berjalan di komputer sendiri tanpa jaringan:
+**OCR** (pindaian jadi bisa dicari dan disalin), **hapus latar gambar** dengan
+model AI (DirectML bila ada GPU, CPU bila tidak), **pengisian formulir
+AcroForm**, dan **penyuntingan teks asli** yang dibatasi tegas sesuai SPEC.
+Setiap kemampuan punya alat bukti sendiri yang memeriksa hasilnya dengan
+pembaca selain PDFium (poppler, MuPDF, pypdf, pdfminer) dan dijalankan CI.
+
+### Ditambahkan
+
+- **Kenali Teks (OCR)** di pita Konversi: `ocrs` 0.13 (Rust murni), lapisan
+  teks tak terlihat (`Tr 3`) ditulis per kata tepat di atas kata pada gambar.
+  Semua halaman, halaman ini, atau rentang; halaman yang sudah bertulisan
+  dilewati kecuali diminta; bisa dihentikan di tengah jalan tanpa mengubah
+  berkas. Bukti (`bench/results/phase7-ocr.txt`): CER 0,87 %, WER 4,2 % di
+  empat pengekstrak, 98,7–100 % kata di tempatnya, 0 piksel tampilan berubah,
+  ~0,8 s per halaman (release).
+- **Hapus Latar** untuk gambar (panel properti): U²-Net kecil (`u2netp`,
+  Apache-2.0) lewat ONNX Runtime 1.24.4. Dua mode yang dipilih pengguna —
+  *Foto* dan *Tanda tangan/stempel di kertas* — karena keduanya tidak bisa
+  dibedakan dari gambarnya (IoU stempel 0,31 → 1,00 dengan mode kertas, tetapi
+  benda putih di latar putih 0,90 → 0,00). Satu langkah undo. Bukti:
+  `bench/results/phase7-background.txt`.
+- **Formulir**: panel samping "Formulir" (isian per halaman: teks, teks
+  multi-baris, kotak centang, radio, pilihan, daftar) dan bilah "Dokumen ini
+  berisi formulir". Nilai diisi lewat form-fill environment PDFium, sehingga
+  tampilan widget dibangun ulang dan terbaca di pembaca lain; kotak centang
+  dengan keadaan "on" bernama selain `/Yes` ditangani. Tiap isian satu langkah
+  undo, ikut prompt "belum disimpan", dan langsung tampil di halaman. Bukti:
+  `bench/results/phase7-forms.txt` (dengan pembanding cara naif yang gagal).
+- **Edit Teks** di pita Edit: pilih teks dalam satu baris, ketik penggantinya.
+  Ditolak dengan alasan yang jelas bila font tidak tertanam, bila font tidak
+  punya hurufnya (disebutkan hurufnya), bila pilihan lebih dari satu baris
+  atau font, atau bila teks baru menabrak kata di sebelahnya. Sisa baris tidak
+  bergeser (tanpa reflow). Bukti (`bench/results/phase7-textedit.txt`): teks
+  baru terbaca di poppler, MuPDF, pypdf; **0 piksel berubah di luar bagian
+  yang diganti**.
+- IPC: `WorkFrames`, `WorkOcr`, `BlobAppend`, `RemoveBackground`,
+  `FormFields`, `FillForm`, `WorkReplaceText` (+ balasannya), semuanya di ujung
+  enum; `PROTOCOL_VERSION` 7 → 12.
+- Alat bukti baru: `tools/ocr-proof`, `tools/background-proof`,
+  `tools/form-proof`, `tools/textedit-proof` — dijalankan CI di ubuntu; probe
+  DirectML dijalankan CI di windows.
+
+### Diperbaiki
+
+- **Formulir tidak pernah tergambar sejak Fase 1.** Kotak isian, kotak
+  centang dan radio tampil kosong: `FPDF_RenderPageBitmapWithMatrix` melewatkan
+  widget, hanya `FPDF_FFLDraw` (dengan form-fill environment yang hidup) yang
+  menggambarnya. Diukur 0 piksel gelap di bingkai isian, poppler 680.
+  Ditemukan oleh harness screenshot saat membangun panel Formulir.
+- **Anotasi di halaman ber-`/Rotate` atau ber-MediaBox bergeser tersimpan di
+  tempat yang salah** di pembaca lain: editor menyimpannya di ruang tampilan,
+  berkas butuh ruang pengguna. Kini dikonversi di batas simpan (`PageFrame`),
+  termasuk `/Matrix` pada AP stream.
+- Menghapus latar gambar tidak langsung terlihat (daftar tampilan tidak
+  diambil ulang) — cacat di kode fase ini sendiri, ditemukan harness
+  screenshot sebelum rilis.
+
+### Sengaja tidak dikerjakan
+
+- Model OCR `ocrs` **tidak dibundel**: lisensi bobot modelnya belum jelas
+  (dilatih pada HierText CC BY-SA 4.0, repositori modelnya tanpa berkas
+  LICENSE). Diambil `vendor/ocrs/fetch.sh` untuk pengembangan; keputusan
+  membundelnya ada di pengguna.
+- **DirectML belum pernah berjalan di GPU sungguhan.** Runner CI Windows tidak
+  punya adaptor (bahkan `DeviceFilter::Any` menjawab "No devices detected"),
+  jadi yang terbukti baru jatuhnya ke CPU dengan alasan yang dilaporkan.
+- Penyuntingan teks: tanpa reflow paragraf (SPEC), tanpa pratinjau sebelum
+  simpan — alasannya di `src-tauri/src/textedit.rs`.
+
 ## [7.0.0-alpha.6] — Fase 6: Redaksi Sejati
 
 Bagian dokumen yang ditandai kini bisa **dihapus sungguhan** dari berkas —

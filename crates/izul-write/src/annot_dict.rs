@@ -26,7 +26,7 @@
 
 use izul_model::annot::{AnnotKind, AnnotObject, AnnotPayload, NoteIcon, ShapeStyle, TextAlign};
 use izul_model::display::Rgba;
-use izul_model::geom::PdfRectF;
+use izul_model::geom::{Matrix, PdfPointF, PdfRectF};
 
 use crate::syntax::{date, name, num, rect, rgb, text_string};
 
@@ -69,7 +69,11 @@ fn shape_keys(style: &ShapeStyle) -> String {
 /// left, upper right, lower left, lower right. (The specification's prose
 /// describes counter-clockwise order; the readers that matter do not follow it,
 /// and a highlight whose quads are "correct" but drawn crossed helps nobody.)
-fn quad_points(quads: &[PdfRectF]) -> String {
+///
+/// The corners are named in display space and each is carried into user
+/// space by `m`, so on a turned page "upper left" stays the corner where the
+/// text starts.
+fn quad_points(quads: &[PdfRectF], m: &Matrix) -> String {
     let mut out = String::from("[");
     for q in quads {
         for (x, y) in [
@@ -78,6 +82,7 @@ fn quad_points(quads: &[PdfRectF]) -> String {
             (q.left, q.bottom),
             (q.right, q.bottom),
         ] {
+            let PdfPointF { x, y } = m.apply(PdfPointF::new(x, y));
             out.push_str(&num(x));
             out.push(' ');
             out.push_str(&num(y));
@@ -91,8 +96,11 @@ fn quad_points(quads: &[PdfRectF]) -> String {
     out
 }
 
-fn points(pts: impl Iterator<Item = (f32, f32)>) -> String {
-    let parts: Vec<String> = pts.map(|(x, y)| format!("{} {}", num(x), num(y))).collect();
+fn points(pts: impl Iterator<Item = (f32, f32)>, m: &Matrix) -> String {
+    let parts: Vec<String> = pts
+        .map(|(x, y)| m.apply(PdfPointF::new(x, y)))
+        .map(|p| format!("{} {}", num(p.x), num(p.y)))
+        .collect();
     format!("[{}]", parts.join(" "))
 }
 
@@ -119,9 +127,18 @@ fn da(font: &izul_model::annot::FontSpec, color: Rgba) -> String {
 
 /// The dictionary body for one annotation.
 ///
-/// `rect` is the painted box (see [`crate::bounds`]); `ap` the appearance
-/// stream's object number; `metadata` the `/IzulObj` value.
-pub fn annotation_dict(obj: &AnnotObject, rect_: PdfRectF, ap: u32, metadata: &str) -> String {
+/// `obj` is in display space (see `izul_model::geom::PageFrame`) and `m`
+/// carries display space into the page's user space, where every geometry key
+/// is written; `rect_` is the painted box, already in user space (see
+/// [`crate::bounds`]); `ap` the appearance stream's object number; `metadata`
+/// the `/IzulObj` value, which keeps display space.
+pub fn annotation_dict(
+    obj: &AnnotObject,
+    rect_: PdfRectF,
+    ap: u32,
+    metadata: &str,
+    m: &Matrix,
+) -> String {
     let subtype = match (&obj.kind, &obj.payload) {
         (AnnotKind::Polygon, AnnotPayload::Polygon { closed: false, .. }) => "PolyLine",
         (AnnotKind::Image, _) => "Stamp",
@@ -146,7 +163,7 @@ pub fn annotation_dict(obj: &AnnotObject, rect_: PdfRectF, ap: u32, metadata: &s
             // itself is in the appearance stream.
             d.push_str(&format!(
                 "/QuadPoints{}/IC{}",
-                quad_points(quads),
+                quad_points(quads, m),
                 rgb(*color)
             ));
         }
@@ -154,7 +171,7 @@ pub fn annotation_dict(obj: &AnnotObject, rect_: PdfRectF, ap: u32, metadata: &s
             d.push_str(&format!(
                 "/C{}/QuadPoints{}",
                 rgb(*color),
-                quad_points(quads)
+                quad_points(quads, m)
             ));
         }
         AnnotPayload::FreeText {
@@ -193,7 +210,7 @@ pub fn annotation_dict(obj: &AnnotObject, rect_: PdfRectF, ap: u32, metadata: &s
         } => {
             let lists: Vec<String> = strokes
                 .iter()
-                .map(|s| points(s.iter().map(|p| (p.x, p.y))))
+                .map(|s| points(s.iter().map(|p| (p.x, p.y)), m))
                 .collect();
             d.push_str(&format!(
                 "/C{}/InkList[{}]{}",
@@ -215,6 +232,7 @@ pub fn annotation_dict(obj: &AnnotObject, rect_: PdfRectF, ap: u32, metadata: &s
             } else {
                 "/None"
             };
+            let (from, to) = (m.apply(*from), m.apply(*to));
             d.push_str(&format!(
                 "/C{}/L[{} {} {} {}]/LE[/None{end}]{}",
                 rgb(*color),
@@ -231,7 +249,7 @@ pub fn annotation_dict(obj: &AnnotObject, rect_: PdfRectF, ap: u32, metadata: &s
         } => {
             d.push_str(&format!(
                 "/Vertices{}{}",
-                points(pts.iter().map(|p| (p.x, p.y))),
+                points(pts.iter().map(|p| (p.x, p.y)), m),
                 shape_keys(style)
             ));
         }
@@ -281,7 +299,7 @@ mod tests {
     }
 
     fn dict(o: &AnnotObject) -> String {
-        annotation_dict(o, o.rect, 12, "{}")
+        annotation_dict(o, o.rect, 12, "{}", &Matrix::IDENTITY)
     }
 
     #[test]
@@ -379,5 +397,48 @@ mod tests {
         assert!(d.contains("/Subtype/PolyLine/"), "{d}");
         assert!(d.contains("/Vertices[0 0 5 5]"));
         assert!(!d.contains("/CA"), "{d}");
+    }
+
+    /// On a page turned a quarter clockwise with its box at (100, 200) and
+    /// 595 wide, display (x, y) is user (695 - y, 200 + x): every geometry key
+    /// is carried over, not only /Rect.
+    #[test]
+    fn geometry_keys_are_written_in_user_space() {
+        use izul_model::geom::{PageFrame, RotationQuarter};
+        let m = PageFrame {
+            bbox: PdfRectF::new(100.0, 200.0, 695.0, 1042.0),
+            rotation: RotationQuarter::Cw90,
+        }
+        .display_to_user();
+        let ink = AnnotObject::new(
+            izul_model::annot::AnnotId(1),
+            0,
+            AnnotKind::Ink,
+            PdfRectF::new(0.0, 0.0, 1.0, 1.0),
+            AnnotPayload::Ink {
+                strokes: vec![vec![PdfPointF::new(10.0, 20.0), PdfPointF::new(30.0, 40.0)]],
+                color: Rgba::BLACK,
+                width: 1.0,
+                smooth: false,
+            },
+        );
+        let d = annotation_dict(&ink, ink.rect, 1, "{}", &m);
+        assert!(d.contains("/InkList[[675 210 655 230]]"), "{d}");
+        let line = AnnotObject::new(
+            izul_model::annot::AnnotId(2),
+            0,
+            AnnotKind::Line,
+            PdfRectF::new(0.0, 0.0, 1.0, 1.0),
+            AnnotPayload::Line {
+                from: PdfPointF::new(0.0, 0.0),
+                to: PdfPointF::new(100.0, 50.0),
+                color: Rgba::BLACK,
+                width: 1.0,
+                dashed: false,
+                arrow_head: 0.0,
+            },
+        );
+        let d = annotation_dict(&line, line.rect, 1, "{}", &m);
+        assert!(d.contains("/L[695 200 645 300]"), "{d}");
     }
 }

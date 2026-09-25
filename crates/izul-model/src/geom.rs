@@ -238,9 +238,112 @@ impl RotationQuarter {
     }
 }
 
+/// Where a page's display space sits in its user space.
+///
+/// Display space is what the viewer and the editor work in: points, origin at
+/// the lower-left corner of the page *as shown* — the page's own `/Rotate`
+/// applied, its bounding box (`MediaBox` ∩ `CropBox`, as PDFium reports it)
+/// moved to the origin. User space is what a PDF file stores. The two agree
+/// only on the common page with no `/Rotate` and a box at (0, 0); annotations
+/// written in display space on any other page land in the wrong place in
+/// every other reader.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub struct PageFrame {
+    /// Bounding box in unrotated user space.
+    pub bbox: PdfRectF,
+    /// The page's own `/Rotate`.
+    pub rotation: RotationQuarter,
+}
+
+impl PageFrame {
+    /// A page whose display and user spaces are the same.
+    pub fn plain(width: f32, height: f32) -> Self {
+        PageFrame {
+            bbox: PdfRectF::new(0.0, 0.0, width, height),
+            rotation: RotationQuarter::None,
+        }
+    }
+
+    /// Display space to user space, as a matrix — for an appearance
+    /// stream's `/Matrix`, and for every point of an annotation.
+    pub fn display_to_user(&self) -> Matrix {
+        let (l, b) = (self.bbox.left, self.bbox.bottom);
+        let (w, h) = (self.bbox.width(), self.bbox.height());
+        let (a, bb, c, d, e, f) = match self.rotation {
+            RotationQuarter::None => (1.0, 0.0, 0.0, 1.0, l, b),
+            // Shown turned a quarter clockwise: display x runs up the page,
+            // display y runs from the page's right edge leftwards.
+            RotationQuarter::Cw90 => (0.0, 1.0, -1.0, 0.0, l + w, b),
+            RotationQuarter::Cw180 => (-1.0, 0.0, 0.0, -1.0, l + w, b + h),
+            RotationQuarter::Cw270 => (0.0, -1.0, 1.0, 0.0, l, b + h),
+        };
+        Matrix {
+            a,
+            b: bb,
+            c,
+            d,
+            e,
+            f,
+        }
+    }
+
+    /// A display-space rectangle in user space. Quarter turns keep
+    /// rectangles upright, so this is exact.
+    pub fn rect_to_user(&self, r: PdfRectF) -> PdfRectF {
+        let m = self.display_to_user();
+        let p = m.apply(PdfPointF::new(r.left, r.bottom));
+        let q = m.apply(PdfPointF::new(r.right, r.top));
+        PdfRectF::new(p.x.min(q.x), p.y.min(q.y), p.x.max(q.x), p.y.max(q.y))
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Pinned against `izul_pdf::PageGeometry::to_display`, which the viewer
+    /// uses: that maps user (x, y) to display (u, v); this must undo it.
+    #[test]
+    fn display_to_user_undoes_what_the_viewer_does() {
+        let bbox = PdfRectF::new(100.0, 200.0, 695.0, 1042.0);
+        let (w, h) = (bbox.width(), bbox.height());
+        let to_display = |r: RotationQuarter, x: f32, y: f32| {
+            let (u, v) = (x - bbox.left, y - bbox.bottom);
+            match r {
+                RotationQuarter::None => (u, v),
+                RotationQuarter::Cw90 => (v, w - u),
+                RotationQuarter::Cw180 => (w - u, h - v),
+                RotationQuarter::Cw270 => (h - v, u),
+            }
+        };
+        for rot in [
+            RotationQuarter::None,
+            RotationQuarter::Cw90,
+            RotationQuarter::Cw180,
+            RotationQuarter::Cw270,
+        ] {
+            let m = PageFrame {
+                bbox,
+                rotation: rot,
+            }
+            .display_to_user();
+            for (x, y) in [
+                (100.0, 200.0),
+                (150.0, 900.0),
+                (695.0, 1042.0),
+                (400.0, 333.0),
+            ] {
+                let (u, v) = to_display(rot, x, y);
+                let back = m.apply(PdfPointF::new(u, v));
+                assert!(
+                    (back.x - x).abs() < 1e-3 && (back.y - y).abs() < 1e-3,
+                    "{rot:?}: ({x},{y}) -> ({u},{v}) -> ({},{})",
+                    back.x,
+                    back.y
+                );
+            }
+        }
+    }
 
     #[test]
     fn identity_leaves_points_alone() {

@@ -51,6 +51,8 @@ pub struct AppState {
     /// Worker documents that render pages brought in from other files
     /// (Phase 5, `pagemap.rs`).
     pub hidden: crate::pagemap::HiddenSources,
+    /// OCR runs in flight (Phase 7).
+    pub ocr: crate::ocr::OcrRuns,
 }
 
 impl std::fmt::Debug for AppState {
@@ -1087,22 +1089,30 @@ pub fn annot_delete(
     state.annots.delete(doc, &ids).map_err(|e| e.to_string())
 }
 
+/// Async since Phase 7: undoing a form value puts the old value into the
+/// open document and has its page drawn again.
 #[tauri::command]
-pub fn annot_undo(
+pub async fn annot_undo(
     state: tauri::State<'_, AppState>,
     doc: u64,
     page: Option<u32>,
 ) -> CmdResult<EditResult> {
-    state.annots.undo(doc, page).map_err(|e| e.to_string())
+    let mut result = state.annots.undo(doc, page).map_err(|e| e.to_string())?;
+    let changes = std::mem::take(&mut result.form_changes);
+    result.repaint = crate::forms::show(&state, doc, changes).await?;
+    Ok(result)
 }
 
 #[tauri::command]
-pub fn annot_redo(
+pub async fn annot_redo(
     state: tauri::State<'_, AppState>,
     doc: u64,
     page: Option<u32>,
 ) -> CmdResult<EditResult> {
-    state.annots.redo(doc, page).map_err(|e| e.to_string())
+    let mut result = state.annots.redo(doc, page).map_err(|e| e.to_string())?;
+    let changes = std::mem::take(&mut result.form_changes);
+    result.repaint = crate::forms::show(&state, doc, changes).await?;
+    Ok(result)
 }
 
 #[tauri::command]

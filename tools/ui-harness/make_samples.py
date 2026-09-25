@@ -271,4 +271,70 @@ agreement(OUT / "Draf Perjanjian v2.pdf", "v2")
 report(OUT / "Laporan Kegiatan Semester.pdf", "Laporan Kegiatan", 9)
 report(OUT / "Catatan Rapat Organisasi.pdf", "Catatan Rapat", 5)
 report(OUT / "Proposal Penelitian.pdf", "Proposal Penelitian", 14)
+
+
+def stamp_photo(path):
+    """A stamp photographed on paper, for the "Hapus Latar" scenes."""
+    from PIL import Image, ImageDraw
+
+    w, h = 360, 360
+    img = Image.new("RGB", (w, h), (246, 243, 236))
+    px = img.load()
+    for y in range(h):
+        for x in range(w):
+            f = 1 - 0.2 * ((x / w) ** 2 + (y / h) * 0.5)
+            r, g, b = px[x, y]
+            px[x, y] = (int(r * f), int(g * f), int(b * f))
+    d = ImageDraw.Draw(img)
+    ink = (170, 30, 40)
+    d.ellipse((40, 40, 320, 320), outline=ink, width=12)
+    d.ellipse((90, 90, 270, 270), outline=ink, width=6)
+    d.rectangle((105, 160, 255, 200), fill=ink)
+    img.save(path)
+
+
+stamp_photo(OUT / "stempel.png")
+
+
+def registration_form(path):
+    """An AcroForm, for the "Formulir" scenes (Phase 7): one field of each
+    kind the panel draws. Invented content."""
+    c = canvas.Canvas(str(path), pagesize=A4)
+    w, h = A4
+    c.setTitle("Formulir Pendaftaran (contoh)")
+    c.setFont("Helvetica-Bold", 18)
+    c.drawString(56, h - 72, "Formulir Pendaftaran Pelatihan")
+    c.setFont("Helvetica", 10)
+    c.setFillColor(HexColor("#555555"))
+    c.drawString(56, h - 92, "Isi semua bagian, lalu simpan berkas ini.")
+    c.setFillColor(HexColor("#000000"))
+    c.setFont("Helvetica", 11)
+    form = c.acroForm
+    black, white = HexColor("#000000"), HexColor("#ffffff")
+    c.drawString(56, h - 140, "Nama lengkap")
+    form.textfield(name="nama_lengkap", x=190, y=h - 148, width=320, height=22, borderColor=black,
+                   fillColor=white, fontSize=11)
+    c.drawString(56, h - 180, "Alamat")
+    form.textfield(name="alamat", x=190, y=h - 250, width=320, height=80, borderColor=black, fillColor=white,
+                   fontSize=10, fieldFlags="multiline")
+    c.drawString(56, h - 280, "Kategori peserta")
+    for i, (value, label) in enumerate([("Umum", "Umum"), ("Pelajar", "Pelajar"), ("Pengajar", "Pengajar")]):
+        form.radio(name="kategori", value=value, x=190 + i * 110, y=h - 286, size=16, borderColor=black,
+                   fillColor=white, selected=False)
+        c.drawString(212 + i * 110, h - 282, label)
+    c.drawString(56, h - 320, "Kota")
+    form.choice(name="kota", x=190, y=h - 328, width=200, height=22,
+                options=["Bandung", "Jakarta", "Surabaya", "Yogyakarta"], value="Bandung", fieldFlags="combo",
+                borderColor=black, fillColor=white, fontSize=11)
+    c.drawString(56, h - 364, "Setuju dengan tata tertib")
+    form.checkbox(name="setuju", x=240, y=h - 370, size=16, buttonStyle="check", borderColor=black,
+                  fillColor=white, checked=False)
+    c.setFillColor(HexColor("#888888"))
+    c.setFont("Helvetica-Oblique", 9)
+    c.drawString(56, 56, "Formulir karangan, dibuat untuk contoh tampilan.")
+    c.showPage()
+    c.save()
+
+
+registration_form(OUT / "Formulir Pendaftaran.pdf")
 print(f"sampel ditulis ke {OUT}")

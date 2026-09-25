@@ -324,6 +324,19 @@ export class ViewportRenderer {
     this.requestFrame();
   }
 
+  /**
+   * Drops the bitmaps of pages whose content changed (a form field filled,
+   * Phase 7) so they are rendered again; previews included, since a stale
+   * thumbnail would show the old value.
+   */
+  invalidatePages(pages: readonly number[]): void {
+    const doc = this.#state.doc;
+    if (doc === null || pages.length === 0) return;
+    const prefixes = pages.map((p) => `${doc}/${p}/`);
+    this.#bitmaps.keepOnly((key) => !prefixes.some((prefix) => key.startsWith(prefix)));
+    this.requestFrame();
+  }
+
   /** Scrolls so a page's top-left corner is at the viewport's origin. */
   goToPage(page: number, offsetPoints?: number): void {
     const target = scrollToPage(this.#layout, page, PAGE_PADDING / 2);

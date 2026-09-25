@@ -360,6 +360,46 @@ where
             }
         }
 
+        Request::FormFields { doc } => {
+            let Some(open) = sess.get(doc) else {
+                return fail_kind(channel, id, Some(doc), ErrorKind::BadRequest, "doc.unknown")
+                    .await;
+            };
+            match open.doc.form_widgets() {
+                Ok(widgets) => {
+                    let widgets = widgets.into_iter().map(widget_wire).collect();
+                    reply(channel, id, Response::FormFieldsReady { doc, widgets }).await
+                }
+                Err(e) => fail(channel, id, Some(doc), &e).await,
+            }
+        }
+
+        Request::FillForm {
+            doc,
+            working: false,
+            values,
+        } => {
+            let Some(open) = sess.get(doc) else {
+                return fail_kind(channel, id, Some(doc), ErrorKind::BadRequest, "doc.unknown")
+                    .await;
+            };
+            match open.doc.fill_form(&values) {
+                Ok((changed, pages)) => {
+                    reply(
+                        channel,
+                        id,
+                        Response::FormFilled {
+                            doc,
+                            changed,
+                            pages,
+                        },
+                    )
+                    .await
+                }
+                Err(e) => fail(channel, id, Some(doc), &e).await,
+            }
+        }
+
         Request::ExtractText {
             doc,
             page,
@@ -531,7 +571,13 @@ where
         | Request::VerifyFile { .. }
         | Request::WorkArrange { .. }
         | Request::WorkRedact { .. }
-        | Request::VerifyRedacted { .. }) => {
+        | Request::VerifyRedacted { .. }
+        | Request::WorkFrames { .. }
+        | Request::WorkOcr { .. }
+        | Request::BlobAppend { .. }
+        | Request::RemoveBackground { .. }
+        | Request::FillForm { working: true, .. }
+        | Request::WorkReplaceText { .. }) => {
             let engine = sess.engine();
             let viewing =
                 |doc: DocId, page: u32| sess.get(doc).map(|open| open.doc.izul_annots(page));
@@ -547,6 +593,36 @@ where
                 Err(saving::Failure::Encode(detail)) => {
                     tracing::warn!(%detail, "enkode gagal");
                     fail_kind(channel, id, None, ErrorKind::EngineFault, "encode.failed").await
+                }
+                Err(saving::Failure::Ai(detail)) => {
+                    tracing::warn!(%detail, "hapus latar gagal");
+                    let payload = Response::Error {
+                        doc: None,
+                        kind: ErrorKind::EngineFault,
+                        message_id: "background.failed".to_string(),
+                        detail,
+                    };
+                    reply(channel, id, payload).await
+                }
+                Err(saving::Failure::Ocr(doc, detail)) => {
+                    tracing::warn!(%detail, "OCR gagal");
+                    let payload = Response::Error {
+                        doc,
+                        kind: ErrorKind::EngineFault,
+                        message_id: "ocr.failed".to_string(),
+                        detail,
+                    };
+                    reply(channel, id, payload).await
+                }
+                Err(saving::Failure::Edit(doc, detail)) => {
+                    tracing::warn!(%detail, "penggantian teks ditolak");
+                    let payload = Response::Error {
+                        doc,
+                        kind: ErrorKind::Corrupt,
+                        message_id: "textedit.failed".to_string(),
+                        detail,
+                    };
+                    reply(channel, id, payload).await
                 }
                 Err(saving::Failure::Redact(doc, detail)) => {
                     tracing::warn!(%detail, "redaksi ditolak");
@@ -650,4 +726,29 @@ where
         detail: String::new(),
     };
     reply(channel, id, payload).await
+}
+
+/// A widget as the wire carries it.
+fn widget_wire(w: izul_pdf::forms::FormWidget) -> izul_ipc::message::FormWidgetWire {
+    use izul_ipc::message::FormKindWire;
+    use izul_pdf::forms::FieldKind;
+    izul_ipc::message::FormWidgetWire {
+        page: w.page,
+        rect: w.rect,
+        name: w.name,
+        kind: match w.kind {
+            FieldKind::Text { multiline } => FormKindWire::Text { multiline },
+            FieldKind::CheckBox => FormKindWire::CheckBox,
+            FieldKind::Radio => FormKindWire::Radio,
+            FieldKind::ComboBox { editable } => FormKindWire::ComboBox { editable },
+            FieldKind::ListBox { multiple } => FormKindWire::ListBox { multiple },
+            FieldKind::Other => FormKindWire::Other,
+        },
+        read_only: w.read_only,
+        value: w.value,
+        checked: w.checked,
+        export: w.export,
+        options: w.options,
+        selected: w.selected,
+    }
 }

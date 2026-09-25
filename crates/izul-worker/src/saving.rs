@@ -23,6 +23,11 @@ pub struct Workbench {
     work: HashMap<DocId, Document>,
     blobs: HashMap<u64, Vec<u8>>,
     next_blob: u64,
+    /// The OCR engine, loaded on first use and kept: loading it takes a few
+    /// milliseconds, but 12 MB of models read again for every page would not.
+    ocr: Option<(String, izul_ocr::Ocr)>,
+    /// The background model, loaded on first use: (runtime, model, session).
+    background: Option<(String, String, izul_ocr::background::BackgroundRemover)>,
 }
 
 impl std::fmt::Debug for Workbench {
@@ -44,7 +49,18 @@ pub enum Failure {
     /// A redaction that could not be done, or did not verify. The detail is
     /// shown to the user as it is.
     Redact(Option<DocId>, String),
+    /// OCR could not run (models missing or unreadable, or the engine failed).
+    Ocr(Option<DocId>, String),
+    /// Background removal could not run; the detail is for the user.
+    Ai(String),
+    /// A text replacement refused or not verified; the detail is for the
+    /// user as it is.
+    Edit(Option<DocId>, String),
 }
+
+/// The largest picture accepted for background removal: 64 MB of encoded
+/// image, far past any photo, well short of exhausting a worker.
+const MAX_INPUT_BLOB: usize = 64 * 1024 * 1024;
 
 impl Workbench {
     pub fn new() -> Self {
@@ -70,6 +86,20 @@ impl Workbench {
             .min(bytes.len());
         let data = bytes.get(start..end).unwrap_or_default().to_vec();
         Ok(Response::BlobBytes { blob, data })
+    }
+
+    /// Loads the OCR engine from `models` unless it is loaded from there.
+    fn ocr(&mut self, models: &str) -> Result<(), Failure> {
+        if self.ocr.as_ref().is_none_or(|(dir, _)| dir != models) {
+            let dir = std::path::Path::new(models);
+            let engine = izul_ocr::Ocr::load(
+                &dir.join("text-detection.rten"),
+                &dir.join("text-recognition.rten"),
+            )
+            .map_err(|e| Failure::Ocr(None, e.to_string()))?;
+            self.ocr = Some((models.to_string(), engine));
+        }
+        Ok(())
     }
 
     fn work(&self, doc: DocId) -> Result<&Document, Failure> {
@@ -278,6 +308,82 @@ impl Workbench {
                 Ok(Response::Closed { doc })
             }
             Request::BlobRead { blob, offset, len } => self.read_blob(blob, offset, len),
+            Request::BlobAppend { blob, data } => {
+                let blob = if blob == 0 {
+                    self.next_blob += 1;
+                    self.blobs.insert(self.next_blob, Vec::new());
+                    self.next_blob
+                } else {
+                    blob
+                };
+                let Some(bytes) = self.blobs.get_mut(&blob) else {
+                    return Err(Failure::NoBlob);
+                };
+                // A picture, not a file system: refuse what no picture is.
+                if bytes.len() + data.len() > MAX_INPUT_BLOB {
+                    self.blobs.remove(&blob);
+                    return Err(Failure::Encode("gambar terlalu besar".into()));
+                }
+                bytes.extend_from_slice(&data);
+                Ok(Response::BlobAppended {
+                    blob,
+                    len: bytes.len() as u64,
+                })
+            }
+            Request::RemoveBackground {
+                blob,
+                runtime,
+                model,
+                kind,
+            } => {
+                let bytes = self.blobs.remove(&blob).ok_or(Failure::NoBlob)?;
+                let picture = image::load_from_memory(&bytes)
+                    .map_err(|e| Failure::Ai(format!("gambar tidak terbaca: {e}")))?
+                    .to_rgba8();
+                let fresh = self
+                    .background
+                    .as_ref()
+                    .is_none_or(|(r, m, _)| *r != runtime || *m != model);
+                if fresh {
+                    let remover = izul_ocr::background::BackgroundRemover::load(
+                        std::path::Path::new(&runtime),
+                        std::path::Path::new(&model),
+                    )
+                    .map_err(|e| Failure::Ai(e.to_string()))?;
+                    self.background = Some((runtime, model, remover));
+                }
+                let Some((_, _, remover)) = self.background.as_mut() else {
+                    return Err(Failure::Ai("model tidak dimuat".into()));
+                };
+                let device = match remover.device() {
+                    izul_ocr::background::Device::DirectMl => "DirectML".to_string(),
+                    izul_ocr::background::Device::Cpu { reason } if reason.is_empty() => {
+                        "CPU".to_string()
+                    }
+                    izul_ocr::background::Device::Cpu { reason } => format!("CPU ({reason})"),
+                };
+                let kind = match kind {
+                    izul_ipc::message::BackgroundKind::Photo => izul_ocr::background::Kind::Photo,
+                    izul_ipc::message::BackgroundKind::OnPaper => {
+                        izul_ocr::background::Kind::OnPaper
+                    }
+                };
+                let (out, paper) = remover
+                    .remove(&picture, kind)
+                    .map_err(|e| Failure::Ai(e.to_string()))?;
+                let mut png = std::io::Cursor::new(Vec::new());
+                out.write_to(&mut png, image::ImageFormat::Png)
+                    .map_err(|e| Failure::Encode(e.to_string()))?;
+                let Response::BlobReady { blob, len } = self.put_blob(png.into_inner()) else {
+                    return Err(Failure::NoBlob);
+                };
+                Ok(Response::BackgroundRemoved {
+                    blob,
+                    len,
+                    device,
+                    paper,
+                })
+            }
             Request::BlobDrop { blob } => {
                 self.blobs.remove(&blob);
                 Ok(Response::BlobReady { blob, len: 0 })
@@ -312,6 +418,86 @@ impl Workbench {
                 Ok(Response::RedactionVerified {
                     pages: pages.len() as u32,
                 })
+            }
+            Request::WorkOcr {
+                doc,
+                page,
+                models,
+                force,
+            } => {
+                if !self.work.contains_key(&doc) {
+                    return Err(Failure::NoWorkingCopy(doc));
+                }
+                self.ocr(&models)?;
+                let (Some(work), Some((_, ocr))) = (self.work.get(&doc), self.ocr.as_ref()) else {
+                    return Err(Failure::NoWorkingCopy(doc));
+                };
+                let outcome = izul_ocr::ocr_page(work, page, ocr, force).map_err(|e| match e {
+                    izul_ocr::OcrError::Pdf(p) => Failure::Pdf(Some(doc), p),
+                    other => Failure::Ocr(Some(doc), other.to_string()),
+                })?;
+                Ok(Response::WorkOcrDone {
+                    doc,
+                    page,
+                    words: match outcome {
+                        izul_ocr::PageOutcome::HadText => None,
+                        izul_ocr::PageOutcome::Read { words } => Some(words),
+                    },
+                })
+            }
+            Request::FillForm {
+                doc,
+                working: true,
+                values,
+            } => {
+                let work = self.work(doc)?;
+                // A field on a page the user deleted is nothing to fail a
+                // save over; every other refusal is.
+                let present = work
+                    .form_widgets()
+                    .map_err(|e| Failure::Pdf(Some(doc), e))?;
+                let values: Vec<_> = values
+                    .into_iter()
+                    .filter(|(n, _)| present.iter().any(|w| &w.name == n))
+                    .collect();
+                let (changed, pages) = work
+                    .fill_form(&values)
+                    .map_err(|e| Failure::Pdf(Some(doc), e))?;
+                Ok(Response::FormFilled {
+                    doc,
+                    changed,
+                    pages,
+                })
+            }
+            Request::WorkReplaceText {
+                doc,
+                page,
+                rect,
+                text,
+            } => {
+                let (copy, done) =
+                    izul_pdf::textedit::replace_text_document(self.work(doc)?, page, rect, &text)
+                        .map_err(|e| match e {
+                        izul_pdf::redaction::RedactFailure::Pdf(e) => Failure::Pdf(Some(doc), e),
+                        izul_pdf::redaction::RedactFailure::Refused(d) => {
+                            Failure::Edit(Some(doc), d)
+                        }
+                    })?;
+                copy.set_strip_izul(false);
+                self.work.insert(doc, copy);
+                Ok(Response::TextReplaced {
+                    doc,
+                    before: done.before,
+                    glyphs: done.glyphs,
+                })
+            }
+            Request::WorkFrames { doc } => {
+                let work = self.work(doc)?;
+                let frames = (0..work.page_count())
+                    .map(|p| work.page_geometry(p).map(|g| g.frame()))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| Failure::Pdf(Some(doc), e))?;
+                Ok(Response::WorkFramesReady { doc, frames })
             }
             other => Err(Failure::Encode(format!(
                 "bukan permintaan Fase 4: {other:?}"

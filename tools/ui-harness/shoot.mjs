@@ -47,7 +47,8 @@ function run(cmd, argv) {
   if (r.status !== 0) throw new Error(`${cmd} ${argv.join(" ")} gagal`);
 }
 
-if (!existsSync(join(SAMPLES, "Panduan Studi 2026.pdf")) || !existsSync(join(SAMPLES, "Data Pegawai.pdf"))) {
+// Made again whenever one is missing — a phase that adds a sample adds it here.
+if (["Panduan Studi 2026.pdf", "Data Pegawai.pdf", "stempel.png", "Formulir Pendaftaran.pdf"].some((f) => !existsSync(join(SAMPLES, f)))) {
   run(process.platform === "win32" ? "python" : "python3", ["tools/ui-harness/make_samples.py"]);
 }
 run("cargo", ["build", "-q", "-p", "izul-bench", "--bin", "ui-harness"]);
@@ -107,6 +108,8 @@ const SAMPLE_FILES = [
   // Phase 6: a page to redact, and the same page redacted by the real pipeline.
   { name: "Data Pegawai.pdf", folder: docsFolder, opened: NOW - 80 * DAY, modified: NOW - 80 * DAY },
   { name: "Data Pegawai (diredaksi).pdf", folder: docsFolder, opened: NOW - 81 * DAY, modified: NOW - 81 * DAY },
+  // Phase 7: a form to fill.
+  { name: "Formulir Pendaftaran.pdf", folder: `${USER}\\Downloads`, opened: NOW - 90 * DAY, modified: NOW - 90 * DAY },
 ];
 
 const realPath = new Map();
@@ -194,6 +197,49 @@ for (const f of SAMPLE_FILES) {
   });
 }
 const docById = new Map(docs.map((d) => [d.doc, realPath.get(d.path)]));
+
+// The form panel's fields: the real widgets (izul_pdf::forms), grouped into
+// fields as src-tauri/src/forms.rs does, with the values set in this run.
+const formValues = new Map();
+// A form filled in one shot is not filled in the next: the harness's copy of
+// the document is dropped and opened fresh.
+async function forgetForms() {
+  const paths = new Set([...formValues.keys()].map((k) => k.split("\u0000")[0]));
+  for (const path of paths) await ask({ op: "forget", path });
+  formValues.clear();
+}
+async function formFieldsOf(path) {
+  const { header } = await ask({ op: "forms", path });
+  const fields = new Map();
+  for (const w of header.widgets) {
+    if (w.kind === "Other") continue;
+    const f = fields.get(w.name) ?? { name: w.name, kind: w.kind, read_only: w.read_only, widgets: [], all: [] };
+    f.widgets.push([w.page, w.rect]);
+    f.all.push(w);
+    fields.set(w.name, f);
+  }
+  return [...fields.values()].map((f) => {
+    const first = f.all[0];
+    const kind = typeof f.kind === "string" ? f.kind : Object.keys(f.kind)[0];
+    const fromFile =
+      kind === "CheckBox"
+        ? { Checked: f.all.some((w) => w.checked) }
+        : kind === "Radio"
+          ? { Radio: f.all.find((w) => w.checked)?.export ?? "" }
+          : kind === "ComboBox" || kind === "ListBox"
+            ? { Choice: first.selected }
+            : { Text: first.value };
+    return {
+      name: f.name,
+      kind: f.kind,
+      read_only: f.read_only,
+      widgets: f.widgets,
+      value: formValues.get(`${path}\u0000${f.name}`) ?? fromFile,
+      options: first.options,
+      exports: kind === "Radio" ? f.all.map((w) => w.export) : [],
+    };
+  });
+}
 
 const version = JSON.parse(readFileSync(join(ROOT, "version.json"), "utf8"));
 const folders = {
@@ -361,6 +407,112 @@ const SCENES = {
       await settle(page);
     },
   },
+  // Phase 7 ------------------------------------------------------------------
+  bgpanel: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await page.getByRole("tab", { name: "Edit", exact: true }).click();
+      await izul(page, (z) => z.goToPage(2));
+      await settle(page);
+      await izul(page, (z) => z.select([208]));
+      await page.getByText("Hapus latar", { exact: true }).waitFor();
+    },
+  },
+  bgdone: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await page.getByRole("tab", { name: "Edit", exact: true }).click();
+      await izul(page, (z) => z.goToPage(2));
+      await settle(page);
+      await izul(page, (z) => z.select([208]));
+      await page.getByRole("button", { name: "Tanda tangan / stempel", exact: true }).click();
+      await page.getByText(/Latar dihapus/).waitFor();
+      await settle(page, 800);
+    },
+  },
+  ocrdialog: {
+    session: [`${docsFolder}\\Data Pegawai.pdf`],
+    async steps(page) {
+      await page.getByRole("tab", { name: "Konversi", exact: true }).click();
+      await page.getByRole("button", { name: "Kenali Teks (OCR)", exact: true }).click();
+      await page.getByRole("dialog").waitFor();
+      await page.getByRole("button", { name: /Kenali \d+ halaman/ }).waitFor();
+    },
+  },
+  ocrrunning: {
+    session: [`${docsFolder}\\Data Pegawai.pdf`],
+    async steps(page) {
+      await page.getByRole("tab", { name: "Konversi", exact: true }).click();
+      await page.getByRole("button", { name: "Kenali Teks (OCR)", exact: true }).click();
+      await page.getByRole("dialog").waitFor();
+      await page.getByRole("radio", { name: "Timpa berkas ini" }).check();
+      await page.getByRole("button", { name: /Kenali \d+ halaman/ }).click();
+      await page.getByText(/Mengenali halaman 3 dari 5/).waitFor();
+    },
+  },
+  ocrmissing: {
+    session: [`${docsFolder}\\Data Pegawai.pdf`],
+    flags: { noOcr: true },
+    async steps(page) {
+      await page.getByRole("tab", { name: "Konversi", exact: true }).click();
+      await page.getByRole("button", { name: "Kenali Teks (OCR)", exact: true }).click();
+      await page.getByText(/Model OCR belum terpasang/).waitFor();
+    },
+  },
+  textedit: {
+    session: [`${docsFolder}\\Panduan Studi 2026.pdf`],
+    async steps(page) {
+      await page.getByRole("tab", { name: "Edit", exact: true }).click();
+      await settle(page);
+      const found = await izul(page, (z) => z.selectText("PANDUAN"));
+      if (!found) throw new Error("teks contoh tidak ada di lapisan teks");
+      await page.getByRole("button", { name: "Edit Teks", exact: true }).click();
+      await page.getByRole("dialog").waitFor();
+      await page.getByRole("textbox", { name: "Ganti menjadi" }).fill("PEDOMAN");
+    },
+  },
+  texteditrefused: {
+    session: [`${docsFolder}\\Panduan Studi 2026.pdf`],
+    async steps(page) {
+      await page.getByRole("tab", { name: "Edit", exact: true }).click();
+      await settle(page);
+      await izul(page, (z) => z.selectText("PANDUAN"));
+      await page.getByRole("button", { name: "Edit Teks", exact: true }).click();
+      await page.getByRole("textbox", { name: "Ganti menjadi" }).fill("PEDOMAN");
+      await page.getByText("Timpa berkas ini", { exact: true }).click();
+      await page.getByRole("button", { name: "Ganti & Simpan", exact: true }).click();
+      await page.getByRole("alert").filter({ hasText: "tidak tertanam" }).waitFor();
+    },
+  },
+  formbanner: {
+    session: [`${USER}\\Downloads\\Formulir Pendaftaran.pdf`],
+    async steps(page) {
+      await page.getByText(/Dokumen ini berisi formulir/).waitFor();
+      await settle(page);
+    },
+  },
+  forms: {
+    session: [`${USER}\\Downloads\\Formulir Pendaftaran.pdf`],
+    async steps(page) {
+      await page.getByRole("button", { name: "Isi Formulir", exact: true }).click();
+      const name = page.getByRole("textbox", { name: "Nama lengkap", exact: true });
+      await name.fill("Rahmawati Putri");
+      await name.press("Enter");
+      const address = page.getByRole("textbox", { name: "Alamat", exact: true });
+      await address.fill("Jl. Melati No. 12\nKecamatan Coblong\nBandung 40132");
+      await address.blur();
+      // The controls show the backend's value, so a click shows once it answers.
+      const radio = page.getByRole("radio", { name: "Pelajar", exact: true });
+      await radio.click();
+      await page.waitForFunction(() => document.querySelector('input[type=radio][name="form-kategori"]:checked') !== null);
+      await page.getByRole("combobox", { name: "Kota", exact: true }).selectOption({ label: "Yogyakarta" });
+      await page.getByRole("checkbox").click();
+      await page.getByText("Dicentang", { exact: true }).waitFor();
+      // Back to the top, where the filled fields are.
+      await izul(page, (z) => z.goToPage(0));
+      await settle(page, 1200);
+    },
+  },
   compare: {
     session: [`${docsFolder}\\Draf Perjanjian v1.pdf`, `${docsFolder}\\Draf Perjanjian v2.pdf`],
     async steps(page) {
@@ -433,6 +585,35 @@ async function newPage({ width, height, theme, scale, scene }) {
   }, data);
   await page.exposeFunction("__harnessBackend", async (cmd, a) => {
     const path = docById.get(a.doc);
+    if (cmd === "annot_remove_background") {
+      // The picture comes back as image 2, which the route below makes with
+      // the real model; the object is the sample's own, pointed at it.
+      const { header } = await ask({ op: "annots", path, page: 2 });
+      const obj = structuredClone(header.objects.find((o) => o.id === a.id));
+      obj.payload.Image.image = 2;
+      page.__backgroundDone = a.id;
+      return {
+        edit: { objects: [obj], can_undo: true, can_redo: false, dirty: true, map_revision: 0 },
+        device: "CPU",
+        paper: a.kind === "OnPaper",
+      };
+    }
+    if (cmd === "form_fields") return formFieldsOf(path);
+    if (cmd === "text_replace") {
+      // The real routine on the sample: its Helvetica is not embedded, so
+      // this is the refusal a user would get, in its own words.
+      const { header } = await ask({ op: "textedit", path, page: a.page, rect: a.rect, text: a.text });
+      // `ok` is the harness transport's own field; the answer is `accepted`.
+      if (!header.accepted) throw `Teks tidak diganti, berkas tidak diubah: ${header.refused}`;
+      return { path, bytes: 1, annotations: 0, restructured: null, redaction: null, text: { before: header.before, glyphs: header.glyphs } };
+    }
+    if (cmd === "form_set") {
+      // The real form-fill routine on the harness's copy of the document, so
+      // the page shows what PDFium makes of the value.
+      const { header } = await ask({ op: "formfill", path, values: [[a.name, a.value]] });
+      formValues.set(`${path}\u0000${a.name}`, a.value);
+      return { objects: [], can_undo: true, can_redo: false, dirty: true, map_revision: 0, repaint: header.pages };
+    }
     if (cmd === "document_outline") return (await ask({ op: "outline", path })).header.outline;
     if (cmd === "page_text") return (await ask({ op: "text", path, page: a.page, rotation: a.rotation ?? 0 })).header;
     const redactable = String(path).endsWith("Data Pegawai.pdf");
@@ -443,7 +624,12 @@ async function newPage({ width, height, theme, scale, scene }) {
     const annotated = (a.doc === 1 && a.page === 2) || (redactable && a.page === 0);
     if (!annotated) return [];
     const { header } = await ask({ op: "annots", path, page: a.page });
-    return cmd === "annot_list" ? header.objects : header.lists;
+    if (cmd === "annot_list") return header.objects;
+    // After "Hapus Latar", the picture's display list draws image 2.
+    const done = page.__backgroundDone;
+    return done === undefined
+      ? header.lists
+      : header.lists.map((l) => (l.id === done ? JSON.parse(JSON.stringify(l).replace(/"image":1\b/g, '"image":2')) : l));
   });
   await page.route("http://izul.localhost/**", async (route) => {
     page.__lastTile = Date.now();
@@ -453,6 +639,13 @@ async function newPage({ width, height, theme, scale, scene }) {
       "Access-Control-Expose-Headers": "X-Izul-Width, X-Izul-Height, X-Izul-Stride",
     };
     const [, kind, doc, pg, rot, scale, col, row, tier] = url.pathname.split("/");
+    if (kind === "image") {
+      // `/image/{doc}/{image}`: 1 is the sample stamp photo, 2 the model's
+      // result on it (the "bgdone" scene).
+      const stampPath = join(SAMPLES, "stempel.png");
+      const body = pg === "2" ? (await ask({ op: "background", path: stampPath })).body : readFileSync(stampPath);
+      return route.fulfill({ status: 200, headers: { ...cors, "Content-Type": "image/png" }, body });
+    }
     if (kind !== "tile") return route.fulfill({ status: 404, headers: cors });
     const { header, body } = await ask({
       op: "tile",
@@ -496,6 +689,7 @@ if (args.serve === "true") {
   for (const scene of scenes) {
     for (const [width, height] of sizes) {
       for (const theme of themes) {
+        await forgetForms();
         const page = await newPage({ width, height, theme, scale, scene });
         await page.waitForFunction(() => window.__izul !== undefined, null, { timeout: 15_000 });
         await settle(page);

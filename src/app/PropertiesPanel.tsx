@@ -15,6 +15,7 @@ import { useDocument } from "@/state/documentStore";
 import type { AnnotObject, Rgba } from "@/annots/types";
 import { cssColor, rgba } from "@/annots/types";
 import { t } from "@/i18n";
+import { removeBackground } from "./background";
 
 /** A small, deliberately boring palette: these are annotation colours, and the
  * point is that they read on white paper, not that they are pretty. */
@@ -213,6 +214,31 @@ export function PropertiesPanel(): React.JSX.Element | null {
             }
             className="w-full"
           />
+        </section>
+      )}
+
+      {objects.length === 1 && first.kind === "Image" && (
+        <section className="flex flex-col gap-1.5">
+          <span className="text-[12px] text-[var(--izul-text-dim)]">{t("bg.title")}</span>
+          <div className="flex flex-col gap-1.5">
+            <button
+              type="button"
+              title={t("bg.photoHint")}
+              onClick={() => void removeBackground(first.id, "Photo")}
+              className="h-8 px-2 rounded-[8px] text-[12px] border border-[var(--izul-border)] hover:bg-[var(--izul-surface-raised)]"
+            >
+              {t("bg.photo")}
+            </button>
+            <button
+              type="button"
+              title={t("bg.paperHint")}
+              onClick={() => void removeBackground(first.id, "OnPaper")}
+              className="h-8 px-2 rounded-[8px] text-[12px] border border-[var(--izul-border)] hover:bg-[var(--izul-surface-raised)]"
+            >
+              {t("bg.paper")}
+            </button>
+          </div>
+          <span className="text-[11px] text-[var(--izul-text-dim)]">{t("bg.undoHint")}</span>
         </section>
       )}
 

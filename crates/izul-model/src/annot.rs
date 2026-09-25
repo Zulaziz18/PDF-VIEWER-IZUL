@@ -5,10 +5,15 @@
 //! the *same* primitive vocabulary by a pure function, and a closed enum is what
 //! makes "every kind is handled" a compile error rather than a code review.
 //!
-//! **Coordinates are always PDF user space** — points, origin at the page's
-//! bottom-left, y upwards (SPEC 8). Nothing here is ever pixels. Storing pixels
-//! would put every annotation in the wrong place the moment the zoom changed,
-//! and the mistake would only show up after a save.
+//! **Coordinates are the page's display space** — points, y upwards, origin at
+//! the bottom-left of the page *as shown*: its own `/Rotate` applied and its
+//! box moved to (0, 0) (see [`crate::geom::PageFrame`]). Nothing here is ever
+//! pixels: pixels would put every annotation in the wrong place the moment the
+//! zoom changed. Display space is also not what a file stores — on the common
+//! page (no `/Rotate`, box at the origin) the two are the same, and on every
+//! other page `izul-write` carries each point into user space when saving.
+//! Until Phase 7 it did not, and annotations on turned pages landed in the
+//! wrong place in every other reader while looking right here.
 
 use serde::{Deserialize, Serialize};
 

@@ -234,6 +234,8 @@ export interface EditResult {
   readonly dirty: boolean;
   /** Changes when the page map does — an undo of a page move, say (Phase 5). */
   readonly map_revision: number;
+  /** Pages whose rendered content changed — a form field filled (Phase 7). */
+  readonly repaint?: readonly number[];
 }
 
 /** `id` is a `u64` in Rust but a plain number here; annotation ids never get

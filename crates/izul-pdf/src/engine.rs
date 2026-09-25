@@ -1,11 +1,11 @@
-use std::cell::{Cell, RefCell};
+use std::cell::{Cell, OnceCell, RefCell};
 use std::collections::HashMap;
 use std::os::raw::c_int;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use pdfium_render::prelude::{
-    Pdfium, PdfiumLibraryBindings, FPDF_DOCUMENT, FPDF_PAGE, FS_RECTF, FS_SIZEF,
+    Pdfium, PdfiumLibraryBindings, FPDF_DOCUMENT, FPDF_FORMHANDLE, FPDF_PAGE, FS_RECTF, FS_SIZEF,
 };
 
 use crate::error::{PdfError, Result};
@@ -194,6 +194,7 @@ impl Engine {
                 pages: RefCell::new(HashMap::new()),
                 strip_izul: Cell::new(true),
                 izul: RefCell::new(HashMap::new()),
+                form: OnceCell::new(),
                 _bytes: bytes,
             })
         })
@@ -296,6 +297,33 @@ mod geometry_tests {
         assert!((d.bottom - 602.0).abs() < 1e-3, "bottom = {}", d.bottom);
     }
 
+    /// `PageFrame::display_to_user` (izul-model, used when saving) must be
+    /// the exact inverse of what the viewer does here, on every rotation and
+    /// with a box away from the origin.
+    #[test]
+    fn the_frame_undoes_to_display() {
+        let bbox = PdfRectF::new(100.0, 200.0, 695.0, 1042.0);
+        for rot in [
+            RotationQuarter::None,
+            RotationQuarter::Cw90,
+            RotationQuarter::Cw180,
+            RotationQuarter::Cw270,
+        ] {
+            let g = geom(rot, bbox);
+            let user = PdfRectF::new(150.0, 300.0, 260.0, 420.0);
+            let shown = g.to_display(user, RotationQuarter::None);
+            let back = g.frame().rect_to_user(shown);
+            for (a, b) in [
+                (back.left, user.left),
+                (back.bottom, user.bottom),
+                (back.right, user.right),
+                (back.top, user.top),
+            ] {
+                assert!((a - b).abs() < 1e-3, "{rot:?}: {back:?} vs {user:?}");
+            }
+        }
+    }
+
     #[test]
     fn the_pages_own_rotation_counts_the_same_as_the_users() {
         let a = geom(RotationQuarter::Cw90, A)
@@ -364,6 +392,12 @@ pub struct Document {
     /// What was taken out, by page. Kept for the life of the document, so a
     /// page released and loaded again does not forget its annotations.
     pub(crate) izul: RefCell<HashMap<u32, Vec<crate::izul::IzulAnnot>>>,
+    /// PDFium's form-fill environment, for a document with a form: made on
+    /// the first page load and kept for the document's life, because widgets
+    /// are drawn only through it (`FPDF_FFLDraw`) — measured: without it a
+    /// form's fields render as nothing at all — and every page loaded while
+    /// it lives has to be introduced to it. `None` inside: no form.
+    pub(crate) form: OnceCell<Option<crate::forms::FormEnv>>,
     handle: FPDF_DOCUMENT,
     engine: &'static Engine,
     page_count: Cell<u32>,
@@ -387,6 +421,8 @@ impl std::fmt::Debug for Document {
 pub(crate) struct PageHandle {
     raw: FPDF_PAGE,
     engine: &'static Engine,
+    /// The form environment the page was introduced to, or null.
+    form: Cell<FPDF_FORMHANDLE>,
 }
 
 impl PageHandle {
@@ -399,13 +435,26 @@ impl Drop for PageHandle {
     fn drop(&mut self) {
         // SAFETY: `raw` came from a non-null `FPDF_LoadPage` and is closed
         // exactly once, here. `PageHandle` is not `Clone` and not `Copy`.
-        unsafe { self.engine.bindings().FPDF_ClosePage(self.raw) }
+        // A page introduced to the form environment leaves it first, while
+        // the environment still lives: `Document::drop` closes pages before
+        // it releases the environment.
+        unsafe {
+            let form = self.form.get();
+            if !form.is_null() {
+                self.engine
+                    .bindings()
+                    .FORM_OnBeforeClosePage(self.raw, form);
+            }
+            self.engine.bindings().FPDF_ClosePage(self.raw)
+        }
     }
 }
 
 impl Drop for Document {
     fn drop(&mut self) {
         self.pages.borrow_mut().clear();
+        // After the pages, before the document (`fpdf_formfill.h`).
+        drop(self.form.take());
         // SAFETY: `handle` came from a non-null `FPDF_LoadMemDocument64`, every
         // page taken from it has just been closed above, and the document is
         // closed exactly once because `Document` is neither `Clone` nor `Copy`.
@@ -503,6 +552,14 @@ impl PageGeometry {
         }
     }
 
+    /// The same geometry for the UI process, which does not link PDFium.
+    pub fn frame(&self) -> izul_model::geom::PageFrame {
+        izul_model::geom::PageFrame {
+            bbox: self.bbox,
+            rotation: self.intrinsic,
+        }
+    }
+
     /// Size of the page as it appears on screen after `extra` rotation is added
     /// to the page's own.
     pub fn display_size(&self, extra: RotationQuarter) -> PageSize {
@@ -558,6 +615,7 @@ impl Document {
             pages: RefCell::new(HashMap::new()),
             strip_izul: Cell::new(false),
             izul: RefCell::new(HashMap::new()),
+            form: OnceCell::new(),
             _bytes: Backing::Owned(Vec::new()),
         }
     }
@@ -589,43 +647,64 @@ impl Document {
         f: impl FnOnce(FPDF_PAGE) -> Result<T>,
     ) -> Result<T> {
         self.check_page(page)?;
+        // Before the page loads: a page loaded while the environment does not
+        // exist yet would never be introduced to it.
+        let form = self.form_handle();
         let mut cache = self.pages.borrow_mut();
-        let entry = match cache.get(&page) {
-            Some(h) => h.raw(),
-            None => {
-                // SAFETY: `handle` is a live document and `page` was bounds
-                // checked against `FPDF_GetPageCount` above.
-                let raw = unsafe {
-                    self.engine
-                        .bindings()
-                        .FPDF_LoadPage(self.handle, page as c_int)
-                };
-                if raw.is_null() {
-                    return Err(PdfError::Corrupt {
-                        detail: format!("halaman {page} tidak dapat dimuat"),
-                    });
-                }
-                cache.insert(
-                    page,
-                    PageHandle {
-                        raw,
-                        engine: self.engine,
-                    },
-                );
-                // First load of this page in this document: take our own
-                // annotations out before anything renders it. Only once —
-                // a page released and loaded again no longer has them.
-                if self.strip_izul.get() && !self.izul.borrow().contains_key(&page) {
-                    drop(cache);
-                    let found = crate::izul::take(self, raw);
-                    self.izul.borrow_mut().insert(page, found);
-                    return f(raw);
-                }
-                raw
-            }
+        if let Some(h) = cache.get(&page) {
+            let raw = h.raw();
+            drop(cache);
+            return f(raw);
+        }
+        // SAFETY: `handle` is a live document and `page` was bounds checked
+        // against `FPDF_GetPageCount` above.
+        let raw = unsafe {
+            self.engine
+                .bindings()
+                .FPDF_LoadPage(self.handle, page as c_int)
         };
+        if raw.is_null() {
+            return Err(PdfError::Corrupt {
+                detail: format!("halaman {page} tidak dapat dimuat"),
+            });
+        }
+        cache.insert(
+            page,
+            PageHandle {
+                raw,
+                engine: self.engine,
+                form: Cell::new(std::ptr::null_mut()),
+            },
+        );
         drop(cache);
-        f(entry)
+        // First load of this page in this document: take our own annotations
+        // out before anything renders it. Only once — a page released and
+        // loaded again no longer has them.
+        if self.strip_izul.get() && !self.izul.borrow().contains_key(&page) {
+            let found = crate::izul::take(self, raw);
+            self.izul.borrow_mut().insert(page, found);
+        }
+        // Then introduced to the form environment, which builds its view of
+        // the page's annotations now — after ours are gone, so it holds none
+        // of them.
+        if !form.is_null() {
+            if let Some(h) = self.pages.borrow().get(&page) {
+                // SAFETY: `raw` and `form` are live; the handle remembers
+                // `form` so the page leaves it before closing.
+                unsafe { self.engine.bindings().FORM_OnAfterLoadPage(raw, form) };
+                h.form.set(form);
+            }
+        }
+        f(raw)
+    }
+
+    /// The document's form environment, made on first use; null when the
+    /// document has no form.
+    pub(crate) fn form_handle(&self) -> FPDF_FORMHANDLE {
+        self.form
+            .get_or_init(|| crate::forms::FormEnv::open(self.engine, self.handle))
+            .as_ref()
+            .map_or(std::ptr::null_mut(), |env| env.handle())
     }
 
     pub fn release_page(&self, page: u32) {

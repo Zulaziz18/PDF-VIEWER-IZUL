@@ -22,6 +22,9 @@ pub enum RedactError {
     Filter(String),
     #[error("font {font} tidak dapat diukur: {why}")]
     Font { font: String, why: String },
+    /// Text replacement refused (Phase 7), in words for the user.
+    #[error("{0}")]
+    Edit(String),
 }
 
 pub type Result<T> = std::result::Result<T, RedactError>;

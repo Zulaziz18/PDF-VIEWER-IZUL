@@ -87,6 +87,39 @@ pub struct Env<'r, 'a> {
     pub vanished: Vec<Quad>,
     forms_open: Vec<u32>,
     names: u32,
+    /// Replacing text rather than redacting (Phase 7): what the glyphs in
+    /// the one area are replaced by. Nothing but text is touched then.
+    pub replace: Option<Replace>,
+}
+
+/// Text replacing the glyphs in an area (see [`crate::replace_text`]).
+#[derive(Debug, Default)]
+pub struct Replace {
+    pub text: String,
+    /// Whether the text has been written, in front of the first glyph taken.
+    pub placed: bool,
+    /// The first glyph taken, which every other glyph taken must match —
+    /// one line, one font.
+    first: Option<FirstGlyph>,
+}
+
+/// Where the first glyph taken sits.
+#[derive(Debug, Clone, Copy)]
+struct FirstGlyph {
+    font: *const Font,
+    size: f64,
+    /// The line's direction, a unit vector in page space.
+    dir: (f64, f64),
+    origin: (f64, f64),
+}
+
+impl Replace {
+    pub fn new(text: String) -> Self {
+        Replace {
+            text,
+            ..Replace::default()
+        }
+    }
 }
 
 impl<'r, 'a> Env<'r, 'a> {
@@ -100,8 +133,13 @@ impl<'r, 'a> Env<'r, 'a> {
             vanished: Vec::new(),
             forms_open: Vec::new(),
             names: 0,
+            replace: None,
         }
     }
+}
+
+fn refuse(why: impl Into<String>) -> RedactError {
+    RedactError::Edit(why.into())
 }
 
 /// The result of one stream.
@@ -451,6 +489,16 @@ impl Run<'_, '_, '_> {
                 self.path_ops.push(i);
                 self.clipping = true;
             }
+            // Replacing text touches nothing but text: no path, picture or
+            // form is judged against the area.
+            b"S" | b"s" | b"f" | b"F" | b"f*" | b"B" | b"B*" | b"b" | b"b*" | b"n"
+                if self.env.replace.is_some() =>
+            {
+                self.path_ops.clear();
+                self.path_pts.clear();
+                self.clipping = false;
+            }
+            b"Do" | b"BI" if self.env.replace.is_some() => {}
             b"S" | b"s" | b"f" | b"F" | b"f*" | b"B" | b"B*" | b"b" | b"b*" | b"n" => {
                 self.paint(i, op)
             }
@@ -570,6 +618,12 @@ impl Run<'_, '_, '_> {
                         let bytes = s.get(gl.start..gl.start + gl.len).unwrap_or_default();
                         if let Some(area) = hit {
                             removed += 1;
+                            if self.env.replace.is_some() {
+                                if !kept.is_empty() {
+                                    out.push(Item::Str(std::mem::take(&mut kept)));
+                                }
+                                self.replacing(&font, &trm, &mut out)?;
+                            }
                             let drawn = !matches!(self.g.render_mode, 3 | 7);
                             if drawn
                                 && polygon_area(&q) > 1e-9
@@ -656,6 +710,128 @@ impl Run<'_, '_, '_> {
         }
         bytes.extend_from_slice(b"] TJ");
         self.edit(i, Edit::Replace(bytes));
+        Ok(())
+    }
+
+    /// A glyph in the area is being taken out while replacing text: checks
+    /// that it is on the same line and in the same font as the first, and in
+    /// front of the first writes the new text — followed by a number that
+    /// takes the pen back by the new text's width, so that with the gaps
+    /// left for the glyphs taken out, everything after the area stays
+    /// exactly where it was. Refusals say why, in words the user reads.
+    fn replacing(&mut self, font: &Rc<Font>, trm: &Matrix, out: &mut Vec<Item>) -> Result<()> {
+        if matches!(self.g.render_mode, 3 | 7) {
+            return Err(refuse(
+                "teks itu tidak terlihat (misalnya lapisan hasil OCR di atas pindaian), jadi tidak disunting",
+            ));
+        }
+        if font.vertical {
+            return Err(refuse("teks bertulisan vertikal belum dapat disunting"));
+        }
+        let size = self.g.size;
+        let (dx, dy) = (trm.a, trm.b);
+        let len = (dx * dx + dy * dy).sqrt().max(1e-9);
+        let dir = (dx / len, dy / len);
+        let origin = trm.apply(0.0, 0.0);
+        let (char_spacing, word_spacing) = (self.g.char_spacing, self.g.word_spacing);
+        let Some(rep) = self.env.replace.as_mut() else {
+            return Ok(());
+        };
+        match rep.first {
+            None => {
+                rep.first = Some(FirstGlyph {
+                    font: Rc::as_ptr(font),
+                    size,
+                    dir,
+                    origin,
+                })
+            }
+            Some(FirstGlyph {
+                font: f,
+                size: sz,
+                dir: d,
+                origin: o,
+            }) => {
+                if f != Rc::as_ptr(font) || (sz - size).abs() > 1e-6 {
+                    return Err(refuse(
+                        "teks yang dipilih memakai lebih dari satu font atau ukuran; pilih bagian yang seragam",
+                    ));
+                }
+                // Distance of this origin from the first glyph's baseline.
+                let off = (origin.0 - o.0) * -d.1 + (origin.1 - o.1) * d.0;
+                let turned = (d.0 * dir.1 - d.1 * dir.0).abs() > 1e-3;
+                if turned || off.abs() > len * 0.2 {
+                    return Err(refuse(
+                        "teks yang dipilih lebih dari satu baris; penggantian hanya dalam satu baris",
+                    ));
+                }
+            }
+        }
+        if rep.placed {
+            return Ok(());
+        }
+        rep.placed = true;
+        if !font.embedded {
+            return Err(refuse(format!(
+                "font \"{}\" tidak tertanam di berkas, jadi pembaca lain bisa menggambar huruf yang berbeda",
+                font.name
+            )));
+        }
+        if size.abs() < 1e-12 {
+            return Err(refuse("teks berukuran nol tidak dapat disunting"));
+        }
+        if rep.text.contains(['\n', '\r']) {
+            return Err(refuse("teks pengganti harus satu baris"));
+        }
+        let mut missing: Vec<char> = Vec::new();
+        let mut items: Vec<Item> = Vec::new();
+        let mut run: Vec<u8> = Vec::new();
+        // Displacement in text space before the horizontal scale, the unit of
+        // the TJ numbers: n = -d / size · 1000.
+        let mut width = 0.0;
+        for ch in rep.text.chars() {
+            match font.encode(ch) {
+                Some((bytes, code)) => {
+                    let word = if bytes.len() == 1 && code == 32 {
+                        word_spacing
+                    } else {
+                        0.0
+                    };
+                    width += font.width(code) * font.matrix.a * size + char_spacing + word;
+                    run.extend_from_slice(&bytes);
+                }
+                // A font subset without a space glyph is common; a gap of a
+                // quarter em stands in for it, as a space in most text faces.
+                None if ch == ' ' => {
+                    if !run.is_empty() {
+                        items.push(Item::Str(std::mem::take(&mut run)));
+                    }
+                    items.push(Item::Num(-250.0));
+                    width += 0.25 * size;
+                }
+                None => {
+                    if !missing.contains(&ch) {
+                        missing.push(ch);
+                    }
+                }
+            }
+        }
+        if !missing.is_empty() {
+            let list: String = missing.iter().map(|c| format!("\"{c}\" ")).collect();
+            return Err(refuse(format!(
+                "font \"{}\" di berkas ini tidak punya huruf {}— hanya huruf yang sudah tertanam yang bisa dipakai",
+                font.name,
+                list
+            )));
+        }
+        if !run.is_empty() {
+            items.push(Item::Str(run));
+        }
+        out.extend(items);
+        // Back by the width just drawn (the reader scales both by `Tz`).
+        if width.abs() > 1e-12 {
+            out.push(Item::Num(width / size * 1000.0));
+        }
         Ok(())
     }
 

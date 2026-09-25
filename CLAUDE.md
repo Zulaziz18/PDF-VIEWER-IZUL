@@ -771,6 +771,102 @@ lebar yang terbaca ditolak; redaksi belum diuji di Acrobat sungguhan
 Lisensi baru `jpeg-encoder` (MIT/Apache + IJG, atribusi di README dan
 kotak Tentang).
 
+## Keadaan Fase 7 (Kecerdasan, 25 September 2026)
+
+Selesai di branch `claude/pdf-studio-izul-v7-fase-7` (PR #6, base fase-6).
+Laporan SPEC 18 ada di badan PR #6. Empat bukti di `bench/results/phase7-*.txt`,
+semuanya LULUS dan dijalankan CI ubuntu; probe DirectML dijalankan CI windows.
+
+**Yang dibangun, dan di mana:**
+
+- **Ruang koordinat anotasi** (`izul-model/geom.rs` `PageFrame`): editor
+  menyimpan anotasi di ruang *tampilan*, berkas butuh ruang *pengguna*.
+  Konversi terjadi di batas simpan/impor saja (`izul-write` memakai `frames`
+  dari `Request::WorkFrames`; AP diberi `/Matrix`). `/IzulObj` tetap ruang
+  tampilan.
+- **OCR** (`crates/izul-ocr`, `izul-pdf/ocr_layer.rs`, `src-tauri/ocr.rs`):
+  `ocrs` 0.13 + `rten` Rust murni, render 150 dpi, teks `Tr 3` Helvetica per
+  kata dengan spasi di antara kata. Profil dev memakai `opt-level 3` untuk
+  `ocrs`/`rten*` — tanpa itu 55 s per halaman di build debug (kini 1,4 s).
+- **Hapus latar** (`izul-ocr/background.rs`, `src-tauri/background.rs`):
+  `ort` 2.0.0-rc.13 `load-dynamic`, ONNX Runtime 1.24.4 dari wheel PyPI,
+  `u2netp.onnx`. DirectML diminta dengan `error_on_failure`, jatuh ke CPU
+  sambil melaporkan alasannya. Dua mode dipilih pengguna (lihat di bawah).
+- **Formulir** (`izul-pdf/forms.rs`, `src-tauri/forms.rs`, `FormsPanel.tsx`):
+  nilai di editor (`Op::Form`), ditampilkan ke dokumen tampilan dengan
+  `FillForm{working:false}`, ditulis ke salinan kerja saat simpan.
+- **Edit teks** (`izul-redact` mode `Replace`, `izul-pdf/textedit.rs`,
+  `src-tauri/textedit.rs`, `TextEditDialog.tsx`): dibuat saat simpan seperti
+  redaksi, lalu diverifikasi PDFium.
+
+**Temuan terukur tentang PDFium (jangan ditebak ulang):**
+
+- `FPDF_RenderPageBitmapWithMatrix` **tidak menggambar widget formulir**, dengan
+  atau tanpa form-fill environment. Hanya `FPDF_FFLDraw` yang menggambarnya,
+  dan ia butuh environment yang **hidup** serta halaman yang sudah
+  `FORM_OnAfterLoadPage`. Karena itu `Document` kini memegang satu
+  environment seumur dokumen (`Document::form`), didaftarkan di `with_page`
+  **sesudah** `izul::take` melepas anotasi kita, dan `PageHandle` memanggil
+  `FORM_OnBeforeClosePage` sebelum `FPDF_ClosePage`. `FFLDraw` tidak punya
+  varian matriks; `ffl_placement` di `render.rs` setara `tile_matrix`, dijaga
+  test `widgets_land_where_flattening_puts_them` (dibandingkan dengan versi
+  di-flatten di semua rotasi dan kuadran). Cacat ini ada **sejak Fase 1** —
+  setiap PDF berformulir tampil dengan isian kosong.
+- Kotak centang/radio: `FORM_OnLButtonDown/Up` tidak berbuat apa-apa tanpa
+  `FORM_OnMouseMove` lebih dulu ke titik yang sama.
+- `FPDFText_SetText` **menulis kode karakter yang salah** untuk huruf yang
+  tidak ada di subset font, dan PDFium membacanya kembali seolah benar
+  ("Santosé 中" → PDFium "Santosé ˇ", poppler "SantosŽ ÿ").
+  `FPDFFont_GetGlyphPath` juga mengembalikan kontur untuk huruf yang tidak
+  ada. Jadi **jangan pernah** memeriksa hasil penyuntingan teks hanya dengan
+  PDFium. Kode karakter diambil dari `/ToUnicode` (`Font::encode`).
+- `FPDFPage_GenerateContent` pada halaman reportlab hanya mengubah piksel di
+  baris yang disunting (diukur poppler + MuPDF) — tetapi tetap tidak dipakai,
+  karena masalah pengodean di atas.
+
+**Keputusan yang diambil sendiri, dengan alasan:**
+
+- **Hapus latar dua mode, dipilih pengguna.** Penyempurnaan kertas yang
+  membuat stempel sempurna (IoU 0,31 → 1,00) menghapus benda putih di latar
+  putih sepenuhnya (0,90 → 0,00). Tidak ada ciri gambar yang membedakan
+  keduanya dengan andal.
+- **Edit teks dibuat saat simpan, tanpa pratinjau, tanpa Ctrl+Z.** Pratinjau
+  yang jujur butuh penulisan yang sama persis dengan hasil akhirnya, dan jalur
+  PDFium di memori terbukti salah. Dialognya menyatakan ini, dan bawaannya
+  "Sebagai berkas baru".
+- **Edit teks memakai interpreter redaksi.** Glyph lama dibuang dengan celah
+  selebar advance-nya (Fase 6), teks baru ditulis di depannya diikuti angka TJ
+  sebesar lebarnya sendiri. Hasilnya semua yang sesudahnya tetap di tempat,
+  walau string lama tersebar di beberapa operator. Spasi yang tidak punya glyph
+  di subset diganti celah ¼ em.
+- **Halaman hasil susun ulang tidak bisa disunting teksnya** sampai susunannya
+  disimpan (`textedit::own_page`): penggantian bekerja pada halaman berkas di
+  disk, sebelum `WorkArrange`.
+
+**Belum / diketahui:**
+
+- **Model OCR tidak boleh dibundel sebelum pengguna memutuskan**: lisensi bobot
+  `ocrs` belum jelas (HierText CC BY-SA 4.0, repositori model tanpa LICENSE).
+  u2netp Apache-2.0, ONNX Runtime MIT, DirectML lisensi redistribusi Microsoft.
+- **DirectML belum pernah jalan di GPU.** Runner Windows tidak punya adaptor
+  sama sekali (juga `DeviceFilter::Any`). Minta pengguna mencatat pesan
+  "GPU/CPU" dari laptopnya (checklist TESTING Fase 7).
+- `izul-ocr` baru punya 2 test unit; sisanya diuji lewat `src-tauri/tests` dan
+  alat bukti.
+- MuPDF memecah baris di celah yang ditinggalkan kata pengganti yang lebih
+  pendek — akibat "tanpa reflow" (SPEC), bukan kerusakan; teksnya utuh dan
+  berurutan.
+- Formulir XFA tidak didukung (SPEC 19). Tanda tangan digital tidak diisi.
+
+**Jebakan harness yang sempat menipu:**
+
+- Protokol `ui-harness` membungkus setiap balasan dengan `ok: true` miliknya
+  sendiri. Op yang mengembalikan field `ok` akan tertimpa — scene penolakan
+  sempat "berhasil" padahal rutinnya menolak. Pakai nama lain (`accepted`).
+- Bench harness menyimpan dokumen antar-scene; formulir yang diisi di satu
+  scene terlihat di scene berikutnya. `forgetForms()` membuangnya sebelum
+  setiap tangkapan.
+
 ## Alur kerja proyek ini
 
 - Branch per fase: `claude/pdf-studio-izul-v7-fase-4` (Langkah 0 + Fase 4,
@@ -793,8 +889,9 @@ kotak Tentang).
   "Keadaan Fase N" di berkas ini sebelum lanjut.
 - Total 9 fase (0–8). Fase 0 dan 1 selesai dan disetujui pengguna; Fase 2 dan
   Fase 3 selesai (satu branch, PR #2); Langkah 0 dan Fase 4 selesai (PR #3);
-  Fase 5 selesai (PR #4); Fase 6 selesai (PR #5). Fase 7 berikutnya di
-  `claude/pdf-studio-izul-v7-fase-7`, bercabang dari fase-6.
+  Fase 5 selesai (PR #4); Fase 6 selesai (PR #5); Fase 7 selesai (PR #6).
+  Fase 8 berikutnya di `claude/pdf-studio-izul-v7-fase-8`, bercabang dari
+  fase-7.
   Fase 5–8 dikerjakan berturut-turut tanpa menunggu persetujuan, atas
   keputusan pengguna.
 - Panduan menjalankan & menguji aplikasi di Windows (untuk pemula) ada di
