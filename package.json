@@ -9,12 +9,14 @@
     "typecheck": "tsc --noEmit",
     "lint": "eslint src --max-warnings 0",
     "tauri": "tauri",
+    "package": "tauri build --config src-tauri/tauri.bundle.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "worker": "cargo build -p izul-worker",
     "worker:release": "cargo build -p izul-worker --release",
     "ui:shots": "node tools/ui-harness/shoot.mjs",
-    "icons": "node tools/icons/build.mjs"
+    "icons": "node tools/icons/build.mjs",
+    "icons:app": "node tools/icons/app-icon.mjs"
   },
   "dependencies": {
     "@tauri-apps/api": "2.11.1",

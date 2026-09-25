@@ -101,8 +101,9 @@ fn copy_vendored_ocr_models() {
 /// PDFium relative to the running executable's own directory, on the
 /// assumption that it ships there (SPEC 4: everything bundled, nothing
 /// fetched at run time). That assumption only held for the packaged installer
-/// — `tauri.conf.json`'s `bundle.resources` copies the DLL into the NSIS/MSI
-/// output — but `cargo build`/`cargo run` never went through bundling, so a
+/// — `tauri.bundle.json`'s `bundle.resources` copies the DLL into the NSIS/MSI
+/// output (Phase 8; checked by the packaging job's `--self-test`) — but
+/// `cargo build`/`cargo run` never went through bundling, so a
 /// plain dev build left `target/debug/` without it and the worker failed to
 /// load PDFium at startup. This step closes that gap for every build, dev and
 /// release alike, rather than requiring a manual copy nobody remembers to run.

@@ -50,6 +50,7 @@ pub mod protocol;
 pub mod render;
 pub mod save_commands;
 pub mod saving;
+pub mod selftest;
 pub mod supervisor;
 pub mod textedit;
 pub mod textsearch;
@@ -72,7 +73,10 @@ use tokio::sync::RwLock;
 ///
 /// Returns only when the window closes; errors are already reported.
 pub fn start() {
-    let portable = std::env::var_os("IZUL_PORTABLE").is_some();
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(std::path::Path::to_path_buf));
+    let portable = izul_store::is_portable(exe_dir.as_deref());
     let data_dir = izul_store::default_data_dir(portable);
     let _log_guard = match logging::init(&data_dir) {
         Ok(g) => Some(g),
@@ -99,6 +103,13 @@ pub fn start() {
         pdfium = %v.pdfium_version,
         "PDF Studio Izul mulai"
     );
+
+    // The installed copy checking itself, for the packaging job (Phase 8).
+    let args: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    if args.first().is_some_and(|a| a == "--self-test") {
+        let pdf = args.get(1).map(std::path::PathBuf::from);
+        std::process::exit(selftest::run(pdf.as_deref()));
+    }
 
     if let Err(e) = run(data_dir, v) {
         tracing::error!(error = %e, "aplikasi berhenti");
@@ -271,6 +282,7 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
         .invoke_handler(tauri::generate_handler![
             commands::app_version,
             commands::log_folder,
+            commands::open_log_folder,
             commands::pool_health,
             commands::open_document,
             commands::close_document,

@@ -202,6 +202,31 @@ pub fn log_folder(state: tauri::State<'_, AppState>) -> CmdResult<String> {
         .to_string())
 }
 
+/// Opens the log folder in the file manager (SPEC 15: a report of a problem
+/// starts with the log, and a path to type out is a step most users skip).
+///
+/// Through the system's own file manager rather than a plugin: no new
+/// permission, and nothing but a folder the application created is opened.
+#[tauri::command]
+pub fn open_log_folder(state: tauri::State<'_, AppState>) -> CmdResult<()> {
+    let dir = crate::logging::log_dir(&state.data_dir);
+    std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
+    let program = if cfg!(windows) {
+        "explorer"
+    } else if cfg!(target_os = "macos") {
+        "open"
+    } else {
+        "xdg-open"
+    };
+    // Explorer exits with 1 even when the window opened, so only a failure to
+    // start it at all is an error.
+    std::process::Command::new(program)
+        .arg(&dir)
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("folder log tidak bisa dibuka ({program}): {e}"))
+}
+
 #[tauri::command]
 pub async fn pool_health(state: tauri::State<'_, AppState>) -> CmdResult<HealthReport> {
     let (pool_size, live_workers, quarantined_documents) = {

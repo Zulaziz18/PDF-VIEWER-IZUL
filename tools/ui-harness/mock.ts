@@ -110,6 +110,10 @@ export function installMocks(data: HarnessData): void {
       switch (cmd) {
         case "app_version":
           return data.version;
+        case "log_folder":
+          return "C:\\Users\\contoh\\AppData\\Local\\PDF Studio Izul\\logs";
+        case "open_log_folder":
+          return null;
         case "pool_health":
           return {
             pool_size: 8,

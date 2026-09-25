@@ -167,6 +167,105 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  # Phase 8: the installers SPEC 5 names — NSIS, MSI and a portable ZIP —
+  # built the way a release is, and each one checked the way it will be used:
+  # the NSIS build installed silently, the MSI unpacked with an administrative
+  # install, the ZIP unpacked, and in each folder the application's own
+  # `--self-test` starts the worker pool (every worker loads PDFium and passes
+  # the protocol handshake), finds ONNX Runtime and the background model, and
+  # opens a PDF. A resource the bundle forgot fails here, not on a user's
+  # machine — which is how an installer without PDFium went unnoticed until
+  # this job existed.
+  package:
+    name: Package (Windows)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+
+      - name: Vendor PDFium and ONNX Runtime
+        shell: bash
+        run: |
+          ./vendor/pdfium/fetch.sh
+          ./vendor/onnx/fetch.sh
+      # The OCR models are deliberately not fetched: their licence is not
+      # settled, so they are not part of what ships (README, "Lisensi pihak
+      # ketiga").
+
+      # `beforeBuildCommand` is `npm run build`, which builds the worker in
+      # release first — the bundle's resources name target/release/izul-worker.exe.
+      # The resources live in tauri.bundle.json, passed only here: tauri-build
+      # copies every resource into the target folder on *every* build, and a
+      # debug build would then fail on the missing release worker, or copy a
+      # stale one over its own.
+      - name: Build NSIS and MSI
+        run: npm run package
+
+      - name: A PDF to open
+        shell: bash
+        run: python3 tools/package/tiny_pdf.py smoke.pdf
+
+      - name: Portable ZIP
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $v = (Get-Content version.json | ConvertFrom-Json).version
+          $dir = "portable/PDF Studio Izul"
+          New-Item -ItemType Directory -Force "$dir/onnx", "$dir/licenses" | Out-Null
+          $rel = "target/release"
+          foreach ($f in "pdf-studio-izul.exe", "izul-worker.exe", "pdfium.dll", "onnxruntime.dll", "DirectML.dll") {
+            Copy-Item "$rel/$f" $dir
+          }
+          Copy-Item "$rel/onnx/u2netp.onnx" "$dir/onnx/"
+          Copy-Item src-tauri/licenses/NOTICE.txt "$dir/licenses/"
+          Copy-Item -Recurse vendor/pdfium/win-x64/licenses "$dir/licenses/pdfium"
+          New-Item -ItemType Directory -Force "$dir/licenses/onnxruntime" | Out-Null
+          Copy-Item vendor/onnx/win-x64/LICENSE "$dir/licenses/onnxruntime/LICENSE.txt"
+          Copy-Item vendor/onnx/win-x64/ThirdPartyNotices.txt "$dir/licenses/onnxruntime/"
+          Copy-Item tools/package/portable.txt $dir
+          Compress-Archive -Path "portable/PDF Studio Izul" -DestinationPath "PDF-Studio-Izul-$v-portable.zip"
+
+      - name: Self-test the NSIS install, the MSI and the portable copy
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $pdf = (Resolve-Path smoke.pdf).Path
+          function SelfTest($dir, $label) {
+            $exe = Get-ChildItem $dir -Recurse -Filter *.exe |
+              Where-Object { $_.Name -notmatch "izul-worker|uninstall" } | Select-Object -First 1
+            if (-not $exe) { throw "$label`: no application executable under $dir" }
+            Write-Host "== $label`: $($exe.FullName)"
+            Get-ChildItem $exe.DirectoryName -Recurse -File | ForEach-Object { Write-Host "   $($_.FullName.Substring($exe.DirectoryName.Length))" }
+            # A GUI-subsystem program: wait for it explicitly, read its exit code.
+            $p = Start-Process -FilePath $exe.FullName -ArgumentList "--self-test", "`"$pdf`"" `
+              -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$label.txt"
+            Get-Content "$label.txt"
+            if ($p.ExitCode -ne 0) { throw "$label`: self-test exited with $($p.ExitCode)" }
+          }
+          $nsis = Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          Start-Process -FilePath $nsis.FullName -ArgumentList "/S", "/D=C:\izul-nsis" -Wait
+          SelfTest "C:\izul-nsis" "nsis"
+          $msi = Get-ChildItem target/release/bundle/msi/*.msi | Select-Object -First 1
+          Start-Process msiexec.exe -ArgumentList "/a", "`"$($msi.FullName)`"", "/qn", "TARGETDIR=C:\izul-msi" -Wait
+          SelfTest "C:\izul-msi" "msi"
+          Expand-Archive (Get-ChildItem *-portable.zip).FullName C:\izul-portable
+          SelfTest "C:\izul-portable" "portable"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers
+          retention-days: 14
+          path: |
+            target/release/bundle/nsis/*-setup.exe
+            target/release/bundle/msi/*.msi
+            *-portable.zip
+
   version-consistency:
     name: Version consistency
     runs-on: ubuntu-latest
@@ -186,4 +285,16 @@ jobs:
             || { echo "package.json version != $V"; exit 1; }
           grep -q "\"version\": \"$V\"" src-tauri/tauri.conf.json \
             || { echo "tauri.conf.json version != $V"; exit 1; }
+          # MSI takes only numbers: major.minor.patch.build. The build number
+          # is the pre-release's: alpha.N -> N, beta.N -> 100+N, rc.N -> 200+N,
+          # a release -> 1000. Windows compares only the first three fields.
+          W=$(python3 - "$V" <<'PY'
+          import re, sys
+          m = re.fullmatch(r"(\d+\.\d+\.\d+)(?:-(alpha|beta|rc)\.(\d+))?", sys.argv[1])
+          base, stage, n = m.group(1), m.group(2), m.group(3)
+          print(f"{base}.{ {None: 1000, 'alpha': 0, 'beta': 100, 'rc': 200}[stage] + (int(n) if n else 0) }")
+          PY
+          )
+          grep -q "\"version\": \"$W\"" src-tauri/tauri.bundle.json \
+            || { echo "tauri.bundle.json wix.version != $W"; exit 1; }
           echo "all manifests agree"

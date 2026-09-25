@@ -463,6 +463,17 @@ const SCENES = {
       await page.getByText(/Model OCR belum terpasang/).waitFor();
     },
   },
+  about: {
+    session: OPEN_ALL.slice(0, 1),
+    async steps(page) {
+      await settle(page);
+      // Through the command palette, the way a keyboard user reaches it.
+      await page.keyboard.press("Control+Shift+P");
+      await page.getByRole("combobox", { name: "Ketik nama perintah…" }).fill("Tentang");
+      await page.keyboard.press("Enter");
+      await page.getByRole("dialog", { name: /PDF Studio Izul/ }).waitFor();
+    },
+  },
   palette: {
     session: OPEN_ALL,
     async steps(page) {

@@ -1,0 +1,21 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "bundle": {
+    "resources": {
+      "../vendor/pdfium/win-x64/bin/pdfium.dll": "pdfium.dll",
+      "../target/release/izul-worker.exe": "izul-worker.exe",
+      "../vendor/onnx/win-x64/onnxruntime.dll": "onnxruntime.dll",
+      "../vendor/onnx/win-x64/DirectML.dll": "DirectML.dll",
+      "../vendor/onnx/u2netp.onnx": "onnx/u2netp.onnx",
+      "licenses/NOTICE.txt": "licenses/NOTICE.txt",
+      "../vendor/pdfium/win-x64/licenses": "licenses/pdfium",
+      "../vendor/onnx/win-x64/LICENSE": "licenses/onnxruntime/LICENSE.txt",
+      "../vendor/onnx/win-x64/ThirdPartyNotices.txt": "licenses/onnxruntime/ThirdPartyNotices.txt"
+    },
+    "windows": {
+      "wix": {
+        "version": "7.0.0.7"
+      }
+    }
+  }
+}

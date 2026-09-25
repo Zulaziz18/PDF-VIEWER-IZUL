@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState, type JSX } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Logo } from "@/design/Logo";
+import { Icon } from "@/design/Icon";
 import { t } from "@/i18n";
 import { useUi } from "@/state/uiStore";
 
@@ -26,6 +27,7 @@ export function About(): JSX.Element | null {
   const ref = useRef<HTMLDialogElement>(null);
   const [info, setInfo] = useState<VersionInfo | null>(null);
   const [logs, setLogs] = useState<string | null>(null);
+  const [openError, setOpenError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!open) return;
@@ -71,6 +73,24 @@ export function About(): JSX.Element | null {
             </div>
           )}
         </dl>
+        {logs && (
+          <button
+            type="button"
+            onClick={() => {
+              setOpenError(null);
+              void invoke("open_log_folder").catch((e: unknown) => setOpenError(String(e)));
+            }}
+            className="self-start h-8 px-3 flex items-center gap-1.5 rounded-[8px] border border-[var(--izul-border)] text-[13px] hover:bg-[var(--izul-surface-raised)]"
+          >
+            <Icon name="folder" size={16} tone="amber" />
+            {t("about.openLogs")}
+          </button>
+        )}
+        {openError && (
+          <p role="alert" className="text-[12px] text-[var(--izul-danger)] break-words">
+            {openError}
+          </p>
+        )}
         <p className="text-[12px] text-[var(--izul-text-dim)]">{t("about.licenses")}</p>
         <form method="dialog" className="flex justify-end">
           <button className="h-9 px-4 rounded-[8px] bg-[var(--izul-accent)] text-[var(--izul-on-accent)] font-medium">
