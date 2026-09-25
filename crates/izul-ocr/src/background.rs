@@ -67,6 +67,14 @@ impl BackgroundRemover {
     /// The runtime can be loaded once per process; a second call with another
     /// path keeps the first.
     pub fn load(runtime: &Path, model: &Path) -> Result<Self, OcrError> {
+        Self::load_on(runtime, model, false)
+    }
+
+    /// [`load`](Self::load), with DirectML allowed on any adapter rather than
+    /// a GPU only — including Windows' software rasteriser (WARP). Slower
+    /// than the CPU there; it exists so that CI, which has no GPU, can run
+    /// the model through DirectML at all.
+    pub fn load_on(runtime: &Path, model: &Path, any_adapter: bool) -> Result<Self, OcrError> {
         if !runtime.is_file() {
             return Err(OcrError::Model {
                 path: runtime.display().to_string(),
@@ -86,9 +94,15 @@ impl BackgroundRemover {
         let (session, device) = if cfg!(windows) {
             let directml = Session::builder()
                 .map_err(engine)?
-                .with_execution_providers([ort::ep::DirectML::default()
-                    .build()
-                    .error_on_failure()]);
+                .with_execution_providers([{
+                    let ep = ort::ep::DirectML::default();
+                    let ep = if any_adapter {
+                        ep.with_device_filter(ort::ep::directml::DeviceFilter::Any)
+                    } else {
+                        ep
+                    };
+                    ep.build().error_on_failure()
+                }]);
             match directml {
                 Ok(mut b) => match b.commit_from_file(model) {
                     Ok(s) => (s, Device::DirectMl),

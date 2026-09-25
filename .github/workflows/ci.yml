@@ -130,6 +130,10 @@ jobs:
         run: |
           python3 tools/background-proof/make_pictures.py probe
           ./target/debug/bg-probe.exe target/debug/onnxruntime.dll vendor/onnx/u2netp.onnx probe/stempel.png probe/stempel.out.png
+          # No GPU here: once more with DirectML allowed on the software adapter,
+          # so the model runs through DirectML itself, not only up to its
+          # choice of device.
+          BG_ANY_ADAPTER=1 BG_KIND=paper ./target/debug/bg-probe.exe target/debug/onnxruntime.dll vendor/onnx/u2netp.onnx probe/stempel.png probe/stempel.dml.png
 
   frontend:
     name: Frontend

@@ -1,7 +1,7 @@
 //! Runs background removal (`izul_ocr::background`, the routine the worker
 //! runs) on pictures, for `tools/background-proof`.
 //!
-//!     [BG_KIND=paper] bg-probe <onnxruntime lib> <model.onnx> <in.png> <out-mask.png> [<in> <out>]...
+//!     [BG_KIND=paper] [BG_ANY_ADAPTER=1] bg-probe <onnxruntime lib> <model.onnx> <in.png> <out-mask.png> [<in> <out>]...
 //!
 //! One JSON line per picture: {"in", "ms", "device"}; the first line reports
 //! the time to load.
@@ -18,7 +18,10 @@ fn main() {
     let args: Vec<String> = std::env::args().skip(1).collect();
     let (runtime, model) = (&args[0], &args[1]);
     let t = Instant::now();
-    let mut remover = BackgroundRemover::load(Path::new(runtime), Path::new(model)).expect("muat");
+    // BG_ANY_ADAPTER=1: DirectML on any adapter, WARP included (CI has no GPU).
+    let any = std::env::var_os("BG_ANY_ADAPTER").is_some();
+    let mut remover =
+        BackgroundRemover::load_on(Path::new(runtime), Path::new(model), any).expect("muat");
     let device = match remover.device() {
         Device::DirectMl => "DirectML".to_string(),
         Device::Cpu { reason } if reason.is_empty() => "CPU".to_string(),
