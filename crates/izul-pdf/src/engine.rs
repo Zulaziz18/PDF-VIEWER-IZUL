@@ -296,6 +296,33 @@ mod geometry_tests {
         assert!((d.bottom - 602.0).abs() < 1e-3, "bottom = {}", d.bottom);
     }
 
+    /// `PageFrame::display_to_user` (izul-model, used when saving) must be
+    /// the exact inverse of what the viewer does here, on every rotation and
+    /// with a box away from the origin.
+    #[test]
+    fn the_frame_undoes_to_display() {
+        let bbox = PdfRectF::new(100.0, 200.0, 695.0, 1042.0);
+        for rot in [
+            RotationQuarter::None,
+            RotationQuarter::Cw90,
+            RotationQuarter::Cw180,
+            RotationQuarter::Cw270,
+        ] {
+            let g = geom(rot, bbox);
+            let user = PdfRectF::new(150.0, 300.0, 260.0, 420.0);
+            let shown = g.to_display(user, RotationQuarter::None);
+            let back = g.frame().rect_to_user(shown);
+            for (a, b) in [
+                (back.left, user.left),
+                (back.bottom, user.bottom),
+                (back.right, user.right),
+                (back.top, user.top),
+            ] {
+                assert!((a - b).abs() < 1e-3, "{rot:?}: {back:?} vs {user:?}");
+            }
+        }
+    }
+
     #[test]
     fn the_pages_own_rotation_counts_the_same_as_the_users() {
         let a = geom(RotationQuarter::Cw90, A)
@@ -500,6 +527,14 @@ impl PageGeometry {
             RotationQuarter::Cw90 => (v, bw - u),
             RotationQuarter::Cw180 => (bw - u, bh - v),
             RotationQuarter::Cw270 => (bh - v, u),
+        }
+    }
+
+    /// The same geometry for the UI process, which does not link PDFium.
+    pub fn frame(&self) -> izul_model::geom::PageFrame {
+        izul_model::geom::PageFrame {
+            bbox: self.bbox,
+            rotation: self.intrinsic,
         }
     }
 

@@ -90,6 +90,19 @@ pub fn rect(r: izul_model::geom::PdfRectF) -> String {
     )
 }
 
+/// `[a b c d e f]`.
+pub fn matrix(m: &izul_model::geom::Matrix) -> String {
+    format!(
+        "[{} {} {} {} {} {}]",
+        num(m.a),
+        num(m.b),
+        num(m.c),
+        num(m.d),
+        num(m.e),
+        num(m.f)
+    )
+}
+
 /// `[r g b]` in 0..1.
 pub fn rgb(c: izul_model::display::Rgba) -> String {
     format!("[{} {} {}]", num(c.r), num(c.g), num(c.b))

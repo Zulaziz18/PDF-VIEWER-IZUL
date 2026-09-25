@@ -313,6 +313,14 @@ impl Workbench {
                     pages: pages.len() as u32,
                 })
             }
+            Request::WorkFrames { doc } => {
+                let work = self.work(doc)?;
+                let frames = (0..work.page_count())
+                    .map(|p| work.page_geometry(p).map(|g| g.frame()))
+                    .collect::<Result<Vec<_>, _>>()
+                    .map_err(|e| Failure::Pdf(Some(doc), e))?;
+                Ok(Response::WorkFramesReady { doc, frames })
+            }
             other => Err(Failure::Encode(format!(
                 "bukan permintaan Fase 4: {other:?}"
             ))),

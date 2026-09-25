@@ -531,7 +531,8 @@ where
         | Request::VerifyFile { .. }
         | Request::WorkArrange { .. }
         | Request::WorkRedact { .. }
-        | Request::VerifyRedacted { .. }) => {
+        | Request::VerifyRedacted { .. }
+        | Request::WorkFrames { .. }) => {
             let engine = sess.engine();
             let viewing =
                 |doc: DocId, page: u32| sess.get(doc).map(|open| open.doc.izul_annots(page));

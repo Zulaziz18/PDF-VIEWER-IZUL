@@ -7,7 +7,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use izul_model::geom::{PdfRectF, RotationQuarter};
+use izul_model::geom::{PageFrame, PdfRectF, RotationQuarter};
 
 /// Version of the wire protocol in this build.
 ///
@@ -21,7 +21,7 @@ use izul_model::geom::{PdfRectF, RotationQuarter};
 /// So the worker announces this number the moment it connects, and the
 /// supervisor refuses a worker that does not match. Bump it whenever anything
 /// in [`Request`] or [`Response`] changes shape.
-pub const PROTOCOL_VERSION: u32 = 7;
+pub const PROTOCOL_VERSION: u32 = 8;
 
 /// Identifies one open document within a worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -268,6 +268,14 @@ pub enum Request {
         /// Page, and its areas in user space as `WorkRedacted` returned them.
         pages: Vec<(u32, Vec<PdfRectF>)>,
     },
+    // ---- Phase 7 (appended; see `PROTOCOL_VERSION`). ---------------------
+    /// Where each page of the working copy puts display space in user space
+    /// — asked after the pages are in their final order, because annotations
+    /// are kept in display space and must be written in user space.
+    /// Answered with `WorkFramesReady`.
+    WorkFrames {
+        doc: DocId,
+    },
 }
 
 /// The areas to redact on one page of a [`Request::WorkRedact`].
@@ -433,6 +441,12 @@ pub enum Response {
     },
     RedactionVerified {
         pages: u32,
+    },
+    // ---- Phase 7, appended ------------------------------------------------
+    WorkFramesReady {
+        doc: DocId,
+        /// One per page, in page order.
+        frames: Vec<PageFrame>,
     },
 }
 
@@ -610,6 +624,25 @@ mod tests {
                 .unwrap()
             ),
             23
+        );
+    }
+
+    #[test]
+    fn phase_seven_variants_are_appended() {
+        let index = |bytes: Vec<u8>| bytes[0];
+        assert_eq!(
+            index(postcard::to_allocvec(&Request::WorkFrames { doc: DocId(1) }).unwrap()),
+            26
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Response::WorkFramesReady {
+                    doc: DocId(1),
+                    frames: vec![]
+                })
+                .unwrap()
+            ),
+            18
         );
     }
 

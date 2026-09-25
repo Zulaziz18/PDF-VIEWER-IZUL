@@ -407,7 +407,7 @@ fn bench(engine: &'static Engine, fonts: &StandardFonts) {
             .map(|(obj, list)| AnnotWrite { obj, list })
             .collect();
         let t = Instant::now();
-        let saved = patch(bytes, &writes, &assets).expect("patch");
+        let saved = patch(bytes, &writes, &assets, &[]).expect("patch");
         let patch_ms = ms(t);
         let grown_kb = (saved.len() as f64 - meta.len() as f64) / 1024.0;
 
@@ -500,6 +500,7 @@ fn main() {
             fonts: &fonts,
             picture: picture(),
         },
+        &[],
     )
     .expect("patch");
 

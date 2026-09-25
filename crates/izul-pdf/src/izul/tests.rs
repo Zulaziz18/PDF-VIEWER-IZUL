@@ -118,7 +118,7 @@ fn save(
         .iter()
         .map(|(obj, list)| AnnotWrite { obj, list })
         .collect();
-    patch(pdfium, &writes, assets).expect("patch")
+    patch(pdfium, &writes, assets, &[]).expect("patch")
 }
 
 #[test]

@@ -5,12 +5,13 @@ use std::collections::HashMap;
 use izul_model::annot::AnnotObject;
 use izul_model::ap::{appearance, GState};
 use izul_model::display::{BlendMode, DisplayList, FontRef, ImageRef};
+use izul_model::geom::{Matrix, PageFrame};
 
 use crate::annot_dict::annotation_dict;
 use crate::bounds::painted_bounds;
 use crate::images::{deflate, image_objects, stream, SMASK_SLOT};
 use crate::incremental::{find_placeholders, read_tail, Placement, SyntaxError, Update};
-use crate::syntax::{name, num, rect};
+use crate::syntax::{matrix, name, num, rect};
 
 /// One annotation to write: the object, and the display list built from it
 /// with the font context the editor used — the same list the canvas drew.
@@ -68,10 +69,16 @@ type Container = (u16, (usize, usize), Vec<((usize, usize), u32)>);
 /// carrying one placeholder per annotation (`/NM (izul-<id>)`).
 ///
 /// Fonts and images are written once however many annotations use them.
+///
+/// `frames` holds each page's [`PageFrame`], in page order: annotations are
+/// kept in display space and are written in user space — geometry keys
+/// converted, and the appearance stream drawn as it was with a `/Matrix` that
+/// turns it onto the page. A page without a frame is taken as plain.
 pub fn patch(
     pdf: Vec<u8>,
     annots: &[AnnotWrite<'_>],
     assets: &dyn Assets,
+    frames: &[PageFrame],
 ) -> Result<Vec<u8>, SaveError> {
     if annots.is_empty() {
         return Ok(pdf);
@@ -113,6 +120,15 @@ pub fn patch(
         };
         let bbox = painted_bounds(a.list, 1.0).unwrap_or(a.obj.rect);
         let ap = appearance(a.list, bbox);
+        let m = frames
+            .get(a.obj.page as usize)
+            .map_or(Matrix::IDENTITY, PageFrame::display_to_user);
+        // The appearance's box carried by its /Matrix: ISO 32000-1 §12.5.5
+        // maps that onto /Rect, and with the two equal the mapping is the
+        // identity — the stream is drawn exactly where the matrix puts it.
+        let user_rect = frames
+            .get(a.obj.page as usize)
+            .map_or(ap.bbox, |f| f.rect_to_user(ap.bbox));
 
         let mut res = String::from("<<");
         if !ap.resources.fonts.is_empty() {
@@ -179,8 +195,9 @@ pub fn patch(
 
         let ap_num = up.reserve();
         let form = format!(
-            "/Type/XObject/Subtype/Form/BBox{}/Matrix[1 0 0 1 0 0]/Resources{res}/Filter/FlateDecode",
-            rect(ap.bbox)
+            "/Type/XObject/Subtype/Form/BBox{}/Matrix{}/Resources{res}/Filter/FlateDecode",
+            rect(ap.bbox),
+            matrix(&m)
         );
         up.put(ap_num, 0, stream(&form, &deflate(ap.content.as_bytes())));
 
@@ -188,7 +205,7 @@ pub fn patch(
         up.put(
             annot_num,
             annot_gen,
-            annotation_dict(a.obj, bbox, ap_num, &metadata).into_bytes(),
+            annotation_dict(a.obj, user_rect, ap_num, &metadata, &m).into_bytes(),
         );
     }
     for (num, (gen, (start, end), mut swaps)) in containers {

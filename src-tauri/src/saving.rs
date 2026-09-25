@@ -225,19 +225,35 @@ pub async fn build_current(
             },
         )
         .await?;
+        // Where display space sits on each final page: the annotations are
+        // kept in display space and must be written in user space.
+        let frames = match ask(&worker, Request::WorkFrames { doc: DocId(doc) }).await? {
+            Response::WorkFramesReady { frames, .. } => frames,
+            other => return Err(format!("balasan tak terduga: {other:?}")),
+        };
         let bytes = expect_blob(&worker, Request::WorkSave { doc: DocId(doc) }).await?;
-        Ok((bytes, redacted))
+        Ok((bytes, redacted, frames))
     }
     .await;
     let _ = ask(&worker, Request::WorkClose { doc: DocId(doc) }).await;
-    let (pdfium, redacted) = built?;
+    let (pdfium, redacted, frames) = built?;
+    if let Some((obj, _)) = objects
+        .iter()
+        .find(|(o, _)| o.page as usize >= frames.len())
+    {
+        return Err(format!(
+            "anotasi di halaman {} tetapi dokumen hanya {} halaman",
+            obj.page + 1,
+            frames.len()
+        ));
+    }
 
     let writes: Vec<AnnotWrite<'_>> = objects
         .iter()
         .map(|(obj, list)| AnnotWrite { obj, list })
         .collect();
     let assets = annots.assets(doc);
-    let bytes = izul_write::patch(pdfium, &writes, &assets).map_err(|e| match e {
+    let bytes = izul_write::patch(pdfium, &writes, &assets, &frames).map_err(|e| match e {
         izul_write::SaveError::Syntax(izul_write::incremental::SyntaxError::Encrypted) => {
             "Dokumen ini terenkripsi. Menyimpan anotasi ke dokumen terenkripsi belum didukung; \
              anotasinya tetap tersimpan sebagai draf."
