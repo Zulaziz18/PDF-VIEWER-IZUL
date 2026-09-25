@@ -38,6 +38,57 @@ Test integrasi (`crash_isolation`) membaca PDFium langsung dari
 aplikasi secara otomatis pada setiap `cargo build`. Tidak ada langkah salin
 manual yang diperlukan di kedua kasus — cukup `vendor/pdfium/fetch.sh` di atas.
 
+## Hasil Fase 7
+
+Dihitung dari keluaran `IZUL_REQUIRE_FIXTURES=1 cargo test --workspace
+--no-fail-fast` dan `npm test`, bukan dari ingatan.
+
+| Suite | Jumlah | Status |
+|---|---|---|
+| `izul-model` (… + `PageFrame`, `Op::Form`) | 79 | lulus |
+| `izul-ipc` (… + indeks tujuh request/balasan baru terpatok) | 24 | lulus |
+| `izul-store` | 49 | lulus |
+| `izul-redact` (… + **penggantian teks**: kompensasi TJ, font tak tertanam, huruf tak ada, spasi tanpa glyph, dua baris, `/ToUnicode`) | 65 | lulus |
+| **`izul-ocr`** (penyempurnaan mask kertas) | 2 | lulus |
+| `izul-pdf` (… + **widget formulir tergambar** di semua rotasi, isian tampil sebelum simpan, `PageFrame`, **penggantian teks** pada font tertanam nyata) | 74 | lulus |
+| `izul-render` (… + `forget_page`) | 30 | lulus |
+| `izul-write` (… + anotasi di halaman berputar ditulis di ruang pengguna) | 32 | lulus |
+| `izul-worker` | 9 | lulus |
+| `izul-app` (… + halaman yang boleh disunting teksnya) | 105 | lulus |
+| `crash_isolation` + `render_pipeline` + `render_end_to_end` + `save_round_trip` + `page_ops` + `redaction` | 34 | lulus |
+| **`ocr`**, **`background`**, **`forms`**, **`textedit`** (pekerja nyata, ujung ke ujung) | 5 | lulus |
+| `izul-bench` (`multidoc`) | 3 | lulus |
+| **Total Rust** | **511** | **lulus** |
+| Frontend | 198 | lulus |
+| **Total** | **709** | **lulus** |
+
+**Bukti kriteria** — semuanya dijalankan juga oleh CI di ubuntu (langkah
+*OCR proof*, *Background removal proof*, *Form filling proof*, *Text editing
+proof*); hasilnya di `bench/results/phase7-*.txt`:
+
+```bash
+sudo apt-get install -y poppler-utils mupdf-tools fonts-dejavu-core fonts-liberation
+python3 -m pip install reportlab pikepdf pypdf pillow pdfminer.six
+./vendor/ocrs/fetch.sh && ./vendor/onnx/fetch.sh
+python3 tools/ocr-proof/run.py
+python3 tools/background-proof/run.py
+python3 tools/form-proof/run.py
+python3 tools/textedit-proof/run.py
+```
+
+| Kemampuan | Angka | Batas |
+|---|---|---|
+| OCR (5 halaman pindaian, 1 miring) | CER 0,87 %, WER 4,2 % di poppler/MuPDF/pdfminer/pypdf; 98,7–100 % kata di tempatnya; 0 piksel berubah; 750–942 ms/halaman (release) | CER ≤ 2 %, tempat ≥ 95 %, piksel = 0 |
+| Hapus latar (5 gambar) | IoU 0,99 / 0,99 (foto), 1,00 / 1,00 (TTD, stempel di mode kertas), 0,90 (benda putih, mode foto); 154–240 ms (CPU) | mode yang tepat ≥ 0,85 |
+| Formulir (6 jenis isian) | nilai + tampilan terbaca di pypdf, poppler, MuPDF; pembanding naif gagal di 9 sel | semua "ya" |
+| Edit teks (2 kasus + 3 penolakan) | 0 piksel berubah di luar bagian yang diganti (poppler, MuPDF); teks baru terbaca di 3 pengekstrak | 0 piksel |
+
+**DirectML:** probe CI di windows memuat `onnxruntime.dll` + `DirectML.dll`,
+tetapi runner tidak punya adaptor sama sekali (juga dengan
+`DeviceFilter::Any`): "No devices detected that match the filter criteria".
+Model berjalan di CPU (780–834 ms, build debug). **Belum pernah diuji di GPU
+sungguhan** — itu item checklist di bawah.
+
 ## Hasil Fase 6
 
 | Suite | Jumlah | Status |
@@ -681,6 +732,45 @@ Seperti Fase 4: **pakai salinan**, karena menyimpan menimpa berkas.
       ukuran berkas hasil tidak berlipat dibanding aslinya.
 - [ ] Opsional, bila punya Adobe Acrobat Reader: buka berkas hasil, cari kata
       yang diredaksi — tidak ditemukan.
+
+### Fase 7
+
+**Pakai salinan berkas** — OCR dan Edit Teks menulis ke berkas.
+
+Siapkan dulu (sekali saja), di PowerShell biasa, di folder proyek:
+
+```powershell
+bash vendor/ocrs/fetch.sh
+bash vendor/onnx/fetch.sh win-x64
+```
+
+(`bash` datang bersama Git. Kalau ada pesan galat, kirim beberapa baris
+terakhirnya.)
+
+- [ ] **OCR:** buka PDF hasil pindaian (tanpa teks). Pita **Konversi** →
+      *Kenali Teks (OCR)* → Semua halaman → Sebagai berkas baru. Bilah
+      kemajuan berjalan; tombol Hentikan membatalkan tanpa menulis apa pun.
+      Sesudahnya: Ctrl+F menemukan kata di pindaian, dan teks bisa diblok lalu
+      disalin ke Notepad. Tampilan halaman tidak berubah sama sekali.
+- [ ] Buka berkas hasil OCR di **Edge**: Ctrl+F juga menemukan katanya, dan
+      sorotannya jatuh di atas kata yang benar.
+- [ ] **Hapus latar:** Pita Edit → Tambah Gambar → pilih foto tanda tangan di
+      kertas. Klik gambarnya → panel properti → *Hapus latar* → mode
+      *Tanda tangan/stempel*. Kertasnya hilang, tintanya tetap. Ctrl+Z
+      mengembalikan. Pesan menyebut **GPU (DirectML)** atau **CPU** — tulis
+      yang muncul di laptop Anda, karena ini belum pernah diuji di GPU.
+- [ ] **Formulir:** buka PDF berformulir (misalnya formulir pendaftaran dari
+      instansi). Muncul bilah "Dokumen ini berisi formulir" → *Isi Formulir*.
+      Kotak isian di halaman sekarang **terlihat** (dulu kosong). Isi nama,
+      centang kotak, pilih radio dan pilihan; halaman langsung menampilkan
+      isinya. Ctrl+Z membatalkan satu isian. Simpan, buka di **Edge**: isinya
+      ada di sana juga.
+- [ ] **Edit teks:** di PDF buatan Word (font biasanya tertanam), blok satu
+      kata → pita Edit → *Edit Teks* → ketik penggantinya → Ganti & Simpan →
+      Sebagai berkas baru. Kata berganti, sisa baris tidak bergeser.
+- [ ] Coba huruf yang jarang ada di dokumen itu (misalnya "é" atau "Ø"): harus
+      ditolak dengan pesan yang menyebut hurufnya, dan tidak ada berkas yang
+      ditulis. Coba juga blok dua baris sekaligus: ditolak.
 
 ### Menyusul (fase terkait)
 

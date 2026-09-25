@@ -312,14 +312,90 @@ Yang perlu diketahui:
   informasinya tidak lengkap membuat redaksi ditolak dengan pesan, bukan
   ditebak.
 
+### Membuat pindaian bisa dicari (OCR)
+
+PDF hasil pindaian berisi gambar halaman, bukan teks: kata di dalamnya tidak
+bisa dicari atau disalin. **Kenali Teks (OCR)** membaca gambar itu dan menanam
+teksnya sebagai lapisan tak terlihat di atas setiap kata — tampilan halaman
+tidak berubah sama sekali, tetapi Ctrl+F, salin–tempel, dan pembaca PDF lain
+sekarang menemukan katanya.
+
+1. Pita **Konversi** → **Kenali Teks (OCR)**.
+2. Pilih halamannya: semua, halaman ini, atau rentang (misalnya `1-3, 7`).
+   Halaman yang sudah punya teks dilewati, kecuali Anda mencentang
+   "Kenali juga halaman yang sudah punya teks".
+3. Pilih **Sebagai berkas baru** (disarankan, `nama (OCR).pdf`) atau timpa.
+4. Tunggu bilah kemajuannya — sekitar satu detik per halaman. **Hentikan**
+   membatalkan tanpa mengubah berkas apa pun.
+
+Pengenalannya berjalan di komputer ini, tanpa internet. Bahasa: huruf Latin
+(Indonesia, Inggris). Ketepatannya sekitar 99 dari 100 huruf pada pindaian
+yang jelas; pindaian buram, miring jauh, atau tulisan tangan hasilnya lebih
+buruk.
+
+### Menghapus latar gambar
+
+Untuk gambar yang sudah Anda tambahkan ke halaman (misalnya foto tanda tangan):
+klik gambarnya, lalu di panel properti tekan **Hapus latar** dan pilih jenisnya:
+
+- **Foto** — benda difoto di atas latar apa pun.
+- **Tanda tangan / stempel** (difoto di atas kertas) — kertasnya ikut dibuang, tintanya
+  tetap. Jangan pakai mode ini untuk benda putih di atas latar putih: bendanya
+  ikut terhapus.
+
+Aplikasi tidak bisa menebak jenisnya dari gambar, karena itu Anda yang memilih.
+Hasilnya bisa dibatalkan dengan Ctrl+Z. Prosesnya memakai model AI di komputer
+ini: dengan kartu grafis (DirectML) bila ada, dengan prosesor bila tidak —
+pesannya menyebutkan yang mana.
+
+### Mengisi formulir
+
+Bila PDF berisi formulir, di atas halaman muncul bilah **"Dokumen ini berisi
+formulir"**. Tekan **Isi Formulir** (atau ikon Formulir di sisi kiri):
+
+- Isian dikelompokkan per halaman. Mengklik nama isian membawa halaman ke
+  tempatnya.
+- Ketik isian teks lalu tekan **Enter** atau pindah ke isian lain untuk
+  menerapkannya; halaman langsung menampilkan isinya.
+- Kotak centang, pilihan bulat (radio), dan daftar pilihan diterapkan begitu
+  diklik.
+- Setiap isian bisa dibatalkan dengan **Ctrl+Z**. Simpan dengan **Ctrl+S**
+  seperti biasa; isinya terbaca juga di Edge, Chrome, dan Acrobat.
+
+Isian bertanda *(hanya-baca)* tidak bisa diubah. Formulir XFA (formulir
+dinamis buatan Adobe LiveCycle) tidak didukung.
+
+### Mengganti teks dokumen
+
+**Edit Teks** mengganti sebagian teks asli dokumen, dengan batasan yang
+sengaja ketat supaya hasilnya tetap rapi di semua pembaca PDF:
+
+1. Blok teksnya di halaman — **dalam satu baris saja**.
+2. Pita **Edit** → **Edit Teks**, ketik penggantinya.
+3. Pilih **Sebagai berkas baru** (disarankan) atau timpa, lalu
+   **Ganti & Simpan**.
+
+Penggantian langsung disimpan ke berkas dan **tidak bisa dibatalkan dengan
+Ctrl+Z**. Sisa baris tetap di tempatnya: kata yang lebih pendek meninggalkan
+celah, dan paragraf tidak mengalir ulang.
+
+Penggantian **ditolak**, dengan pesan alasannya, bila:
+
+- font di bagian itu tidak ditanam di berkas (misalnya PDF yang memakai font
+  standar), karena pembaca lain bisa menggambar huruf yang berbeda;
+- font itu tidak punya huruf yang Anda ketik — pesannya menyebut hurufnya.
+  Dokumen biasanya hanya membawa huruf yang dipakainya;
+- teks yang diblok lebih dari satu baris, atau memakai lebih dari satu jenis
+  atau ukuran huruf;
+- teks baru terlalu panjang sampai menabrak kata sesudahnya.
+
 ### Yang perlu diketahui soal anotasi di fase ini
 
 - Kotak teks, stempel, dan catatan memakai font standar PDF (Helvetica, Times,
   Courier) yang tidak ditanam ke berkas; pembaca lain menampilkannya dengan
   font padanan terdekat, jadi bentuk hurufnya bisa sedikit berbeda.
 - Dokumen yang dilindungi kata sandi belum bisa disimpan.
-- Yang **belum** dapat dilakukan: menyunting teks asli dokumen langsung di atas
-  halaman (isi kotak teks diketik lewat panel properti).
+- Isi kotak teks diketik lewat panel properti, belum langsung di atas halaman.
 
 ## Persyaratan sistem
 

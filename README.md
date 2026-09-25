@@ -71,3 +71,14 @@ Lisensi IJG meminta dokumentasi program menyatakan: *perangkat lunak ini
 sebagian didasarkan pada karya Independent JPEG Group* (this software is based
 in part on the work of the Independent JPEG Group). Kalimat itu juga ada di
 kotak Tentang aplikasi.
+
+Fase 7 membawa komponen dengan lisensinya sendiri, **belum dibundel ke
+installer** (itu Fase 8, sesudah keputusan pengguna):
+
+| Komponen | Lisensi | Catatan |
+|---|---|---|
+| `ocrs` + `rten` (mesin OCR) | MIT / Apache-2.0 | kode, ditautkan ke pekerja |
+| Model OCR `ocrs` (deteksi + pengenalan) | **belum jelas** | dilatih pada HierText (CC BY-SA 4.0); repositori modelnya tanpa berkas LICENSE. Hanya diambil `vendor/ocrs/fetch.sh` untuk pengembangan |
+| ONNX Runtime 1.24.4 | MIT (Microsoft) | dimuat saat berjalan |
+| `DirectML.dll` | lisensi redistribusi Microsoft | `vendor/onnx/*/ThirdPartyNotices.txt` |
+| Model `u2netp` (U²-Net kecil) | Apache-2.0 | Xuebin Qin dkk., rilis rembg |

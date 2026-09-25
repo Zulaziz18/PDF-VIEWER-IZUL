@@ -284,3 +284,60 @@ pub fn on_paper(picture: &RgbaImage, model: &GrayImage) -> Option<GrayImage> {
     }
     Some(out)
 }
+
+#[cfg(test)]
+mod tests {
+    #![allow(clippy::unwrap_used, clippy::expect_used, clippy::indexing_slicing)]
+    use super::*;
+    use image::Rgba;
+
+    /// Paper with a dark ring inked on it, lit unevenly — what a stamp
+    /// photographed on a desk looks like.
+    fn stamp_on_paper() -> RgbaImage {
+        ImageBuffer::from_fn(64, 64, |x, y| {
+            let (dx, dy) = (x as f32 - 32.0, y as f32 - 32.0);
+            let r = (dx * dx + dy * dy).sqrt();
+            if (18.0..22.0).contains(&r) {
+                Rgba([160, 30, 40, 255])
+            } else {
+                // Brighter at the top: shading, not ink.
+                let l = 250 - (y / 4) as u8;
+                Rgba([l, l - 3, l - 10, 255])
+            }
+        })
+    }
+
+    #[test]
+    fn paper_inside_the_models_mask_goes_and_ink_stays() {
+        let picture = stamp_on_paper();
+        // The model's mask as U²-Net gives it for a stamp: the whole disc.
+        let model: GrayImage = ImageBuffer::from_fn(64, 64, |x, y| {
+            let (dx, dy) = (x as f32 - 32.0, y as f32 - 32.0);
+            Luma([if (dx * dx + dy * dy).sqrt() < 23.0 {
+                255
+            } else {
+                0
+            }])
+        });
+        let refined = on_paper(&picture, &model).expect("tepi polos dan terang");
+        assert_eq!(
+            refined.get_pixel(32, 32).0[0],
+            0,
+            "kertas di tengah cincin terbuang"
+        );
+        assert_eq!(refined.get_pixel(52, 32).0[0], 255, "tinta cincin tetap");
+    }
+
+    #[test]
+    fn a_textured_or_dark_edge_is_not_paper() {
+        let model: GrayImage = ImageBuffer::from_pixel(64, 64, Luma([255]));
+        // Colourful texture at the edge: a photo, not a sheet of paper.
+        let textured = ImageBuffer::from_fn(64, 64, |x, y| {
+            Rgba([(x * 4) as u8, (y * 4) as u8, ((x + y) * 2) as u8, 255])
+        });
+        assert!(on_paper(&textured, &model).is_none());
+        // Plain but dark: a table, not paper.
+        let dark = ImageBuffer::from_pixel(64, 64, Rgba([60, 58, 55, 255]));
+        assert!(on_paper(&dark, &model).is_none());
+    }
+}
