@@ -230,6 +230,15 @@ fn sample_annotations(page: u32, height: f32) -> Vec<AnnotObject> {
         },
     );
     push(
+        AnnotKind::Image,
+        PdfRectF::new(330.0, top - 200.0, 440.0, top - 90.0),
+        AnnotPayload::Image {
+            image: izul_model::display::ImageRef(1),
+            crop: PdfRectF::new(0.0, 0.0, 1.0, 1.0),
+            opacity: 1.0,
+        },
+    );
+    push(
         AnnotKind::Stamp,
         PdfRectF::new(400.0, 60.0, 540.0, 104.0),
         AnnotPayload::Stamp {
@@ -331,6 +340,31 @@ impl Backend {
                     })
                     .collect();
                 Ok((json!({ "objects": objects, "lists": lists }), Vec::new()))
+            }
+            "background" => {
+                // The real routine on the sample stamp, so the "after" scene
+                // shows what the model makes of it, not a picture of one.
+                let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("..");
+                let lib = if cfg!(windows) {
+                    root.join("vendor/onnx/win-x64/onnxruntime.dll")
+                } else {
+                    root.join("vendor/onnx/linux-x64/libonnxruntime.so")
+                };
+                let mut remover = izul_ocr::background::BackgroundRemover::load(
+                    &lib,
+                    &root.join("vendor/onnx/u2netp.onnx"),
+                )
+                .map_err(|e| e.to_string())?;
+                let picture = image::open(&req.path)
+                    .map_err(|e| e.to_string())?
+                    .to_rgba8();
+                let (out, paper) = remover
+                    .remove(&picture, izul_ocr::background::Kind::OnPaper)
+                    .map_err(|e| e.to_string())?;
+                let mut png = std::io::Cursor::new(Vec::new());
+                out.write_to(&mut png, image::ImageFormat::Png)
+                    .map_err(|e| e.to_string())?;
+                Ok((json!({ "paper": paper }), png.into_inner()))
             }
             "tile" => {
                 let rotation = quarter(req.rotation);

@@ -26,6 +26,8 @@ pub struct Workbench {
     /// The OCR engine, loaded on first use and kept: loading it takes a few
     /// milliseconds, but 12 MB of models read again for every page would not.
     ocr: Option<(String, izul_ocr::Ocr)>,
+    /// The background model, loaded on first use: (runtime, model, session).
+    background: Option<(String, String, izul_ocr::background::BackgroundRemover)>,
 }
 
 impl std::fmt::Debug for Workbench {
@@ -49,7 +51,13 @@ pub enum Failure {
     Redact(Option<DocId>, String),
     /// OCR could not run (models missing or unreadable, or the engine failed).
     Ocr(Option<DocId>, String),
+    /// Background removal could not run; the detail is for the user.
+    Ai(String),
 }
+
+/// The largest picture accepted for background removal: 64 MB of encoded
+/// image, far past any photo, well short of exhausting a worker.
+const MAX_INPUT_BLOB: usize = 64 * 1024 * 1024;
 
 impl Workbench {
     pub fn new() -> Self {
@@ -297,6 +305,82 @@ impl Workbench {
                 Ok(Response::Closed { doc })
             }
             Request::BlobRead { blob, offset, len } => self.read_blob(blob, offset, len),
+            Request::BlobAppend { blob, data } => {
+                let blob = if blob == 0 {
+                    self.next_blob += 1;
+                    self.blobs.insert(self.next_blob, Vec::new());
+                    self.next_blob
+                } else {
+                    blob
+                };
+                let Some(bytes) = self.blobs.get_mut(&blob) else {
+                    return Err(Failure::NoBlob);
+                };
+                // A picture, not a file system: refuse what no picture is.
+                if bytes.len() + data.len() > MAX_INPUT_BLOB {
+                    self.blobs.remove(&blob);
+                    return Err(Failure::Encode("gambar terlalu besar".into()));
+                }
+                bytes.extend_from_slice(&data);
+                Ok(Response::BlobAppended {
+                    blob,
+                    len: bytes.len() as u64,
+                })
+            }
+            Request::RemoveBackground {
+                blob,
+                runtime,
+                model,
+                kind,
+            } => {
+                let bytes = self.blobs.remove(&blob).ok_or(Failure::NoBlob)?;
+                let picture = image::load_from_memory(&bytes)
+                    .map_err(|e| Failure::Ai(format!("gambar tidak terbaca: {e}")))?
+                    .to_rgba8();
+                let fresh = self
+                    .background
+                    .as_ref()
+                    .is_none_or(|(r, m, _)| *r != runtime || *m != model);
+                if fresh {
+                    let remover = izul_ocr::background::BackgroundRemover::load(
+                        std::path::Path::new(&runtime),
+                        std::path::Path::new(&model),
+                    )
+                    .map_err(|e| Failure::Ai(e.to_string()))?;
+                    self.background = Some((runtime, model, remover));
+                }
+                let Some((_, _, remover)) = self.background.as_mut() else {
+                    return Err(Failure::Ai("model tidak dimuat".into()));
+                };
+                let device = match remover.device() {
+                    izul_ocr::background::Device::DirectMl => "DirectML".to_string(),
+                    izul_ocr::background::Device::Cpu { reason } if reason.is_empty() => {
+                        "CPU".to_string()
+                    }
+                    izul_ocr::background::Device::Cpu { reason } => format!("CPU ({reason})"),
+                };
+                let kind = match kind {
+                    izul_ipc::message::BackgroundKind::Photo => izul_ocr::background::Kind::Photo,
+                    izul_ipc::message::BackgroundKind::OnPaper => {
+                        izul_ocr::background::Kind::OnPaper
+                    }
+                };
+                let (out, paper) = remover
+                    .remove(&picture, kind)
+                    .map_err(|e| Failure::Ai(e.to_string()))?;
+                let mut png = std::io::Cursor::new(Vec::new());
+                out.write_to(&mut png, image::ImageFormat::Png)
+                    .map_err(|e| Failure::Encode(e.to_string()))?;
+                let Response::BlobReady { blob, len } = self.put_blob(png.into_inner()) else {
+                    return Err(Failure::NoBlob);
+                };
+                Ok(Response::BackgroundRemoved {
+                    blob,
+                    len,
+                    device,
+                    paper,
+                })
+            }
             Request::BlobDrop { blob } => {
                 self.blobs.remove(&blob);
                 Ok(Response::BlobReady { blob, len: 0 })

@@ -10,6 +10,8 @@
 //! Indonesian and English need. It has no dictionary; what it reads is what is
 //! on the page, letter by letter.
 
+pub mod background;
+
 use std::path::Path;
 
 use izul_pdf::ocr_layer::OcrWord;

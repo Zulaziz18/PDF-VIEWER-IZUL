@@ -5,6 +5,58 @@ fn main() {
     tauri_build::build();
     copy_vendored_pdfium();
     copy_vendored_ocr_models();
+    copy_vendored_onnx();
+}
+
+/// Copies ONNX Runtime (and on Windows DirectML.dll, which it loads from the
+/// application's folder) next to the binary, and the background model into
+/// `onnx/` (Phase 7, `vendor/onnx/fetch.sh`). Missing files are not a build
+/// error: "Hapus Latar" then says what is missing.
+fn copy_vendored_onnx() {
+    let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let Some(root) = manifest_dir.parent() else {
+        return;
+    };
+    let src = root.join("vendor/onnx");
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap_or_default());
+    let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
+    let Some(target_dir) = out_dir
+        .ancestors()
+        .find(|p| p.file_name().is_some_and(|n| n == profile.as_str()))
+    else {
+        return;
+    };
+    let libs: &[&str] = if cfg!(target_os = "windows") {
+        &["win-x64/onnxruntime.dll", "win-x64/DirectML.dll"]
+    } else {
+        &["linux-x64/libonnxruntime.so"]
+    };
+    let mut files: Vec<(PathBuf, PathBuf)> = libs
+        .iter()
+        .map(|l| {
+            let from = src.join(l);
+            let name = from.file_name().map(PathBuf::from).unwrap_or_default();
+            (from, target_dir.join(name))
+        })
+        .collect();
+    files.push((src.join("u2netp.onnx"), target_dir.join("onnx/u2netp.onnx")));
+    for (from, to) in files {
+        println!("cargo:rerun-if-changed={}", from.display());
+        if !from.exists() {
+            println!(
+                "cargo:warning={} belum diambil. Jalankan `vendor/onnx/fetch.sh` supaya \
+                 Hapus Latar bisa dipakai.",
+                from.display()
+            );
+            continue;
+        }
+        if let Some(dir) = to.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        if let Err(e) = std::fs::copy(&from, &to) {
+            println!("cargo:warning=gagal menyalin {}: {e}", from.display());
+        }
+    }
 }
 
 /// Copies the OCR models (`vendor/ocrs/*.rten`, Phase 7) into an `ocrs`

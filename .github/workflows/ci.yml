@@ -51,6 +51,12 @@ jobs:
         shell: bash
         run: ./vendor/ocrs/fetch.sh
 
+      # ONNX Runtime (DirectML build on Windows) and the background model,
+      # pinned by SHA-256 (Phase 7).
+      - name: Fetch ONNX Runtime and the background model
+        shell: bash
+        run: ./vendor/onnx/fetch.sh
+
       - name: Formatting
         run: cargo fmt --all --check
 
@@ -108,6 +114,22 @@ jobs:
       - name: OCR proof
         if: runner.os == 'Linux'
         run: python3 tools/ocr-proof/run.py --out ocr-proof.txt
+
+      # Phase 7: "Hapus Latar" scored against masks drawn with the pictures.
+      - name: Background removal proof
+        if: runner.os == 'Linux'
+        run: python3 tools/background-proof/run.py --out background-proof.txt
+
+      # The Windows runtime as the application loads it: onnxruntime.dll and
+      # DirectML.dll beside the executable (src-tauri/build.rs put them in
+      # target/debug). Prints where the model ran — DirectML on the runner's
+      # software adapter, or the CPU and why — and fails only if nothing ran.
+      - name: DirectML probe
+        if: runner.os == 'Windows'
+        shell: bash
+        run: |
+          python3 tools/background-proof/make_pictures.py probe
+          ./target/debug/bg-probe.exe target/debug/onnxruntime.dll vendor/onnx/u2netp.onnx probe/stempel.png probe/stempel.out.png
 
   frontend:
     name: Frontend

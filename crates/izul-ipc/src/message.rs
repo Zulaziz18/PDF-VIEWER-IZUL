@@ -21,7 +21,7 @@ use izul_model::geom::{PageFrame, PdfRectF, RotationQuarter};
 /// So the worker announces this number the moment it connects, and the
 /// supervisor refuses a worker that does not match. Bump it whenever anything
 /// in [`Request`] or [`Response`] changes shape.
-pub const PROTOCOL_VERSION: u32 = 9;
+pub const PROTOCOL_VERSION: u32 = 10;
 
 /// Identifies one open document within a worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -289,6 +289,30 @@ pub enum Request {
         models: String,
         force: bool,
     },
+    /// Adds bytes to a blob in the worker, for input too large for one frame
+    /// (a picture). `blob` 0 starts a new one. Answered with `BlobAppended`.
+    BlobAppend {
+        blob: u64,
+        data: Vec<u8>,
+    },
+    /// Makes the background of the picture in `blob` (PNG or JPEG bytes)
+    /// transparent with the segmentation model (`izul_ocr::background`). The
+    /// input blob is consumed. Answered with `BackgroundRemoved`.
+    RemoveBackground {
+        blob: u64,
+        /// The ONNX Runtime library, and the model.
+        runtime: String,
+        model: String,
+        kind: BackgroundKind,
+    },
+}
+
+/// What a picture is, for [`Request::RemoveBackground`]. The user says; it
+/// cannot be told from the picture (see `izul_ocr::background::Kind`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BackgroundKind {
+    Photo,
+    OnPaper,
 }
 
 /// The areas to redact on one page of a [`Request::WorkRedact`].
@@ -466,6 +490,20 @@ pub enum Response {
         page: u32,
         /// Words written, or `None` when the page already had text.
         words: Option<u32>,
+    },
+    BlobAppended {
+        blob: u64,
+        len: u64,
+    },
+    /// The picture as a PNG with alpha, waiting in `blob`.
+    BackgroundRemoved {
+        blob: u64,
+        len: u64,
+        /// Where the model ran ("DirectML", or "CPU" with the reason).
+        device: String,
+        /// The paper refinement ran (`BackgroundKind::OnPaper` on a plain,
+        /// light background).
+        paper: bool,
     },
 }
 
@@ -664,6 +702,44 @@ mod tests {
                 .unwrap()
             ),
             27
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Request::BlobAppend {
+                    blob: 0,
+                    data: vec![]
+                })
+                .unwrap()
+            ),
+            28
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Request::RemoveBackground {
+                    blob: 1,
+                    runtime: String::new(),
+                    model: String::new(),
+                    kind: BackgroundKind::Photo
+                })
+                .unwrap()
+            ),
+            29
+        );
+        assert_eq!(
+            index(postcard::to_allocvec(&Response::BlobAppended { blob: 1, len: 0 }).unwrap()),
+            20
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Response::BackgroundRemoved {
+                    blob: 1,
+                    len: 0,
+                    device: String::new(),
+                    paper: false
+                })
+                .unwrap()
+            ),
+            21
         );
         assert_eq!(
             index(

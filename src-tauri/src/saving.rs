@@ -39,7 +39,7 @@ const STALE_TEMP: Duration = Duration::from_secs(60 * 60);
 
 type Out<T> = Result<T, String>;
 
-async fn worker_of(pool: &Arc<RwLock<Pool>>, doc: u64) -> Out<Arc<Worker>> {
+pub(crate) async fn worker_of(pool: &Arc<RwLock<Pool>>, doc: u64) -> Out<Arc<Worker>> {
     pool.read()
         .await
         .worker_for(DocId(doc))
@@ -47,7 +47,7 @@ async fn worker_of(pool: &Arc<RwLock<Pool>>, doc: u64) -> Out<Arc<Worker>> {
 }
 
 /// One request, with the worker's own refusals turned into a message.
-async fn ask(worker: &Worker, req: Request) -> Out<Response> {
+pub(crate) async fn ask(worker: &Worker, req: Request) -> Out<Response> {
     match Pool::ask(worker, req).await {
         Ok(Response::Error {
             message_id, detail, ..

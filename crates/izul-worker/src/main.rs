@@ -533,7 +533,9 @@ where
         | Request::WorkRedact { .. }
         | Request::VerifyRedacted { .. }
         | Request::WorkFrames { .. }
-        | Request::WorkOcr { .. }) => {
+        | Request::WorkOcr { .. }
+        | Request::BlobAppend { .. }
+        | Request::RemoveBackground { .. }) => {
             let engine = sess.engine();
             let viewing =
                 |doc: DocId, page: u32| sess.get(doc).map(|open| open.doc.izul_annots(page));
@@ -549,6 +551,16 @@ where
                 Err(saving::Failure::Encode(detail)) => {
                     tracing::warn!(%detail, "enkode gagal");
                     fail_kind(channel, id, None, ErrorKind::EngineFault, "encode.failed").await
+                }
+                Err(saving::Failure::Ai(detail)) => {
+                    tracing::warn!(%detail, "hapus latar gagal");
+                    let payload = Response::Error {
+                        doc: None,
+                        kind: ErrorKind::EngineFault,
+                        message_id: "background.failed".to_string(),
+                        detail,
+                    };
+                    reply(channel, id, payload).await
                 }
                 Err(saving::Failure::Ocr(doc, detail)) => {
                     tracing::warn!(%detail, "OCR gagal");

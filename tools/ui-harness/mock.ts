@@ -209,6 +209,10 @@ export function installMocks(data: HarnessData): void {
         case "plugin:window|is_maximized":
         case "plugin:window|is_fullscreen":
           return false;
+        case "background_available":
+          return true;
+        case "annot_remove_background":
+          return window.__harnessBackend ? window.__harnessBackend(cmd, args) : null;
         case "ocr_available":
           return flags.noOcr !== true;
         case "ocr_progress":

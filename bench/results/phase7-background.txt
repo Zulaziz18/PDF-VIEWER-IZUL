@@ -1,0 +1,23 @@
+Fase 7 — bukti hapus latar (linux x86_64, perangkat: CPU)
+
+Model: U²-Net kecil (u2netp, Apache-2.0) lewat ONNX Runtime 1.24.4. Dua mode seperti di aplikasi:
+Foto = mask model apa adanya; TTD/stempel = mask model + kertas polos ikut dibuang.
+IoU = irisan/gabungan piksel subjek terhadap mask sebenarnya; hilang = subjek yang terbuang; sisa = latar yang tertinggal.
+
+gambar          Foto IoU  hilang    sisa    TTD/stempel IoU  hilang    sisa     ms  mode yang tepat
+cangkir            0.995    0.0%    0.1%              0.995    0.0%    0.1%    240  Foto
+buah               0.991    0.0%    0.2%              0.991    0.0%    0.2%    197  Foto
+tanda-tangan       0.794    0.0%    0.7%              1.000    0.0%    0.0%    160  TTD/stempel
+stempel            0.312    0.0%   32.8%              1.000    0.0%    0.0%    165  TTD/stempel
+produk-putih       0.898    0.0%    2.4%              0.000  100.0%    0.0%    154  Foto
+
+  cangkir        objek di atas latar bertekstur
+  buah           objek di atas latar gelap bertekstur
+  tanda-tangan   tanda tangan difoto di atas kertas
+  stempel        stempel di atas kertas
+  produk-putih   benda putih di atas latar putih (kasus yang bisa salah)
+
+Mode tidak bisa ditebak dari gambar: stempel di kertas dan benda putih di latar putih sama-sama bertepi
+polos dan terang. Mode yang salah terlihat di tabel (benda putih di mode TTD/stempel), dan Ctrl+Z membatalkannya.
+
+HASIL: LULUS

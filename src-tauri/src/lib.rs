@@ -36,6 +36,7 @@
 )]
 
 pub mod annots;
+pub mod background;
 pub mod commands;
 pub mod compare;
 pub mod folders;
@@ -303,6 +304,8 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
             ocr::ocr_apply,
             ocr::ocr_progress,
             ocr::ocr_cancel,
+            background::background_available,
+            background::annot_remove_background,
             save_commands::export_document,
             save_commands::export_history,
             save_commands::autosave_drafts,

@@ -271,4 +271,27 @@ agreement(OUT / "Draf Perjanjian v2.pdf", "v2")
 report(OUT / "Laporan Kegiatan Semester.pdf", "Laporan Kegiatan", 9)
 report(OUT / "Catatan Rapat Organisasi.pdf", "Catatan Rapat", 5)
 report(OUT / "Proposal Penelitian.pdf", "Proposal Penelitian", 14)
+
+
+def stamp_photo(path):
+    """A stamp photographed on paper, for the "Hapus Latar" scenes."""
+    from PIL import Image, ImageDraw
+
+    w, h = 360, 360
+    img = Image.new("RGB", (w, h), (246, 243, 236))
+    px = img.load()
+    for y in range(h):
+        for x in range(w):
+            f = 1 - 0.2 * ((x / w) ** 2 + (y / h) * 0.5)
+            r, g, b = px[x, y]
+            px[x, y] = (int(r * f), int(g * f), int(b * f))
+    d = ImageDraw.Draw(img)
+    ink = (170, 30, 40)
+    d.ellipse((40, 40, 320, 320), outline=ink, width=12)
+    d.ellipse((90, 90, 270, 270), outline=ink, width=6)
+    d.rectangle((105, 160, 255, 200), fill=ink)
+    img.save(path)
+
+
+stamp_photo(OUT / "stempel.png")
 print(f"sampel ditulis ke {OUT}")

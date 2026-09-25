@@ -362,6 +362,28 @@ const SCENES = {
     },
   },
   // Phase 7 ------------------------------------------------------------------
+  bgpanel: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await page.getByRole("tab", { name: "Edit", exact: true }).click();
+      await izul(page, (z) => z.goToPage(2));
+      await settle(page);
+      await izul(page, (z) => z.select([208]));
+      await page.getByText("Hapus latar", { exact: true }).waitFor();
+    },
+  },
+  bgdone: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await page.getByRole("tab", { name: "Edit", exact: true }).click();
+      await izul(page, (z) => z.goToPage(2));
+      await settle(page);
+      await izul(page, (z) => z.select([208]));
+      await page.getByRole("button", { name: "Tanda tangan / stempel", exact: true }).click();
+      await page.getByText(/Latar dihapus/).waitFor();
+      await settle(page, 800);
+    },
+  },
   ocrdialog: {
     session: [`${docsFolder}\\Data Pegawai.pdf`],
     async steps(page) {
@@ -463,6 +485,19 @@ async function newPage({ width, height, theme, scale, scene }) {
   }, data);
   await page.exposeFunction("__harnessBackend", async (cmd, a) => {
     const path = docById.get(a.doc);
+    if (cmd === "annot_remove_background") {
+      // The picture comes back as image 2, which the route below makes with
+      // the real model; the object is the sample's own, pointed at it.
+      const { header } = await ask({ op: "annots", path, page: 2 });
+      const obj = structuredClone(header.objects.find((o) => o.id === a.id));
+      obj.payload.Image.image = 2;
+      page.__backgroundDone = a.id;
+      return {
+        edit: { objects: [obj], can_undo: true, can_redo: false, dirty: true, map_revision: 0 },
+        device: "CPU",
+        paper: a.kind === "OnPaper",
+      };
+    }
     if (cmd === "document_outline") return (await ask({ op: "outline", path })).header.outline;
     if (cmd === "page_text") return (await ask({ op: "text", path, page: a.page, rotation: a.rotation ?? 0 })).header;
     const redactable = String(path).endsWith("Data Pegawai.pdf");
@@ -473,7 +508,12 @@ async function newPage({ width, height, theme, scale, scene }) {
     const annotated = (a.doc === 1 && a.page === 2) || (redactable && a.page === 0);
     if (!annotated) return [];
     const { header } = await ask({ op: "annots", path, page: a.page });
-    return cmd === "annot_list" ? header.objects : header.lists;
+    if (cmd === "annot_list") return header.objects;
+    // After "Hapus Latar", the picture's display list draws image 2.
+    const done = page.__backgroundDone;
+    return done === undefined
+      ? header.lists
+      : header.lists.map((l) => (l.id === done ? JSON.parse(JSON.stringify(l).replace(/"image":1\b/g, '"image":2')) : l));
   });
   await page.route("http://izul.localhost/**", async (route) => {
     page.__lastTile = Date.now();
@@ -483,6 +523,13 @@ async function newPage({ width, height, theme, scale, scene }) {
       "Access-Control-Expose-Headers": "X-Izul-Width, X-Izul-Height, X-Izul-Stride",
     };
     const [, kind, doc, pg, rot, scale, col, row, tier] = url.pathname.split("/");
+    if (kind === "image") {
+      // `/image/{doc}/{image}`: 1 is the sample stamp photo, 2 the model's
+      // result on it (the "bgdone" scene).
+      const stampPath = join(SAMPLES, "stempel.png");
+      const body = pg === "2" ? (await ask({ op: "background", path: stampPath })).body : readFileSync(stampPath);
+      return route.fulfill({ status: 200, headers: { ...cors, "Content-Type": "image/png" }, body });
+    }
     if (kind !== "tile") return route.fulfill({ status: 404, headers: cors });
     const { header, body } = await ask({
       op: "tile",

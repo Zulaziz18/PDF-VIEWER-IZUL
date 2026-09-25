@@ -11,8 +11,15 @@ license.workspace = true
 [dependencies]
 izul-pdf.workspace = true
 thiserror.workspace = true
+serde.workspace = true
 ocrs = { version = "=0.13.1", default-features = false, features = ["rten"] }
 rten = { version = "0.26", default-features = false, features = ["rten_format"] }
+# Background removal (Phase 7): ONNX Runtime, loaded at run time from the
+# library shipped beside the application (`load-dynamic`) — never downloaded
+# by the build — with DirectML on Windows. See vendor/onnx/fetch.sh.
+ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "ndarray", "load-dynamic", "directml", "api-24"] }
+ndarray = "0.17"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 
 [lints]
 workspace = true
