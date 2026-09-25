@@ -183,6 +183,7 @@ fn job(pages: Vec<u32>, force: bool, models: PathBuf, cancel: bool) -> Rewrite {
             progress: None,
             cancel: Arc::new(AtomicBool::new(cancel)),
         }),
+        text: None,
     }
 }
 

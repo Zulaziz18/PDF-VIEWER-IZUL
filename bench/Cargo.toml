@@ -57,6 +57,10 @@ path = "src/bg_probe.rs"
 name = "form-probe"
 path = "src/form_probe.rs"
 
+[[bin]]
+name = "textedit-probe"
+path = "src/textedit_probe.rs"
+
 [dependencies]
 izul-ocr.workspace = true
 izul-pdf.workspace = true

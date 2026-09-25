@@ -66,6 +66,15 @@ pub struct Font {
     pub ascent: f64,
     pub descent: f64,
     pub vertical: bool,
+    /// Whether the font's program is in the file (for Type 3, its glyph
+    /// procedures always are). Only an embedded font draws the same glyphs
+    /// in every reader, so only one may take new text (Phase 7).
+    pub embedded: bool,
+    /// Code to the text it stands for, from `/ToUnicode` (§9.10.3). The
+    /// only honest map from a character to a code: PDFium's own encoder
+    /// (`FPDFText_SetText`) was measured writing codes a subset font does not
+    /// have, and reading them back as the characters it was asked for.
+    pub unicode: BTreeMap<u32, String>,
 }
 
 /// One code in a shown string.
@@ -164,6 +173,128 @@ impl Font {
     pub fn is_word_space(&self, g: &Glyph) -> bool {
         g.len == 1 && g.code == 32
     }
+
+    /// The bytes that show `ch` in this font, and their code: a code
+    /// `/ToUnicode` says stands for `ch`, that the font's codespace can
+    /// write, and — unless `ch` is blank — with a width, since a subset
+    /// font's missing glyph is a code with none. `None` when there is no such
+    /// code: the font cannot draw `ch`, and nothing is guessed.
+    pub fn encode(&self, ch: char) -> Option<(Vec<u8>, u32)> {
+        let want = ch.to_string();
+        self.unicode
+            .iter()
+            .filter(|(_, u)| **u == want)
+            .filter_map(|(&code, _)| self.code_bytes(code).map(|b| (b, code)))
+            .find(|(_, code)| ch.is_whitespace() || self.width(*code) > 0.0)
+    }
+
+    /// `code` as the bytes of a string, when the codespace has room for it.
+    fn code_bytes(&self, code: u32) -> Option<Vec<u8>> {
+        match &self.codes {
+            CodeSpace::OneByte => u8::try_from(code).ok().map(|b| vec![b]),
+            CodeSpace::Ranges(ranges) => (1..=4usize).find_map(|n| {
+                if n < 4 && code >> (8 * n) != 0 {
+                    return None;
+                }
+                let bytes: Vec<u8> = (0..n).rev().map(|k| (code >> (8 * k)) as u8).collect();
+                ranges
+                    .iter()
+                    .any(|(lo, hi)| {
+                        lo.len() == n
+                            && bytes
+                                .iter()
+                                .zip(lo.iter().zip(hi))
+                                .all(|(b, (l, h))| (*l..=*h).contains(b))
+                    })
+                    .then_some(bytes)
+            }),
+        }
+    }
+}
+
+/// UTF-16BE, as `/ToUnicode` destinations are written.
+fn utf16be(b: &[u8]) -> String {
+    let units: Vec<u16> = b
+        .chunks(2)
+        .map(|c| match c {
+            [h, l] => u16::from_be_bytes([*h, *l]),
+            [h] => u16::from(*h),
+            _ => 0,
+        })
+        .collect();
+    String::from_utf16_lossy(&units)
+}
+
+/// Reads a `/ToUnicode` CMap: `bfchar` and `bfrange`, both forms. Codes it
+/// does not mention stand for nothing, which is what an editor needs to know.
+pub fn parse_to_unicode(data: &[u8]) -> BTreeMap<u32, String> {
+    let mut lx = Lexer::new(data, 0);
+    let mut toks: Vec<Token> = Vec::new();
+    loop {
+        match lx.next_token() {
+            Ok(Some(t)) => toks.push(t),
+            Ok(None) => break,
+            Err(_) => lx.pos += 1,
+        }
+    }
+    let mut map = BTreeMap::new();
+    let mut i = 0;
+    while let Some(t) = toks.get(i) {
+        match t {
+            Token::Keyword(k) if k == b"beginbfchar" => {
+                i += 1;
+                while let (Some(Token::Str(c)), Some(Token::Str(u))) =
+                    (toks.get(i), toks.get(i + 1))
+                {
+                    map.insert(code_of(c), utf16be(u));
+                    i += 2;
+                }
+            }
+            Token::Keyword(k) if k == b"beginbfrange" => {
+                i += 1;
+                while let (Some(Token::Str(lo)), Some(Token::Str(hi))) =
+                    (toks.get(i), toks.get(i + 1))
+                {
+                    let (lo, hi) = (code_of(lo), code_of(hi));
+                    // A hostile range is not a reason to allocate the world.
+                    let hi = hi.min(lo.saturating_add(0xffff));
+                    match toks.get(i + 2) {
+                        Some(Token::Str(dst)) => {
+                            let mut units: Vec<u16> = dst
+                                .chunks(2)
+                                .map(|c| match c {
+                                    [h, l] => u16::from_be_bytes([*h, *l]),
+                                    _ => 0,
+                                })
+                                .collect();
+                            for code in lo..=hi {
+                                map.insert(code, String::from_utf16_lossy(&units));
+                                if let Some(last) = units.last_mut() {
+                                    *last = last.wrapping_add(1);
+                                }
+                            }
+                            i += 3;
+                        }
+                        Some(Token::ArrayOpen) => {
+                            let mut k = i + 3;
+                            let mut code = lo;
+                            while let Some(Token::Str(dst)) = toks.get(k) {
+                                if code <= hi {
+                                    map.insert(code, utf16be(dst));
+                                }
+                                code = code.saturating_add(1);
+                                k += 1;
+                            }
+                            i = k + 1;
+                        }
+                        _ => i += 2,
+                    }
+                }
+            }
+            _ => i += 1,
+        }
+    }
+    map
 }
 
 fn match_code(ranges: &[(Vec<u8>, Vec<u8>)], s: &[u8]) -> usize {
@@ -203,11 +334,21 @@ pub fn load(pdf: &Pdf<'_>, dict: &Dict) -> Result<Font> {
         .name(b"BaseFont")
         .map(|n| String::from_utf8_lossy(n).into_owned())
         .unwrap_or_else(|| String::from_utf8_lossy(&subtype).into_owned());
-    match subtype.as_slice() {
-        b"Type0" => load_type0(pdf, dict, name),
-        b"Type3" => load_type3(pdf, dict, name),
-        _ => load_simple(pdf, dict, name),
+    let mut font = match subtype.as_slice() {
+        b"Type0" => load_type0(pdf, dict, name)?,
+        b"Type3" => load_type3(pdf, dict, name)?,
+        _ => load_simple(pdf, dict, name)?,
+    };
+    if let Some(tu) = dict.get(b"ToUnicode") {
+        if let Some(stream) = pdf.stream_of(tu)? {
+            // A map that cannot be decoded is a font nothing can be written
+            // in, not a font that cannot be read.
+            if let Ok(data) = decode_plain(Some(pdf), &stream.dict, &stream.data) {
+                font.unicode = parse_to_unicode(&data);
+            }
+        }
     }
+    Ok(font)
 }
 
 fn descriptor_metrics(pdf: &Pdf<'_>, desc: Option<&Dict>) -> Result<Option<(f64, f64)>> {
@@ -339,6 +480,8 @@ fn load_simple(pdf: &Pdf<'_>, dict: &Dict, name: String) -> Result<Font> {
         ascent,
         descent,
         vertical: false,
+        embedded,
+        unicode: BTreeMap::new(),
     })
 }
 
@@ -389,6 +532,8 @@ fn load_type3(pdf: &Pdf<'_>, dict: &Dict, name: String) -> Result<Font> {
         ascent,
         descent,
         vertical: false,
+        embedded: true,
+        unicode: BTreeMap::new(),
     })
 }
 
@@ -524,6 +669,9 @@ fn load_type0(pdf: &Pdf<'_>, dict: &Dict, name: String) -> Result<Font> {
         None => None,
     };
     let (ascent, descent) = descriptor_metrics(pdf, desc.as_ref())?.unwrap_or((880.0, -120.0));
+    let embedded = desc.as_ref().is_some_and(|d| {
+        d.contains(b"FontFile") || d.contains(b"FontFile2") || d.contains(b"FontFile3")
+    });
     Ok(Font {
         name,
         codes,
@@ -538,6 +686,8 @@ fn load_type0(pdf: &Pdf<'_>, dict: &Dict, name: String) -> Result<Font> {
         ascent,
         descent,
         vertical,
+        embedded,
+        unicode: BTreeMap::new(),
     })
 }
 
@@ -782,7 +932,21 @@ mod tests {
             ascent: 1.0,
             descent: 0.0,
             vertical: false,
+            embedded: true,
+            unicode: [
+                (0x8141, "x".to_string()),
+                (0x41, "A".to_string()),
+                (0x7f, "y".to_string()),
+            ]
+            .into_iter()
+            .collect(),
         };
+        // Codes are written in the length their codespace range gives
+        // them; a code no range can write is no code at all.
+        assert_eq!(font.encode('x'), Some((vec![0x81, 0x41], 0x8141)));
+        assert_eq!(font.encode('A'), Some((vec![0x41], 0x41)));
+        assert_eq!(font.encode('y'), Some((vec![0x7f], 0x7f)));
+        assert_eq!(font.encode('z'), None);
         let g = font.split(&[0x41, 0x81, 0x40, 0x81, 0x41]);
         let lens: Vec<usize> = g.iter().map(|g| g.len).collect();
         assert_eq!(lens, vec![1, 2, 2]);

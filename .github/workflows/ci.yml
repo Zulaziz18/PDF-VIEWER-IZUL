@@ -127,6 +127,13 @@ jobs:
         if: runner.os == 'Linux'
         run: python3 tools/form-proof/run.py --out form-proof.txt
 
+      # Phase 7: text replaced by the worker's routine reads as replaced in
+      # poppler, MuPDF and pypdf, no pixel outside the replaced span changes,
+      # and what cannot be done exactly is refused with its reason.
+      - name: Text editing proof
+        if: runner.os == 'Linux'
+        run: python3 tools/textedit-proof/run.py --out textedit-proof.txt
+
       # The Windows runtime as the application loads it: onnxruntime.dll and
       # DirectML.dll beside the executable (src-tauri/build.rs put them in
       # target/debug). Prints where the model ran — DirectML on the runner's

@@ -459,6 +459,31 @@ const SCENES = {
       await page.getByText(/Model OCR belum terpasang/).waitFor();
     },
   },
+  textedit: {
+    session: [`${docsFolder}\\Panduan Studi 2026.pdf`],
+    async steps(page) {
+      await page.getByRole("tab", { name: "Edit", exact: true }).click();
+      await settle(page);
+      const found = await izul(page, (z) => z.selectText("PANDUAN"));
+      if (!found) throw new Error("teks contoh tidak ada di lapisan teks");
+      await page.getByRole("button", { name: "Edit Teks", exact: true }).click();
+      await page.getByRole("dialog").waitFor();
+      await page.getByRole("textbox", { name: "Ganti menjadi" }).fill("PEDOMAN");
+    },
+  },
+  texteditrefused: {
+    session: [`${docsFolder}\\Panduan Studi 2026.pdf`],
+    async steps(page) {
+      await page.getByRole("tab", { name: "Edit", exact: true }).click();
+      await settle(page);
+      await izul(page, (z) => z.selectText("PANDUAN"));
+      await page.getByRole("button", { name: "Edit Teks", exact: true }).click();
+      await page.getByRole("textbox", { name: "Ganti menjadi" }).fill("PEDOMAN");
+      await page.getByText("Timpa berkas ini", { exact: true }).click();
+      await page.getByRole("button", { name: "Ganti & Simpan", exact: true }).click();
+      await page.getByRole("alert").filter({ hasText: "tidak tertanam" }).waitFor();
+    },
+  },
   formbanner: {
     session: [`${USER}\\Downloads\\Formulir Pendaftaran.pdf`],
     async steps(page) {
@@ -574,6 +599,14 @@ async function newPage({ width, height, theme, scale, scene }) {
       };
     }
     if (cmd === "form_fields") return formFieldsOf(path);
+    if (cmd === "text_replace") {
+      // The real routine on the sample: its Helvetica is not embedded, so
+      // this is the refusal a user would get, in its own words.
+      const { header } = await ask({ op: "textedit", path, page: a.page, rect: a.rect, text: a.text });
+      // `ok` is the harness transport's own field; the answer is `accepted`.
+      if (!header.accepted) throw `Teks tidak diganti, berkas tidak diubah: ${header.refused}`;
+      return { path, bytes: 1, annotations: 0, restructured: null, redaction: null, text: { before: header.before, glyphs: header.glyphs } };
+    }
     if (cmd === "form_set") {
       // The real form-fill routine on the harness's copy of the document, so
       // the page shows what PDFium makes of the value.

@@ -374,3 +374,136 @@ fn the_thumbnail_goes_with_the_page_it_pictured() {
     assert!(!text.contains("THUMBDATA"));
     assert!(!text.contains("EDITABLE SECRET COPY"));
 }
+
+// ---------------------------------------------------------------------------
+// Text replacement (Phase 7).
+
+/// A monospaced embedded font, every glyph 600/1000 em, codes 32..126, with a
+/// `/ToUnicode` that names `unicode` (a bfrange body).
+fn mono_file(content: &str, unicode: &str) -> Vec<u8> {
+    let widths = vec!["600"; 95].join(" ");
+    let font = format!(
+        "<</Type/Font/Subtype/TrueType/BaseFont/ABCDEF+Mono/FirstChar 32/LastChar 126/Widths[{widths}]/FontDescriptor 6 0 R/ToUnicode 7 0 R>>"
+    );
+    let cmap = format!(
+        "/CIDInit /ProcSet findresource begin 12 dict begin begincmap\n1 begincodespacerange <00> <FF> endcodespacerange\n{unicode}\nendcmap end end"
+    );
+    let cmap_obj = format!("<</Length {}>>\nstream\n{cmap}\nendstream", cmap.len() + 1);
+    let page = "<</Type/Page/Parent 2 0 R/MediaBox[0 0 600 800]/Contents 4 0 R/Resources<</Font<</F1 5 0 R>>>>>>";
+    let stream = format!(
+        "<</Length {}>>\nstream\n{content}\nendstream",
+        content.len() + 1
+    );
+    build(&[
+        b"<</Type/Catalog/Pages 2 0 R>>",
+        b"<</Type/Pages/Kids[3 0 R]/Count 1>>",
+        page.as_bytes(),
+        stream.as_bytes(),
+        font.as_bytes(),
+        b"<</Type/FontDescriptor/FontName/ABCDEF+Mono/Ascent 800/Descent -200/FontFile2 1 0 R>>",
+        cmap_obj.as_bytes(),
+    ])
+}
+
+const ASCII: &str = "1 beginbfrange <20> <7E> <0020> endbfrange";
+
+/// "Nama Budi ok" at 10 pt from x=100, each glyph 6 pt: "Budi" is 130..154.
+const LINE: &str = "BT /F1 10 Tf 100 700 Td (Nama Budi ok) Tj ET";
+const BUDI: Rect = Rect {
+    x0: 129.0,
+    y0: 695.0,
+    x1: 155.0,
+    y1: 712.0,
+};
+
+/// The new text goes where the old began, and the pen comes back by its
+/// width, so " ok" is where it was: 9 glyphs written (54 pt, +5400) and four
+/// taken out (-4 × 600) leave one number, 3000, between them.
+#[test]
+fn replaced_text_leaves_the_rest_of_the_line_in_place() {
+    let src = mono_file(LINE, ASCII);
+    let (out, glyphs) = crate::replace_text(&src, 0, BUDI, "Rina Sari").unwrap();
+    assert_eq!(glyphs, 4);
+    let c = page_content(&out);
+    assert!(
+        c.contains(&format!(
+            "{} {} 3000 {}",
+            hex("Nama "),
+            hex("Rina Sari"),
+            hex(" ok")
+        )),
+        "{c}"
+    );
+    assert!(!c.contains(&hex("Budi")), "{c}");
+}
+
+#[test]
+fn a_font_that_is_not_embedded_is_refused() {
+    let src = file_with(LINE, "", &[]);
+    let e = crate::replace_text(&src, 0, BUDI, "Rina").unwrap_err();
+    assert!(e.to_string().contains("tidak tertanam"), "{e}");
+}
+
+#[test]
+fn a_character_the_font_does_not_name_is_refused_by_name() {
+    let src = mono_file(LINE, ASCII);
+    let e = crate::replace_text(&src, 0, BUDI, "Rinä").unwrap_err();
+    assert!(e.to_string().contains("\"ä\""), "{e}");
+}
+
+/// A subset without a space: a quarter-em gap stands in, and counts in the
+/// width taken back. "A B" is 6 + 2.5 + 6 = 14.5 pt: +1450, then -2400.
+#[test]
+fn a_space_the_font_lacks_becomes_a_gap() {
+    let src = mono_file(
+        LINE,
+        "2 beginbfrange <21> <7E> <0021> <20> <20> <0020> endbfrange",
+    );
+    // With a space named, the space is a glyph.
+    let (out, _) = crate::replace_text(&src, 0, BUDI, "A B").unwrap();
+    assert!(page_content(&out).contains(&hex("A B")));
+    let src = mono_file(LINE, "1 beginbfrange <21> <7E> <0021> endbfrange");
+    let (out, _) = crate::replace_text(&src, 0, BUDI, "A B").unwrap();
+    let c = page_content(&out);
+    assert!(
+        c.contains(&format!("{} -250 {} -950", hex("A"), hex("B"))),
+        "{c}"
+    );
+}
+
+#[test]
+fn nothing_in_the_area_is_refused() {
+    let src = mono_file(LINE, ASCII);
+    let e = crate::replace_text(&src, 0, Rect::new(300.0, 100.0, 320.0, 120.0), "x").unwrap_err();
+    assert!(e.to_string().contains("tidak ada teks"), "{e}");
+}
+
+#[test]
+fn two_lines_are_refused() {
+    let src = mono_file(
+        "BT /F1 10 Tf 100 700 Td (Nama Budi) Tj 0 -14 Td (Kota Bogor) Tj ET",
+        ASCII,
+    );
+    let e = crate::replace_text(&src, 0, Rect::new(99.0, 680.0, 160.0, 712.0), "x").unwrap_err();
+    assert!(e.to_string().contains("satu baris"), "{e}");
+}
+
+#[test]
+fn to_unicode_ranges_and_arrays_are_read() {
+    let map = crate::font::parse_to_unicode(
+        b"2 beginbfrange <01> <03> [<0041> <0042> <0043>] <10> <12> <0061> endbfrange\n1 beginbfchar <04> <00E9> endbfchar",
+    );
+    let got: Vec<(u32, &str)> = map.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    assert_eq!(
+        got,
+        vec![
+            (1, "A"),
+            (2, "B"),
+            (3, "C"),
+            (4, "é"),
+            (0x10, "a"),
+            (0x11, "b"),
+            (0x12, "c")
+        ]
+    );
+}

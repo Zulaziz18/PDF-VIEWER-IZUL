@@ -141,6 +141,29 @@ pub struct OcrSummary {
 pub struct Rewrite {
     pub redaction: Option<Redaction>,
     pub ocr: Option<OcrJob>,
+    pub text: Option<TextJob>,
+}
+
+/// One text replacement (Phase 7): on a page of the file as it is on disk,
+/// the text in `rect` (that page's display space) becomes `text`.
+#[derive(Debug, Clone)]
+pub struct TextJob {
+    pub page: u32,
+    pub rect: izul_model::geom::PdfRectF,
+    pub text: String,
+}
+
+/// What a text replacement did, for the user.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct TextSummary {
+    pub before: String,
+    pub glyphs: u32,
+}
+
+/// Why a replacement was refused, in the words the worker gave.
+fn edit_refused(error: &str) -> String {
+    let detail = error.strip_prefix("textedit.failed: ").unwrap_or(error);
+    format!("Teks tidak diganti, berkas tidak diubah: {detail}")
 }
 
 /// The message a cancelled OCR job fails the save with.
@@ -195,8 +218,10 @@ pub async fn build_current(
     u32,
     Option<Vec<RedactedPageWire>>,
     Option<OcrSummary>,
+    Option<TextSummary>,
 )> {
     let redaction = rewrite.and_then(|r| r.redaction.as_ref());
+    let text = rewrite.and_then(|r| r.text.as_ref());
     let ocr = rewrite.and_then(|r| r.ocr.as_ref());
     let worker = worker_of(pool, doc).await?;
     annots.ensure_all_metrics(pool, doc).await?;
@@ -242,6 +267,28 @@ pub async fn build_current(
         (pages, sources)
     });
     let built = async {
+        // First, on the file's own pages, before anything moves them: the
+        // selection was made on the page as the file has it.
+        let replaced = match text {
+            Some(job) => match ask(
+                &worker,
+                Request::WorkReplaceText {
+                    doc: DocId(doc),
+                    page: job.page,
+                    rect: job.rect,
+                    text: job.text.clone(),
+                },
+            )
+            .await
+            {
+                Ok(Response::TextReplaced { before, glyphs, .. }) => {
+                    Some(TextSummary { before, glyphs })
+                }
+                Ok(other) => return Err(format!("balasan tak terduga: {other:?}")),
+                Err(e) => return Err(edit_refused(&e)),
+            },
+            None => None,
+        };
         if let Some((pages, sources)) = arrange {
             expect_work(
                 &worker,
@@ -312,11 +359,11 @@ pub async fn build_current(
             other => return Err(format!("balasan tak terduga: {other:?}")),
         };
         let bytes = expect_blob(&worker, Request::WorkSave { doc: DocId(doc) }).await?;
-        Ok((bytes, redacted, frames, read))
+        Ok((bytes, redacted, frames, read, replaced))
     }
     .await;
     let _ = ask(&worker, Request::WorkClose { doc: DocId(doc) }).await;
-    let (pdfium, redacted, frames, read) = built?;
+    let (pdfium, redacted, frames, read, replaced) = built?;
     if let Some((obj, _)) = objects
         .iter()
         .find(|(o, _)| o.page as usize >= frames.len())
@@ -341,7 +388,7 @@ pub async fn build_current(
         }
         other => other.to_string(),
     })?;
-    Ok((bytes, pages, objects.len() as u32, redacted, read))
+    Ok((bytes, pages, objects.len() as u32, redacted, read, replaced))
 }
 
 async fn run_ocr(worker: &Worker, doc: u64, job: &OcrJob) -> Out<OcrSummary> {
@@ -451,6 +498,8 @@ pub struct SaveReport {
     pub redaction: Option<RedactionSummary>,
     /// The save ran OCR, and this is what it read.
     pub ocr: Option<OcrSummary>,
+    /// The save replaced text, and this is what was there.
+    pub text: Option<TextSummary>,
 }
 
 /// Saves `doc` to `target` (its own file when `None`).
@@ -472,7 +521,7 @@ pub async fn save(
     let mapped = annots.page_map(doc).map(|m| m.len() as u32);
     // A map changes how many pages the result has; verify against that.
     let page_count = mapped.unwrap_or(page_count);
-    let (bytes, pages, count, redacted, read) =
+    let (bytes, pages, count, redacted, read, replaced) =
         build_current(pool, annots, doc, source, rewrite).await?;
     let worker = worker_of(pool, doc).await?;
     let pending = write_verified(
@@ -554,6 +603,7 @@ pub async fn save(
         restructured,
         redaction: redacted.as_deref().map(RedactionSummary::of),
         ocr: read,
+        text: replaced,
     })
 }
 
@@ -566,7 +616,7 @@ async fn current_as_temp(
     source: &str,
     scratch: &Path,
 ) -> Out<PendingWrite> {
-    let (bytes, _, _, _, _) = build_current(pool, annots, doc, source, None).await?;
+    let (bytes, _, _, _, _, _) = build_current(pool, annots, doc, source, None).await?;
     std::fs::create_dir_all(scratch).map_err(|e| e.to_string())?;
     PendingWrite::write(&scratch.join(format!("ekspor-{doc}.pdf")), &bytes)
         .map_err(|e| e.to_string())

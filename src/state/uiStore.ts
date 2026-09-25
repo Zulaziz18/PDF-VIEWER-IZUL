@@ -9,6 +9,15 @@
  */
 
 import { create } from "zustand";
+import type { PdfRect } from "@/annots/types";
+
+/** Text selected on a page, as the "Edit Teks" dialog opens with it. */
+export interface TextSelection {
+  readonly page: number;
+  /** Display space: the union of the selection's boxes. */
+  readonly rect: PdfRect;
+  readonly text: string;
+}
 
 /** The ribbon tabs that exist. A tab joins this list in the phase that makes
  * every button on it work (SPEC 0: no dead controls). */
@@ -69,6 +78,8 @@ export interface UiState {
   redacting: boolean;
   /** The "Kenali Teks (OCR)" dialog is open (Phase 7). */
   ocring: boolean;
+  /** The "Edit Teks" dialog, with the text it was opened on (Phase 7). */
+  editingText: TextSelection | null;
   setRibbon(tab: RibbonTab): void;
   armMarkup(kind: MarkupKind | null): void;
   setAboutOpen(open: boolean): void;
@@ -83,6 +94,7 @@ export interface UiState {
   setExporting(kind: ExportKind | null): void;
   setRedacting(open: boolean): void;
   setOcring(open: boolean): void;
+  setEditingText(sel: TextSelection | null): void;
 }
 
 export const useUi = create<UiState>((set, get) => ({
@@ -103,6 +115,7 @@ export const useUi = create<UiState>((set, get) => ({
   exporting: null,
   redacting: false,
   ocring: false,
+  editingText: null,
   ask(spec) {
     const previous = get().prompt;
     if (previous) previous.resolve(previous.spec.cancelId);
@@ -127,5 +140,8 @@ export const useUi = create<UiState>((set, get) => ({
   },
   setOcring(ocring) {
     set({ ocring });
+  },
+  setEditingText(editingText) {
+    set({ editingText });
   },
 }));

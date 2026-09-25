@@ -53,6 +53,9 @@ pub enum Failure {
     Ocr(Option<DocId>, String),
     /// Background removal could not run; the detail is for the user.
     Ai(String),
+    /// A text replacement refused or not verified; the detail is for the
+    /// user as it is.
+    Edit(Option<DocId>, String),
 }
 
 /// The largest picture accepted for background removal: 64 MB of encoded
@@ -464,6 +467,28 @@ impl Workbench {
                     doc,
                     changed,
                     pages,
+                })
+            }
+            Request::WorkReplaceText {
+                doc,
+                page,
+                rect,
+                text,
+            } => {
+                let (copy, done) =
+                    izul_pdf::textedit::replace_text_document(self.work(doc)?, page, rect, &text)
+                        .map_err(|e| match e {
+                        izul_pdf::redaction::RedactFailure::Pdf(e) => Failure::Pdf(Some(doc), e),
+                        izul_pdf::redaction::RedactFailure::Refused(d) => {
+                            Failure::Edit(Some(doc), d)
+                        }
+                    })?;
+                copy.set_strip_izul(false);
+                self.work.insert(doc, copy);
+                Ok(Response::TextReplaced {
+                    doc,
+                    before: done.before,
+                    glyphs: done.glyphs,
                 })
             }
             Request::WorkFrames { doc } => {

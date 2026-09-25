@@ -37,6 +37,7 @@ import type { Layout } from "@/state/panels";
 import { toggleCompare } from "./compare";
 import { markText, openSearchForMarking, toggleAreaTool } from "./redaction";
 import { insertImage, markupSelection, pickAndOpen } from "./actions";
+import { startTextEdit } from "./textEdit";
 import { exportFlat, requestCloseAll, requestCloseTab, saveDocument } from "./fileActions";
 import {
   deletePages,
@@ -442,6 +443,8 @@ function EditPanel(): JSX.Element {
       <ShapesButton tool={tool} />
       <RibbonButton icon="ink" tone="green" label={t("tool.ink")} {...toolProps("Ink", tool)} />
       <RibbonButton icon="stamp" tone="orange" label={t("tool.stamp")} {...toolProps("Stamp", tool)} />
+      <RibbonDivider />
+      <RibbonButton icon="editText" tone="blue" label={t("textedit.button")} hint={t("textedit.hint")} onClick={startTextEdit} />
       <RibbonDivider />
       <UndoGroup canUndo={canUndo} canRedo={canRedo} selection={selection} />
     </>

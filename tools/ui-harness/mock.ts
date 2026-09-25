@@ -212,6 +212,7 @@ export function installMocks(data: HarnessData): void {
         case "background_available":
           return true;
         case "annot_remove_background":
+        case "text_replace":
         case "form_set":
           return window.__harnessBackend ? window.__harnessBackend(cmd, args) : null;
         case "form_fields":

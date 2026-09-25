@@ -109,6 +109,7 @@ pub async fn redact_apply(
     let rewrite = saving::Rewrite {
         redaction: Some(redaction),
         ocr: None,
+        text: None,
     };
     let report = save_with(&state, doc, target, Some(&rewrite)).await?;
     let saved = PathBuf::from(&report.path);

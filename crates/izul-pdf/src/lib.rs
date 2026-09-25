@@ -46,6 +46,7 @@ pub mod sys;
 #[cfg(test)]
 pub mod test_support;
 pub mod text;
+pub mod textedit;
 
 pub use arrange::{ArrangeSource, Arranged};
 pub use engine::{Document, Engine, PageGeometry};

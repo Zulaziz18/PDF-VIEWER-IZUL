@@ -50,6 +50,7 @@ pub mod render;
 pub mod save_commands;
 pub mod saving;
 pub mod supervisor;
+pub mod textedit;
 pub mod textsearch;
 pub mod thumbs;
 pub mod version;
@@ -309,6 +310,7 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
             background::annot_remove_background,
             forms::form_fields,
             forms::form_set,
+            textedit::text_replace,
             save_commands::export_document,
             save_commands::export_history,
             save_commands::autosave_drafts,

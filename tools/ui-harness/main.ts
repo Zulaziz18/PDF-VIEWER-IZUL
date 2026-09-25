@@ -19,6 +19,8 @@ declare global {
       layout(layout: "single" | "columns" | "rows" | "grid"): void;
       compare(on: boolean): void;
       pages(selection: number[]): void;
+      /** Selects the first `needle` in the text layer, as a drag would. */
+      selectText(needle: string): boolean;
     };
   }
 }
@@ -52,5 +54,20 @@ window.__izul = {
   },
   pages(selection) {
     useDocument.getState().setPageSelection(selection);
+  },
+  selectText(needle) {
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      const at = n.textContent?.indexOf(needle) ?? -1;
+      if (at < 0 || !n.parentElement?.closest(".izul-text-page")) continue;
+      const range = document.createRange();
+      range.setStart(n, at);
+      range.setEnd(n, at + needle.length);
+      const sel = document.getSelection();
+      sel?.removeAllRanges();
+      sel?.addRange(range);
+      return true;
+    }
+    return false;
   },
 };

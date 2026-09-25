@@ -52,6 +52,11 @@ struct Req {
     /// What `formfill` puts into the form.
     #[serde(default)]
     values: Vec<(String, izul_model::FormValue)>,
+    /// `textedit`: the area (display space) and what it becomes.
+    #[serde(default)]
+    rect: Option<PdfRectF>,
+    #[serde(default)]
+    text: String,
 }
 
 /// Phase 6's sample: on "Data Pegawai", the runs of digits and dashes long
@@ -343,6 +348,25 @@ impl Backend {
                     })
                     .collect();
                 Ok((json!({ "objects": objects, "lists": lists }), Vec::new()))
+            }
+            "textedit" => {
+                let rect = req.rect.ok_or("tanpa rect")?;
+                let doc = self.doc(&req.path)?;
+                Ok((
+                    match izul_pdf::textedit::replace_text_document(doc, req.page, rect, &req.text)
+                    {
+                        Ok((_, done)) => {
+                            json!({ "accepted": true, "before": done.before, "glyphs": done.glyphs })
+                        }
+                        Err(izul_pdf::redaction::RedactFailure::Refused(why)) => {
+                            json!({ "accepted": false, "refused": why })
+                        }
+                        Err(izul_pdf::redaction::RedactFailure::Pdf(e)) => {
+                            return Err(e.to_string())
+                        }
+                    },
+                    Vec::new(),
+                ))
             }
             "forget" => {
                 self.docs.remove(&req.path);

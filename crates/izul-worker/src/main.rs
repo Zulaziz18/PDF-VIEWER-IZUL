@@ -576,7 +576,8 @@ where
         | Request::WorkOcr { .. }
         | Request::BlobAppend { .. }
         | Request::RemoveBackground { .. }
-        | Request::FillForm { working: true, .. }) => {
+        | Request::FillForm { working: true, .. }
+        | Request::WorkReplaceText { .. }) => {
             let engine = sess.engine();
             let viewing =
                 |doc: DocId, page: u32| sess.get(doc).map(|open| open.doc.izul_annots(page));
@@ -609,6 +610,16 @@ where
                         doc,
                         kind: ErrorKind::EngineFault,
                         message_id: "ocr.failed".to_string(),
+                        detail,
+                    };
+                    reply(channel, id, payload).await
+                }
+                Err(saving::Failure::Edit(doc, detail)) => {
+                    tracing::warn!(%detail, "penggantian teks ditolak");
+                    let payload = Response::Error {
+                        doc,
+                        kind: ErrorKind::Corrupt,
+                        message_id: "textedit.failed".to_string(),
                         detail,
                     };
                     reply(channel, id, payload).await

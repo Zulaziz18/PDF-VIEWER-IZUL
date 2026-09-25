@@ -300,6 +300,7 @@ async fn marked_text_is_gone_from_the_file_and_nothing_else_is() {
         Some(&saving::Rewrite {
             redaction: Some(redaction.clone()),
             ocr: None,
+            text: None,
         }),
     )
     .await
@@ -382,6 +383,7 @@ async fn a_redaction_that_cannot_be_done_writes_nothing() {
         Some(&saving::Rewrite {
             redaction: Some(redaction.clone()),
             ocr: None,
+            text: None,
         }),
     )
     .await

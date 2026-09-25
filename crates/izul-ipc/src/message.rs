@@ -21,7 +21,7 @@ use izul_model::geom::{PageFrame, PdfRectF, RotationQuarter};
 /// So the worker announces this number the moment it connects, and the
 /// supervisor refuses a worker that does not match. Bump it whenever anything
 /// in [`Request`] or [`Response`] changes shape.
-pub const PROTOCOL_VERSION: u32 = 11;
+pub const PROTOCOL_VERSION: u32 = 12;
 
 /// Identifies one open document within a worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -319,6 +319,15 @@ pub enum Request {
         working: bool,
         values: Vec<(String, izul_model::FormValue)>,
     },
+    /// Replaces the text in `rect` (display space) on `page` of the working
+    /// copy with `text`, within one line (`izul_pdf::textedit`), checked with
+    /// PDFium before it answers `TextReplaced`.
+    WorkReplaceText {
+        doc: DocId,
+        page: u32,
+        rect: PdfRectF,
+        text: String,
+    },
 }
 
 /// One widget of a form field, as `FormFields` reports it.
@@ -556,6 +565,13 @@ pub enum Response {
         changed: u32,
         /// Pages whose widgets changed, for repainting.
         pages: Vec<u32>,
+    },
+    TextReplaced {
+        doc: DocId,
+        /// What was there, as PDFium read it.
+        before: String,
+        /// Glyphs taken out.
+        glyphs: u32,
     },
 }
 
@@ -816,6 +832,29 @@ mod tests {
                 .unwrap()
             ),
             23
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Request::WorkReplaceText {
+                    doc: DocId(1),
+                    page: 0,
+                    rect: PdfRectF::new(0.0, 0.0, 1.0, 1.0),
+                    text: String::new()
+                })
+                .unwrap()
+            ),
+            32
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Response::TextReplaced {
+                    doc: DocId(1),
+                    before: String::new(),
+                    glyphs: 0
+                })
+                .unwrap()
+            ),
+            24
         );
         assert_eq!(
             index(

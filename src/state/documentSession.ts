@@ -131,6 +131,8 @@ export interface SaveReport {
   readonly redaction: RedactionSummary | null;
   /** The save ran OCR, and this is what it read (Phase 7). */
   readonly ocr?: OcrSummary | null;
+  /** The save replaced text, and this is what was there (Phase 7). */
+  readonly text?: { readonly before: string; readonly glyphs: number } | null;
 }
 
 /** What `ocr_apply` read (Phase 7). */

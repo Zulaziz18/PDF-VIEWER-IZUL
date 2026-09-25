@@ -58,7 +58,7 @@ impl CharLayout {
         ((r.left + r.right) / 2.0, (r.bottom + r.top) / 2.0)
     }
 
-    fn counts(&self) -> bool {
+    pub(crate) fn counts(&self) -> bool {
         !self.generated && !self.unicode.is_whitespace() && self.unicode != '\u{0}'
     }
 }
@@ -271,7 +271,7 @@ pub fn redact_document(
     Ok((copy, result))
 }
 
-fn inside(r: &PdfRectF, (x, y): (f32, f32)) -> bool {
+pub(crate) fn inside(r: &PdfRectF, (x, y): (f32, f32)) -> bool {
     x > r.left && x < r.right && y > r.bottom && y < r.top
 }
 
@@ -288,7 +288,7 @@ fn shrink(r: &PdfRectF, by: f32) -> PdfRectF {
     PdfRectF::new(r.left + by, r.bottom + by, r.right - by, r.top - by)
 }
 
-fn overlaps(a: &PdfRectF, b: &PdfRectF) -> bool {
+pub(crate) fn overlaps(a: &PdfRectF, b: &PdfRectF) -> bool {
     a.left < b.right && b.left < a.right && a.bottom < b.top && b.bottom < a.top
 }
 
@@ -341,7 +341,7 @@ impl std::fmt::Display for CheckFailure {
 const EDGE: f32 = 0.25;
 /// How far a character outside the areas may move: well under a pixel at
 /// any zoom, and well over the rounding of a six-decimal TJ number.
-const MOVE: f64 = 0.05;
+pub(crate) const MOVE: f64 = 0.05;
 
 /// PDFium and the specification disagree by up to this much per glyph, in
 /// thousandths of an em — measured, not assumed. The gap left for a removed
@@ -355,7 +355,7 @@ const MOVE: f64 = 0.05;
 /// one unit per removed glyph away from where it placed it before; every
 /// reader that follows the specification places it exactly. A width that is
 /// actually wrong is off by tens of units, and still fails.
-const PDFIUM_TRUNCATION: f64 = 1.0;
+pub(crate) const PDFIUM_TRUNCATION: f64 = 1.0;
 
 /// Nothing left in `areas`.
 pub fn check_left(
