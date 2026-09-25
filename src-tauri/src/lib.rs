@@ -35,8 +35,11 @@
     )
 )]
 
+pub mod annotlist;
 pub mod annots;
+pub mod attachments;
 pub mod background;
+pub mod bookmarks;
 pub mod commands;
 pub mod compare;
 pub mod folders;
@@ -319,6 +322,14 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
             commands::annot_history,
             commands::annot_display_lists,
             commands::annot_add_image,
+            commands::annot_paste_image,
+            annotlist::annots_export_csv,
+            bookmarks::bookmarks_list,
+            bookmarks::bookmark_add,
+            bookmarks::bookmark_rename,
+            bookmarks::bookmark_remove,
+            attachments::attachments_list,
+            attachments::attachment_save,
             save_commands::save_document,
             save_commands::redact_apply,
             save_commands::redact_preview,

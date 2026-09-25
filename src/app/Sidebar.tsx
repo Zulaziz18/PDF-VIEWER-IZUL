@@ -11,6 +11,8 @@
 
 import type { JSX } from "react";
 import { AnnotationList } from "./AnnotationList";
+import { AttachmentsPanel } from "./AttachmentsPanel";
+import { BookmarksPanel } from "./BookmarksPanel";
 import { FormsPanel } from "./FormsPanel";
 import { PagePanel } from "./PagePanel";
 import { SearchPanel } from "./SearchPanel";
@@ -58,15 +60,19 @@ const PANEL_TITLE: Record<SidebarTab, StringKey> = {
   annots: "sidebar.annots",
   search: "sidebar.search",
   forms: "sidebar.forms",
+  bookmarks: "sidebar.bookmarks",
+  attachments: "sidebar.attachments",
 };
 
 /** The icon rail's entries, top to bottom (SPEC 12, revised 2026-09-23). */
 export const RAIL: ReadonlyArray<{ tab: SidebarTab; icon: IconName; tone: Tone }> = [
   { tab: "thumbnails", icon: "thumbnails", tone: "blue" },
   { tab: "outline", icon: "bookmark", tone: "orange" },
+  { tab: "bookmarks", icon: "bookmarks", tone: "rose" },
   { tab: "annots", icon: "comments", tone: "amber" },
   { tab: "search", icon: "search", tone: "violet" },
   { tab: "forms", icon: "formFill", tone: "teal" },
+  { tab: "attachments", icon: "attach", tone: "neutral" },
 ];
 
 /**
@@ -147,6 +153,10 @@ export function Sidebar(): JSX.Element | null {
           <FormsPanel />
         ) : tab === "thumbnails" ? (
           <PagePanel />
+        ) : tab === "bookmarks" ? (
+          <BookmarksPanel />
+        ) : tab === "attachments" ? (
+          <AttachmentsPanel />
         ) : (
           <OutlineList entries={outline} />
         )}

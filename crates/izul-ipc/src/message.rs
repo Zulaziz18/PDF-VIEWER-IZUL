@@ -21,7 +21,7 @@ use izul_model::geom::{PageFrame, PdfRectF, RotationQuarter};
 /// So the worker announces this number the moment it connects, and the
 /// supervisor refuses a worker that does not match. Bump it whenever anything
 /// in [`Request`] or [`Response`] changes shape.
-pub const PROTOCOL_VERSION: u32 = 13;
+pub const PROTOCOL_VERSION: u32 = 14;
 
 /// Identifies one open document within a worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -331,6 +331,17 @@ pub enum Request {
         rect: PdfRectF,
         text: String,
     },
+    /// The files embedded in the open document (`izul_pdf::attachments`),
+    /// Phase 8. Answered with `AttachmentsReady`.
+    Attachments {
+        doc: DocId,
+    },
+    /// The bytes of embedded file `index`, answered with `BlobReady`: an
+    /// attachment can be larger than one frame.
+    AttachmentData {
+        doc: DocId,
+        index: u32,
+    },
 }
 
 /// One widget of a form field, as `FormFields` reports it.
@@ -575,6 +586,11 @@ pub enum Response {
         before: String,
         /// Glyphs taken out.
         glyphs: u32,
+    },
+    AttachmentsReady {
+        doc: DocId,
+        /// Name and size in bytes of each embedded file, in order.
+        items: Vec<(String, u64)>,
     },
 }
 
@@ -847,6 +863,30 @@ mod tests {
                 .unwrap()
             ),
             32
+        );
+        assert_eq!(
+            index(postcard::to_allocvec(&Request::Attachments { doc: DocId(1) }).unwrap()),
+            33
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Request::AttachmentData {
+                    doc: DocId(1),
+                    index: 0
+                })
+                .unwrap()
+            ),
+            34
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Response::AttachmentsReady {
+                    doc: DocId(1),
+                    items: vec![]
+                })
+                .unwrap()
+            ),
+            25
         );
         assert_eq!(
             index(

@@ -364,6 +364,32 @@ where
             }
         }
 
+        Request::Attachments { doc } => {
+            let Some(open) = sess.get(doc) else {
+                return fail_kind(channel, id, Some(doc), ErrorKind::BadRequest, "doc.unknown")
+                    .await;
+            };
+            match open.doc.attachments() {
+                Ok(list) => {
+                    let items = list.into_iter().map(|a| (a.name, a.size)).collect();
+                    reply(channel, id, Response::AttachmentsReady { doc, items }).await
+                }
+                Err(e) => fail(channel, id, Some(doc), &e).await,
+            }
+        }
+        Request::AttachmentData { doc, index } => {
+            let Some(open) = sess.get(doc) else {
+                return fail_kind(channel, id, Some(doc), ErrorKind::BadRequest, "doc.unknown")
+                    .await;
+            };
+            match open.doc.attachment_bytes(index) {
+                Ok(bytes) => {
+                    let blob = bench.put_blob(bytes);
+                    reply(channel, id, blob).await
+                }
+                Err(e) => fail(channel, id, Some(doc), &e).await,
+            }
+        }
         Request::FormFields { doc } => {
             let Some(open) = sess.get(doc) else {
                 return fail_kind(channel, id, Some(doc), ErrorKind::BadRequest, "doc.unknown")

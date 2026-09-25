@@ -301,6 +301,80 @@ const SCENES = {
       await izul(page, (z) => z.select([205]));
     },
   },
+  // Phase 8: several objects selected — the align and distribute buttons.
+  arrange: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await page.getByRole("tab", { name: "Edit", exact: true }).click();
+      await izul(page, (z) => z.goToPage(2));
+      await settle(page);
+      await izul(page, (z) => z.select([202, 203, 204]));
+    },
+  },
+  // Phase 8: Alt+drag over one column of the table — the band held open, so
+  // the shot shows what is being taken.
+  textband: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await izul(page, (z) => z.goToPage(2));
+      await settle(page);
+      // Where two words are on screen, measured from the text layer itself.
+      const [top, bottom] = await page.evaluate(() => {
+        const find = (word) => {
+          for (const el of document.querySelectorAll(".izul-text-page div")) {
+            const at = el.textContent.indexOf(word);
+            if (at < 0) continue;
+            const range = document.createRange();
+            range.setStart(el.firstChild, at);
+            range.setEnd(el.firstChild, at + word.length);
+            const r = range.getBoundingClientRect();
+            return { x: r.left, y: r.top, right: r.right, bottom: r.bottom };
+          }
+          return null;
+        };
+        return [find("Mulai"), find("15 Desember")];
+      });
+      if (!top || !bottom) throw new Error("kolom tabel tidak ditemukan");
+      await page.keyboard.down("Alt");
+      await page.mouse.move(top.x - 8, top.y - 6);
+      await page.mouse.down();
+      await page.mouse.move((top.x + bottom.right) / 2, (top.y + bottom.bottom) / 2, { steps: 4 });
+      await page.mouse.move(bottom.right + 10, bottom.bottom + 6, { steps: 4 });
+    },
+  },
+  textbandcopied: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await SCENES.textband.steps(page);
+      await page.mouse.up();
+      await page.keyboard.up("Alt");
+      await page.getByText(/baris teks dalam persegi disalin/).waitFor();
+      const copied = await page.evaluate(() => navigator.clipboard.readText());
+      const want = "Mulai\n1 Agustus\n25 Agustus\n13 Oktober\n15 Desember";
+      if (copied !== want) throw new Error(`teks persegi salah: ${JSON.stringify(copied)}`);
+    },
+  },
+  bookmarks: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await izul(page, (z) => z.goToPage(2));
+      await settle(page);
+      await page.keyboard.press("Control+b");
+      await izul(page, (z) => z.goToPage(6));
+      await settle(page);
+      await page.keyboard.press("Control+b");
+      await page.getByRole("button", { name: /^Ganti nama — Halaman 7/ }).click();
+      await page.getByRole("textbox", { name: "Ganti nama" }).fill("Bab 4 — Ujian dan penilaian");
+      await page.keyboard.press("Enter");
+    },
+  },
+  attachments: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await izul(page, (z) => z.sidebar("attachments"));
+      await page.getByText("Peta Kampus.png").waitFor();
+    },
+  },
   comment: {
     session: OPEN_ALL,
     async steps(page) {
@@ -629,6 +703,8 @@ async function newPage({ width, height, theme, scale, scene }) {
     colorScheme: theme,
     // `--forced`: Windows high-contrast mode, as `forced-colors` (SPEC 14).
     forcedColors: args.forced === "true" ? "active" : "none",
+    // Alt+drag copies to the clipboard (Phase 8), and the scene reads it back.
+    permissions: ["clipboard-read", "clipboard-write"],
     locale: "id-ID",
     timezoneId: "Asia/Jakarta",
   });

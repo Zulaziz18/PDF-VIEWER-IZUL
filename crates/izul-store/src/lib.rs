@@ -22,6 +22,7 @@
     )
 )]
 
+pub mod bookmarks;
 pub mod db;
 pub mod drafts;
 pub mod error;

@@ -18,6 +18,7 @@ import { DEFAULT_STYLE, objectFromDrawn } from "@/annots/factory";
 import type { DocumentState, DocumentStore } from "@/state/documentSession";
 import { registerViewport } from "./viewportHandle";
 import { t } from "@/i18n";
+import { useUi } from "@/state/uiStore";
 
 /** How long the scroll must be still before the reading position is stored. */
 const SAVE_IDLE_MS = 1200;
@@ -102,6 +103,7 @@ export function Viewport(props: {
           if (object) void store().addAnnot(object);
           else store().setTool(null);
         },
+        onTextBand: (text) => copyTextBand(text),
       },
     );
     rendererRef.current = renderer;
@@ -120,7 +122,9 @@ export function Viewport(props: {
       if (renderer.gestureActive) {
         // Only capture once a gesture really started, so an ordinary click on
         // the page still reaches the text layer for selection.
-        if (editing || store().selection.length > 0) {
+        // Alt+drag takes text in a rectangle: the text layer's own selection
+        // must not start underneath it.
+        if (editing || e.altKey || store().selection.length > 0) {
           scroller.setPointerCapture(e.pointerId);
           e.preventDefault();
         }
@@ -246,4 +250,20 @@ export function Viewport(props: {
       </div>
     </div>
   );
+}
+
+/** Alt+drag's text, on the clipboard, with a word about it (Phase 8). */
+function copyTextBand(text: string): void {
+  const ui = useUi.getState();
+  if (text.length === 0) {
+    ui.notify({ kind: "error", text: t("textBand.empty") });
+    return;
+  }
+  void navigator.clipboard
+    .writeText(text)
+    .then(() => {
+      const lines = text.split("\n").length;
+      ui.notify({ kind: "ok", text: t("textBand.copied").replace("{n}", String(lines)) });
+    })
+    .catch(() => ui.notify({ kind: "error", text: t("textBand.failed") }));
 }

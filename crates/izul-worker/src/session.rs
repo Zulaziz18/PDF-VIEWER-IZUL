@@ -164,7 +164,8 @@ pub fn classify(err: &PdfError) -> ErrorKind {
         PdfError::PageOutOfRange { .. }
         | PdfError::BadTileSize { .. }
         | PdfError::BadSourceRect { .. }
-        | PdfError::BufferTooSmall { .. } => ErrorKind::BadRequest,
+        | PdfError::BufferTooSmall { .. }
+        | PdfError::Attachment { .. } => ErrorKind::BadRequest,
         PdfError::EnginePanic { .. } | PdfError::LibraryAlreadyLoaded => ErrorKind::EngineFault,
         PdfError::Cancelled => ErrorKind::Timeout,
         PdfError::Pdfium { .. } => ErrorKind::Corrupt,

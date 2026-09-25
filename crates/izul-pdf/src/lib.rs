@@ -28,6 +28,7 @@
 )]
 
 pub mod arrange;
+pub mod attachments;
 pub mod engine;
 pub mod error;
 mod ffi_guard;

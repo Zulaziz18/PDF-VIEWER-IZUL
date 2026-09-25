@@ -46,6 +46,7 @@ import { useOpenFilesFromOtherInstance } from "./openFiles";
 import { useShortcuts } from "./shortcuts";
 import { BareHint } from "./BareHint";
 import { usePageInversion, usePresentation } from "./presentation";
+import { usePasteImage } from "./paste";
 import { useDocument } from "@/state/documentStore";
 import { useUi } from "@/state/uiStore";
 import { useWorkspace } from "@/state/workspaceStore";
@@ -70,6 +71,7 @@ export function App(): React.JSX.Element {
   useFileWatch();
   usePresentation();
   usePageInversion();
+  usePasteImage();
   const presenting = useUi((s) => s.presenting);
   const focusMode = useUi((s) => s.focusMode);
   const bare = (presenting || focusMode) && doc !== null;

@@ -593,6 +593,48 @@ fn note_icon(dl: &mut DisplayList, rect: PdfRectF, icon: NoteIcon, color: Rgba) 
 struct Line {
     glyphs: Vec<PositionedGlyph>,
     width: f32,
+    /// Ended by the box edge, not by the paragraph: the only kind of line
+    /// justification stretches.
+    wrapped: bool,
+}
+
+/// Stretches a wrapped line to `max_width` by widening its interior spaces
+/// (Phase 8; `TextAlign::Justify` was drawn as left until then). The
+/// trailing spaces a wrap leaves are not interior and get nothing, and a line
+/// without an interior space — one long word — stays as it is.
+fn justify(line: &Line, max_width: f32, space: f32) -> Vec<PositionedGlyph> {
+    let end = line
+        .glyphs
+        .iter()
+        .rposition(|g| g.unicode != ' ')
+        .map_or(0, |i| i + 1);
+    let trailing = (line.glyphs.len() - end) as f32 * space;
+    let interior = line
+        .glyphs
+        .iter()
+        .take(end)
+        .filter(|g| g.unicode == ' ')
+        .count();
+    let slack = max_width - (line.width - trailing);
+    if interior == 0 || slack <= 0.0 {
+        return line.glyphs.clone();
+    }
+    let extra = slack / interior as f32;
+    let mut seen = 0usize;
+    line.glyphs
+        .iter()
+        .enumerate()
+        .map(|(i, g)| {
+            let shifted = PositionedGlyph {
+                offset: PdfPointF::new(g.offset.x + extra * seen as f32, g.offset.y),
+                ..*g
+            };
+            if g.unicode == ' ' && i < end {
+                seen += 1;
+            }
+            shifted
+        })
+        .collect()
 }
 
 /// Lays text out inside `rect` and emits one `DrawText` per line.
@@ -683,6 +725,7 @@ fn text_block(
                 lines.push(Line {
                     glyphs: std::mem::take(&mut current),
                     width: x,
+                    wrapped: true,
                 });
                 x = 0.0;
             }
@@ -699,6 +742,7 @@ fn text_block(
         lines.push(Line {
             glyphs: current,
             width: x,
+            wrapped: false,
         });
     }
 
@@ -718,8 +762,15 @@ fn text_block(
             TextAlign::Center => rect.left + (max_width - line.width) / 2.0,
             TextAlign::Right => rect.right - line.width,
         };
+        // The last line of a paragraph is not stretched: a two-word closing
+        // line spread across the box is what nobody's justification does.
+        let glyphs = if align == TextAlign::Justify && line.wrapped {
+            justify(line, max_width, advance(' '))
+        } else {
+            line.glyphs.clone()
+        };
         dl.push(DisplayOp::DrawText {
-            glyphs: line.glyphs.clone(),
+            glyphs,
             font,
             size,
             matrix: Matrix::translate(x, baseline),
@@ -1096,6 +1147,66 @@ mod tests {
             centre_glyphs.iter().map(|g| g.offset.x).collect::<Vec<_>>(),
             "perataan menggeser barisnya, bukan jarak antar huruf"
         );
+    }
+
+    #[test]
+    fn justified_lines_reach_the_right_edge_and_the_last_line_does_not() {
+        let fonts = FixedFont::default();
+        let make = |align| {
+            let mut o = obj(
+                AnnotKind::FreeText,
+                AnnotPayload::FreeText {
+                    text: "aa bb cc dd ee ff gg hh ii jj".into(),
+                    font: FontSpec::default(),
+                    color: Rgba::BLACK,
+                    align,
+                    line_spacing: 1.2,
+                    background: None,
+                    border: None,
+                },
+            );
+            o.rect = rect(0.0, 0.0, 70.0, 200.0);
+            let dl = display_list(&o, &fonts).expect("list");
+            dl.ops
+                .into_iter()
+                .filter_map(|op| match op {
+                    DisplayOp::DrawText { glyphs, size, .. } => Some((glyphs, size)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let lines = make(TextAlign::Justify);
+        assert!(
+            lines.len() >= 2,
+            "teksnya harus terbungkus: {}",
+            lines.len()
+        );
+        let right_ink = |glyphs: &[PositionedGlyph], size: f32| {
+            let last = glyphs
+                .iter()
+                .rev()
+                .find(|g| g.unicode != ' ')
+                .expect("huruf");
+            let adv = fonts
+                .glyph(fonts.font, last.unicode)
+                .expect("glif")
+                .advance_milli;
+            last.offset.x + f32::from(adv) / 1000.0 * size
+        };
+        let (first, size) = &lines[0];
+        assert!(
+            (right_ink(first, *size) - 70.0).abs() < 0.01,
+            "baris rata kanan-kiri berakhir di tepi kotak: {}",
+            right_ink(first, *size)
+        );
+        let (last, size) = &lines[lines.len() - 1];
+        assert!(
+            right_ink(last, *size) < 69.0,
+            "baris terakhir paragraf tidak diregangkan"
+        );
+        // Left alignment of the same text keeps the first line short of the edge.
+        let left = make(TextAlign::Left);
+        assert!(right_ink(&left[0].0, left[0].1) < 69.0);
     }
 
     /// SPEC 11.2: a missing font is refused with a clear message, never drawn as

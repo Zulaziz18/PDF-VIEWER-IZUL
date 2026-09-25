@@ -1183,18 +1183,44 @@ pub fn annot_add_image(
     path: String,
 ) -> CmdResult<u32> {
     let bytes = std::fs::read(&path).map_err(|e| format!("tidak dapat membaca {path}: {e}"))?;
-    // A generous cap, and a cap all the same: this is held in memory per
-    // document, and a 400 MB TIFF pasted into a tab should be refused with a
-    // message rather than by the process dying.
-    const MAX_BYTES: usize = 64 * 1024 * 1024;
-    if bytes.len() > MAX_BYTES {
+    add_image_checked(&state, doc, bytes)
+}
+
+/// A generous cap, and a cap all the same: this is held in memory per
+/// document, and a 400 MB TIFF pasted into a tab should be refused with a
+/// message rather than by the process dying.
+const MAX_IMAGE_BYTES: usize = 64 * 1024 * 1024;
+
+fn add_image_checked(state: &AppState, doc: u64, bytes: Vec<u8>) -> CmdResult<u32> {
+    if bytes.len() > MAX_IMAGE_BYTES {
         return Err(format!(
             "gambar terlalu besar ({} MB, batas {} MB)",
             bytes.len() / (1024 * 1024),
-            MAX_BYTES / (1024 * 1024)
+            MAX_IMAGE_BYTES / (1024 * 1024)
         ));
     }
     state.annots.add_image(doc, bytes)
+}
+
+/// A picture pasted with Ctrl+V (SPEC 11.2, Phase 8): a screenshot has no
+/// file to name, so its bytes come as the raw body of the call — not as JSON,
+/// where a 3 MB PNG would be a 12 MB array of numbers parsed on both sides —
+/// and the document in the `x-izul-doc` header.
+#[tauri::command]
+pub fn annot_paste_image(
+    state: tauri::State<'_, AppState>,
+    request: tauri::ipc::Request<'_>,
+) -> CmdResult<u32> {
+    let doc = request
+        .headers()
+        .get("x-izul-doc")
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.parse::<u64>().ok())
+        .ok_or_else(|| "dokumen tujuan tidak disebut".to_string())?;
+    let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
+        return Err("isi tempelan harus berupa byte gambar".into());
+    };
+    add_image_checked(&state, doc, bytes.clone())
 }
 
 // ---- Preferences the interface keeps (Phase 5) ------------------------------

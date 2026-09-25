@@ -45,7 +45,7 @@ import { pageAt, pageBox, toContentPoint, toPagePoint } from "./annotLayer";
 import { drawDisplayList } from "@/annots/canvas";
 import type { AnnotObject, DisplayListOut, PdfPoint } from "@/annots/types";
 import type { HandleId } from "@/annots/interaction";
-import { HANDLE_SIZE } from "@/annots/interaction";
+import { HANDLE_SIZE, translateObject } from "@/annots/interaction";
 import {
   angleTo,
   boundsOf,
@@ -60,7 +60,7 @@ import {
   snapAngle,
 } from "@/annots/interaction";
 import type { TextChar } from "./textLayer";
-import { buildTextLayer, fitTextLayer, groupIntoLines, layerSlot } from "./textLayer";
+import { buildTextLayer, fitTextLayer, groupIntoLines, layerSlot, textInRect } from "./textLayer";
 import { t } from "@/i18n";
 import type { Priority, TileRef } from "./tileSource";
 import {
@@ -147,6 +147,8 @@ export interface RendererEvents {
   onTransform(objects: readonly AnnotObject[]): void;
   /** The user drew something with a creation tool. */
   onDraw(draft: DrawnShape): void;
+  /** Alt+drag took the text inside a rectangle (Phase 8). */
+  onTextBand?(text: string): void;
 }
 
 /**
@@ -810,7 +812,7 @@ export class ViewportRenderer {
     const selected = this.#selectedObjects();
     const gesture = this.#gesture;
 
-    if (gesture?.kind === "band" && gesture.current) {
+    if ((gesture?.kind === "band" || gesture?.kind === "textBand") && gesture.current) {
       const box = this.#boxOfPage(gesture.page);
       if (box) {
         const a = toContentPoint(box, gesture.origin);
@@ -820,6 +822,8 @@ export class ViewportRenderer {
         ctx.strokeStyle = "rgba(47, 111, 235, 0.9)";
         ctx.fillStyle = "rgba(47, 111, 235, 0.12)";
         ctx.lineWidth = 1;
+        // Taking text rather than objects: dashed, so the two bands differ.
+        if (gesture.kind === "textBand") ctx.setLineDash([4, 3]);
         const x = Math.min(a.x, b.x) - view.x;
         const y = Math.min(a.y, b.y) - view.y;
         const w = Math.abs(a.x - b.x);
@@ -949,6 +953,20 @@ export class ViewportRenderer {
     if (!box) return false;
     const point = toPagePoint(box, content);
     const tool = this.#state.tool;
+
+    // Alt+drag: the text inside a rectangle, whatever else is under it.
+    if (tool === null && event.altKey) {
+      this.#gesture = {
+        kind: "textBand",
+        page: box.page,
+        origin: point,
+        current: point,
+        points: [],
+        handle: null,
+        before: [],
+      };
+      return true;
+    }
 
     if (tool !== null) {
       this.#gesture = {
@@ -1093,6 +1111,17 @@ export class ViewportRenderer {
         });
         break;
       }
+      case "textBand": {
+        const chars = this.#state.texts.get(gesture.page) ?? [];
+        const text = textInRect(chars, {
+          left: gesture.origin.x,
+          bottom: gesture.origin.y,
+          right: point.x,
+          top: point.y,
+        });
+        this.#events.onTextBand?.(text);
+        break;
+      }
       case "band": {
         const band = {
           left: gesture.origin.x,
@@ -1185,7 +1214,7 @@ export class ViewportRenderer {
 
 /** A gesture in progress. */
 interface Gesture {
-  kind: "move" | "resize" | "rotate" | "band" | "create";
+  kind: "move" | "resize" | "rotate" | "band" | "create" | "textBand";
   page: number;
   origin: PdfPoint;
   current: PdfPoint;
@@ -1193,38 +1222,6 @@ interface Gesture {
   handle: HandleId | null;
   /** Copies taken when the gesture started, for the preview and the undo step. */
   before: AnnotObject[];
-}
-
-/**
- * Moves an object's geometry, payload and all.
- *
- * A mirror of `AnnotObject::translate` in the model, and the duplication is
- * deliberate rather than an oversight: this one only ever touches the *preview*
- * copies during a drag, and the authoritative move is done by the Rust code
- * when the gesture ends. If the two ever disagree, the object snaps into place
- * on release — visible, and far better than the frontend's idea of the
- * geometry ending up in the file.
- */
-function translateObject(obj: AnnotObject, dx: number, dy: number): void {
-  const shiftRect = (r: { left: number; bottom: number; right: number; top: number }): void => {
-    r.left += dx;
-    r.right += dx;
-    r.bottom += dy;
-    r.top += dy;
-  };
-  const shiftPoint = (p: { x: number; y: number }): void => {
-    p.x += dx;
-    p.y += dy;
-  };
-  shiftRect(obj.rect);
-  const payload = obj.payload;
-  if ("Markup" in payload) payload.Markup.quads.forEach(shiftRect);
-  else if ("Ink" in payload) payload.Ink.strokes.forEach((s) => s.forEach(shiftPoint));
-  else if ("Polygon" in payload) payload.Polygon.points.forEach(shiftPoint);
-  else if ("Line" in payload) {
-    shiftPoint(payload.Line.from);
-    shiftPoint(payload.Line.to);
-  }
 }
 
 /** Scales an object about a pivot; the preview half of `AnnotObject::scale_about`. */

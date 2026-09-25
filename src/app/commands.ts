@@ -23,6 +23,7 @@ import { exportFlat, requestCloseAll, requestCloseTab, saveDocument } from "./fi
 import { deletePages, duplicatePages, extractPages, insertBlankPage, mergeFile, splitDocument } from "./pageActions";
 import { markText, openSearchForMarking, toggleAreaTool } from "./redaction";
 import { startTextEdit } from "./textEdit";
+import { bookmarkHere } from "./bookmarks";
 
 export type CommandGroup = "file" | "edit" | "view" | "annotate" | "pages" | "protect" | "convert" | "app";
 
@@ -131,6 +132,7 @@ export const COMMANDS: readonly Command[] = [
   { id: "edit.addImage", label: "ribbon.addImage", group: "edit", keys: [], needsDoc: true, run: () => void insertImage() },
 
   // Tampilan
+  { id: "view.bookmark", label: "cmd.bookmark", group: "view", keys: ["Ctrl+B"], needsDoc: true, run: () => void bookmarkHere() },
   { id: "view.find", label: "search.label", group: "view", keys: ["Ctrl+F"], needsDoc: true, whileTyping: true, run: () => doc().toggleSearch(true) },
   {
     id: "view.findLibrary",
