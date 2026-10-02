@@ -61,7 +61,15 @@ path = "src/form_probe.rs"
 name = "textedit-probe"
 path = "src/textedit_probe.rs"
 
+# SPEC 13's search targets (Phase 8): FTS5 in a document and across the
+# library, and PDFium's find for the highlights.
+[[bin]]
+name = "search-bench"
+path = "src/search_bench.rs"
+
 [dependencies]
+izul-store.workspace = true
+rusqlite.workspace = true
 izul-ocr.workspace = true
 izul-pdf.workspace = true
 izul-ipc.workspace = true

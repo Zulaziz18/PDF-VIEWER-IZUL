@@ -54,6 +54,7 @@ pub mod render;
 pub mod save_commands;
 pub mod saving;
 pub mod selftest;
+pub mod shell;
 pub mod supervisor;
 pub mod textedit;
 pub mod textsearch;

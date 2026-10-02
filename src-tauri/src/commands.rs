@@ -290,6 +290,8 @@ pub async fn open_document(
         },
     );
     state.annots.set_own_pages(doc.0, page_sizes.clone());
+    // The taskbar jump list's recent files (Phase 8).
+    crate::shell::add_to_recent(&file);
 
     // Recording the open and reading back the last position are one step: a
     // document the user has seen before must come back where they left it

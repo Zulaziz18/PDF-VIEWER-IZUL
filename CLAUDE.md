@@ -867,6 +867,91 @@ semuanya LULUS dan dijalankan CI ubuntu; probe DirectML dijalankan CI windows.
   scene terlihat di scene berikutnya. `forgetForms()` membuangnya sebelum
   setiap tangkapan.
 
+## Keadaan Fase 8 (Penghalusan & Rilis, 25 September 2026)
+
+Selesai di branch `claude/pdf-studio-izul-v7-fase-8` (PR #7, base fase-7).
+Versi **7.0.0-beta.1** — beta, bukan rilis, karena sebagian hal hanya bisa
+dibuktikan di Windows sungguhan (checklist TESTING.md "Fase 8"). Laporan
+SPEC 18 di badan PR #7. Semua 9 fase (0–8) kini selesai.
+
+**Yang dibangun:** registri perintah tunggal (`src/app/commands.ts`) untuk
+pintasan, palet (Ctrl+Shift+P) dan F1; pintasan bisa diubah (`ui.shortcuts`);
+cetak (`printing.rs`, `izul://print/...`); presentasi F5 / fokus F11; tema +
+invert cerdas di pekerja (`izul-pdf/src/invert.rs`, `invert` masuk TileKey);
+audit aksesibilitas; ikon; About + folder log; installer; dan hasil audit
+SPEC 11 (gaya teks, pangkas, Ctrl+V, ratakan/distribusikan, CSV anotasi,
+bookmark pengguna, lampiran, Alt+drag, jump list). `PROTOCOL_VERSION` = 14.
+
+**Pengemasan — yang wajib diingat:**
+
+- `tauri-build` menyalin **setiap** `bundle.resources` ke folder target pada
+  **setiap** `cargo build`, bukan hanya saat mengemas. Karena itu sumber daya
+  installer ada di `src-tauri/tauri.bundle.json` yang dipakai **hanya** lewat
+  `npm run package` (`tauri build --config ...`). Kalau dipindah ke
+  `tauri.conf.json` atau `tauri.windows.conf.json`, build debug gagal mencari
+  pekerja release — atau lebih buruk, menyalin pekerja release usang ke atas
+  pekerja debug (kelas bug #4 Fase 1).
+- Bentuk **daftar** di `resources` mempertahankan path relatif (`../vendor/x`
+  jadi `_up_/vendor/x`); pakai bentuk **peta** supaya berkas jatuh di samping
+  exe. Di Windows, `resource_dir` = folder exe (dibaca dari `tauri-utils`).
+- MSI hanya menerima versi numerik: `wix.version` = `mayor.minor.patch.N`,
+  dengan alpha.N → N, beta.N → 100+N, rc.N → 200+N, rilis → 1000. Job
+  *Version consistency* menjaganya. **Naikkan bersama version.json.**
+- `pdf-studio-izul --self-test [pdf]` memeriksa tata letak terpasang tanpa
+  jendela; job *Package (Windows)* menjalankannya di NSIS terpasang, MSI yang
+  diekstrak, dan ZIP portabel. Portabel = ada `portable.txt` di samping exe.
+- Model OCR **tidak** dibundel (keputusan lisensi masih di pengguna).
+
+**Aksesibilitas:** `npm run ui:shots -- --axe=true` (axe-core 4.13.0, WCAG 2.1
+A+AA) dan `--forced=true` (kontras tinggi). axe **tidak** menilai forced-colors:
+tiga cacat terbesar (lapisan teks tergambar dua kali, contoh warna kosong,
+pilihan tak terlihat) hanya ketahuan dari melihat tangkapannya. Aturan CSS-nya
+di akhir `tokens.css`. Tombol tutup tab sengaja `aria-hidden` (target mouse);
+tab ditutup dengan Delete.
+
+**Temuan dan pelajaran fase ini:**
+
+1. **Installer sebelum fase ini tidak akan jalan** — tanpa PDFium, pekerja,
+   dan ONNX Runtime. Komentar di `build.rs` bilang `bundle.resources`
+   menyalinnya; konfigurasinya tidak pernah begitu. **Pelajaran:** jangan
+   percaya komentar yang menjelaskan konfigurasi; baca konfigurasinya. Dan
+   installer tanpa uji pasang bukan installer.
+2. **Bench `viewport` mati sejak Fase 1** (tidak membaca `Hello`) dan tidak ada
+   yang tahu, karena CI hanya *membangun* bench. Kini CI menjalankan ketiganya
+   sebentar (langkah *Benchmarks still run*). **Pelajaran:** kode yang
+   dibangun tapi tidak dijalankan membusuk diam-diam.
+3. **Dua target pencarian SPEC 13 tidak pernah diukur** sampai fase ini
+   (`bench/src/search_bench.rs`). Lulus, tapi pencarian sebelum indeks selesai
+   747 ms. Periksa tabel SPEC 13 baris per baris di akhir fase, jangan hanya
+   yang ada benchmark-nya.
+4. **Rata kanan-kiri digambar rata kiri** sejak Fase 3 — enum-nya ada, cabang
+   `match`-nya menyatukan `Justify` dengan `Left`. Audit fitur yang "sudah ada
+   di model" juga harus melihat apakah ada yang menggambarnya.
+5. `PdfError` punya varian baru (`Attachment`) → `classify()` di
+   `izul-worker/src/session.rs` wajib diperbarui (match exhaustive, bagus).
+6. **Prettier bukan formatter proyek ini.** Menjalankannya memformat ulang
+   seluruh berkas (lebar 80). Formatter frontend = tidak ada; ikuti gaya
+   sekitarnya. Kalau sampai terjalankan: `git checkout` berkasnya lalu ulangi
+   hanya perubahan sendiri.
+
+**Alat ukur baru yang berguna:**
+
+- **Memeriksa kode khusus Windows dari Linux:** salin fungsinya ke crate
+  sementara yang hanya bergantung pada crate `windows` versi terpatok, lalu
+  `cargo +1.94.1 clippy --target x86_64-pc-windows-msvc -- -D warnings`
+  (toolchain terpatok proyek punya std Windows; toolchain bawaan tidak).
+  Seluruh aplikasi tidak bisa dicek begini (dependensi C butuh MSVC), tapi
+  potongan FFI bisa. Selalu sertakan kontrol negatif (tipe salah harus
+  ditolak) — `Finished` 0,06 s bisa berarti cache.
+- Scene harness bisa **membaca papan klip** (`permissions: clipboard-*`):
+  `textbandcopied` membuktikan Alt+drag menyalin persis satu kolom.
+
+**Yang tidak dikerjakan (dilaporkan di PR):** panel Layer (PDFium tidak punya
+API optional content sama sekali — dicek di header), menanam font / CJK / RTL
+(butuh subsetting TrueType), kompresi dengan pratinjau kualitas (PDFium tidak
+mengode ulang gambar). Bookmark pengguna menyimpan nomor halaman; sesudah
+halaman disusun ulang dan disimpan, nomornya tidak ikut bergeser.
+
 ## Alur kerja proyek ini
 
 - Branch per fase: `claude/pdf-studio-izul-v7-fase-4` (Langkah 0 + Fase 4,
@@ -889,9 +974,10 @@ semuanya LULUS dan dijalankan CI ubuntu; probe DirectML dijalankan CI windows.
   "Keadaan Fase N" di berkas ini sebelum lanjut.
 - Total 9 fase (0–8). Fase 0 dan 1 selesai dan disetujui pengguna; Fase 2 dan
   Fase 3 selesai (satu branch, PR #2); Langkah 0 dan Fase 4 selesai (PR #3);
-  Fase 5 selesai (PR #4); Fase 6 selesai (PR #5); Fase 7 selesai (PR #6).
-  Fase 8 berikutnya di `claude/pdf-studio-izul-v7-fase-8`, bercabang dari
-  fase-7.
+  Fase 5 selesai (PR #4); Fase 6 selesai (PR #5); Fase 7 selesai (PR #6);
+  Fase 8 selesai (PR #7, 7.0.0-beta.1). **Semua fase selesai.** Pekerjaan
+  sesudahnya: hasil checklist Windows dari pengguna, keputusan model OCR,
+  lalu rilis 7.0.0 (wix.version 7.0.0.1000).
   Fase 5–8 dikerjakan berturut-turut tanpa menunggu persetujuan, atas
   keputusan pengguna.
 - Panduan menjalankan & menguji aplikasi di Windows (untuk pemula) ada di

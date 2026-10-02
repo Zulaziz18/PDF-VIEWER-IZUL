@@ -95,6 +95,18 @@ jobs:
           IZUL_REQUIRE_FIXTURES: "1"
         run: cargo test --workspace
 
+      # The benchmark harnesses are built on every push but were never run,
+      # and `viewport` had been dying on its first message since Phase 1
+      # without anyone knowing (Phase 8). Run them briefly — a debug build on a
+      # shared runner, so their timings mean nothing here and fail nothing;
+      # only a harness that no longer runs fails this step.
+      - name: Benchmarks still run
+        if: runner.os == 'Linux'
+        run: |
+          cargo run -q -p izul-bench --bin viewport -- --only startup,first-page,zoom
+          cargo run -q -p izul-bench --bin search-bench
+          cargo run -q -p izul-bench --bin multidoc -- --documents 5
+
       # SPEC 17, Phase 6: what is redacted cannot be found again by any
       # extraction tool. Six extractors that share no code look for the
       # secret in twelve kinds of page after the application's own redaction;

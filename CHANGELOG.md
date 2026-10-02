@@ -3,6 +3,87 @@
 Semua perubahan penting per fase. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/);
 versi mengikuti `version.json` sebagai sumber tunggal.
 
+## [7.0.0-beta.1] — Fase 8: Penghalusan & Rilis
+
+Fase terakhir: yang membuat aplikasi enak dipakai sehari-hari (perintah,
+pintasan, presentasi, tema, cetak), yang membuatnya bisa dipakai semua orang
+(aksesibilitas terukur), yang membuatnya bisa dipasang (installer yang
+memeriksa dirinya sendiri), dan audit SPEC 11 yang menemukan fitur tertulis
+tapi belum ada. Versi **beta**, bukan rilis: sebagian hal hanya bisa dibuktikan
+di Windows sungguhan (daftar di TESTING.md "Hasil Fase 8").
+
+### Ditambahkan
+
+- **Palet perintah** (Ctrl+Shift+P) dan **daftar pintasan** (F1) dari satu
+  registri perintah; **pintasan bisa diubah** (disimpan di SQLite, hanya yang
+  berbeda dari bawaan; tombol yang direbut disebutkan asalnya).
+- **Cetak** (Ctrl+P) — ternyata belum pernah dibuat: rentang, dengan/tanpa
+  anotasi, pas kertas atau ukuran asli, 200/300 dpi, lewat jendela cetak
+  WebView2.
+- **Mode presentasi** (F5, satu halaman di-fit per halaman, tombol clicker)
+  dan **mode fokus** (F11).
+- **Tema** terang/gelap/ikuti Windows, dan **invert halaman cerdas**: teks
+  jadi terang, gambar dan foto tidak ikut terbalik (di pekerja, per piksel).
+- **Aksesibilitas terukur**: audit axe-core di harness (`--axe=true`),
+  39 → 0 pelanggaran di 64 tangkapan; mode kontras tinggi Windows
+  (`--forced=true`) diperiksa dan diperbaiki (lihat Diperbaiki). Tab bisa
+  dipindah dengan panah dan ditutup dengan Delete; lapisan teks per halaman
+  bernama dan berurutan untuk pembaca layar.
+- **Ikon aplikasi** dari tanda yang sama dengan bilah judul (`npm run icons:app`).
+- **About**: tombol "Buka folder log" dan daftar lisensi lengkap.
+- **Installer NSIS, MSI, dan ZIP portabel** dibangun CI (`npm run package`),
+  masing-masing **menguji dirinya sendiri** lewat `pdf-studio-izul --self-test`
+  (kolam pekerja + PDFium + ONNX Runtime + buka PDF) di tata letak yang
+  sungguh terpasang. Salinan portabel dikenali dari `portable.txt` di samping
+  exe dan menyimpan datanya di foldernya sendiri.
+- Dari audit SPEC 11: **gaya teks** (tebal, miring, perataan termasuk rata
+  kanan-kiri, spasi baris), **pangkas gambar**, **tempel gambar/tangkapan
+  layar** (Ctrl+V), **ratakan & distribusikan** seleksi jamak, **ekspor daftar
+  anotasi** (CSV untuk Excel), **bookmark pengguna** (Ctrl+B, tidak ditulis ke
+  PDF), **panel Lampiran** (simpan berkas yang tertanam), **seleksi persegi**
+  (Alt+drag, menyalin satu kolom tabel), dan **jump list taskbar** (berkas
+  terbaru lewat `SHAddToRecentDocs`).
+- `bench/src/search_bench.rs`: dua target pencarian SPEC 13 yang belum pernah
+  diukur. Keduanya lulus (lihat Angka).
+- IPC: `Attachments`, `AttachmentData`, `AttachmentsReady` di ujung enum;
+  `PROTOCOL_VERSION` 13 → 14 (12 → 13 di awal fase untuk invert).
+
+### Diperbaiki
+
+- **Installer yang tidak bisa jalan.** `bundle.resources` tidak pernah memuat
+  pekerja, ONNX Runtime, maupun model; satu-satunya entri (pdfium.dll) berbentuk
+  daftar, yang ditaruh Tauri di `_up_/vendor/...`, bukan di samping exe.
+  Installer yang dibangun sebelum fase ini akan terpasang tanpa PDFium. Kini
+  peta eksplisit di `tauri.bundle.json`, dipakai hanya saat mengemas.
+- **Mode kontras tinggi Windows**: lapisan teks yang transparan jadi terlihat
+  (setiap baris halaman tergambar dua kali), contoh warna jadi kotak kosong,
+  dan tab/alat terpilih tidak bisa dibedakan.
+- **Bench `viewport` mati sejak Fase 1** (tidak membaca salam `Hello`
+  pekerja) tanpa ada yang tahu: CI hanya membangunnya. Kini CI juga
+  menjalankan ketiga bench sebentar.
+- Kontras: aksen terang 3,99 → 5,0:1, merah bahaya di mode gelap 2,99 → 5,8:1.
+- Rata kanan-kiri digambar rata kiri; gambar baru selalu 4:3; tombol Delete di
+  tab ikut menghapus anotasi terpilih.
+
+### Angka (SPEC 13, `bench/results/phase8-linux.txt`)
+
+Halaman pertama PDF 52 MB / 500 hal.: 16 ms (target 400). Zoom tajam p95
+24,6 ms (150). Pencarian dokumen p95 ≤ 65 ms (200), pustaka 20 × 500 hal.
+p95 ≤ 71 ms (100). 10 dokumen 448 MB (1,5 GB). 50 dokumen 139 ms buka+render,
+0,94 MB per dokumen. Cold start jendela, pindah tab, dan "nol frame drop" tidak
+bisa diukur tanpa layar — dicatat sebagai belum terbukti, bukan lulus.
+
+### Sengaja tidak dikerjakan
+
+- **Panel Layer (OCG)**: header PDFium tidak punya satu pun fungsi untuk
+  membaca atau mengubah optional content, jadi tidak bisa dibuat lewat PDFium.
+- **Menanam font** ke PDF (dan teks CJK/RTL): butuh subsetting TrueType — kotak
+  teks tetap memakai font standard-14, dan huruf yang tidak dimiliki fontnya
+  ditolak dengan pesan (bukan kotak kosong).
+- **Kompresi berkas dengan pratinjau kualitas**: PDFium tidak bisa mengode ulang
+  gambar; butuh penyandi JPEG sendiri per objek gambar.
+- Model OCR tetap tidak dibundel (lisensi belum jelas, keputusan pengguna).
+
 ## [7.0.0-alpha.7] — Fase 7: Kecerdasan
 
 Empat kemampuan baru, semuanya berjalan di komputer sendiri tanpa jaringan:

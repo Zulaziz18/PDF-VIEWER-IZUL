@@ -183,6 +183,19 @@ impl WorkerBackend {
             .await
             .expect("worker connected")
             .expect("accept");
+        // The worker greets first (Phase 1, bug #4). Without reading it here
+        // the first reply this harness waited for was the greeting, and every
+        // run since has died on "open gagal: Hello" — found in Phase 8, when
+        // the harness was run again for the final numbers.
+        let hello: Envelope<Response> = read_frame(&mut stream).await.expect("hello");
+        match hello.payload {
+            Response::Hello { protocol, .. } => assert_eq!(
+                protocol,
+                izul_ipc::PROTOCOL_VERSION,
+                "izul-worker usang; jalankan `cargo build --workspace --release`"
+            ),
+            other => panic!("expected Hello, got {other:?}"),
+        }
 
         let (tx, mut rx) = mpsc::channel::<Job>(512);
         tokio::spawn(async move {

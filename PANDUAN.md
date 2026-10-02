@@ -4,12 +4,27 @@
 > fitur yang belum ada hanya akan menyesatkan, jadi bagian yang belum bisa
 > dipakai sengaja dikosongkan sampai fasenya selesai.
 
-## Status: Fase 5
+## Status: Fase 8 (beta)
 
-Aplikasi ini sekarang bisa dipakai membaca beberapa dokumen sekaligus, mencari
-di dalamnya, menganotasi, dan **menyimpan** anotasi itu ke berkas PDF —
-sebagai anotasi biasa yang terlihat di pembaca PDF lain, dan tetap bisa
-disunting ulang di sini setelah berkasnya dibuka lagi.
+Semua fase selesai. Aplikasi ini bisa dipakai membaca banyak dokumen sekaligus,
+mencari, menganotasi dan **menyimpan** anotasi ke berkas PDF (terlihat di
+pembaca lain, tetap bisa disunting di sini), menyusun halaman, meredaksi,
+mengenali teks pindaian, mengisi formulir, mencetak, dan presentasi. Versinya
+**beta**: sebagian hal baru bisa dipastikan setelah dicoba di Windows
+sungguhan — daftar yang perlu dicoba ada di `TESTING.md`, bagian "Fase 8".
+
+### Memasang
+
+Ada tiga pilihan, semuanya dari halaman CI proyek (artefak **installers**):
+
+| Berkas | Untuk |
+|---|---|
+| `…-setup.exe` | Cara biasa. Dipasang ke Program Files, `.pdf` bisa dibuka dengan aplikasi ini, muncul di Start menu. |
+| `….msi` | Sama, untuk yang memasang lewat alat IT kantor. |
+| `…-portable.zip` | Tanpa dipasang: ekstrak di mana saja (misalnya flashdisk), jalankan `pdf-studio-izul.exe`. |
+
+Windows mungkin memperingatkan "Windows protected your PC" karena installernya
+belum ditandatangani: klik **More info** → **Run anyway**.
 
 ### Membuka dan menggulir
 
@@ -52,8 +67,11 @@ halaman yang diputar. Pembaca layar juga membaca teks ini, bukan gambarnya.
 
 ### Panel samping
 
-Tombol ☰ membuka panel samping. **Halaman** menampilkan thumbnail — klik untuk
-melompat. **Daftar Isi** menampilkan bookmark bawaan dokumen, bila ada.
+Deretan ikon di tepi kiri membuka panel samping; mengeklik ikon yang sedang
+terbuka melipatnya. **Halaman** (thumbnail — klik untuk melompat), **Daftar
+Isi** (bookmark bawaan dokumen), **Bookmark Saya** (tanda buatan Anda sendiri),
+**Anotasi**, **Cari**, **Formulir**, dan **Lampiran** (berkas yang tertanam di
+dalam PDF).
 
 ### Posisi baca diingat
 
@@ -389,7 +407,82 @@ Penggantian **ditolak**, dengan pesan alasannya, bila:
   atau ukuran huruf;
 - teks baru terlalu panjang sampai menabrak kata sesudahnya.
 
-### Yang perlu diketahui soal anotasi di fase ini
+### Perintah dan pintasan
+
+- **Ctrl+Shift+P** membuka *palet perintah*: ketik sebagian nama perintah
+  ("cetak", "putar", "redaksi") lalu Enter. Semua perintah aplikasi ada di
+  sana, termasuk yang tidak punya tombol.
+- **F1** menampilkan semua pintasan. Klik **Ubah** di baris mana pun lalu tekan
+  kombinasi baru; kalau kombinasi itu sudah dipakai perintah lain, perintah
+  itu dilepas dan disebutkan. **Kembalikan semua** memulihkan bawaan.
+
+### Mencetak
+
+**Ctrl+P** (atau ikon printer di atas). Pilih halaman (semua, halaman ini, atau
+rentang seperti `1-3, 7`), apakah anotasi ikut dicetak, ukuran (pas kertas atau
+asli), dan kualitas. Printer, jumlah salinan dan pratinjau dipilih di jendela
+cetak Windows yang muncul sesudahnya.
+
+### Presentasi dan mode fokus
+
+**F5** menampilkan dokumen layar penuh di latar hitam, satu halaman sekali
+tampil. Page Down, panah kanan, spasi atau Enter ke halaman berikutnya; Page Up,
+panah kiri atau Backspace kembali; Esc keluar. **F11** menyembunyikan semua
+tombol dan panel supaya hanya halaman yang terlihat; F11 atau Esc lagi untuk
+kembali.
+
+### Tema gelap
+
+Pita **Beranda** → **Tema**: Terang, Gelap, atau Ikuti Windows. Di tema gelap,
+**Balik warna halaman di mode gelap** membuat halaman ikut gelap dengan teks
+terang — foto dan gambar di halaman **tidak** ikut terbalik, jadi tetap terlihat
+seperti aslinya.
+
+### Gaya teks, gambar, dan merapikan objek
+
+- Pilih kotak teks → panel properti: **Tebal**, **Miring**, rata kiri/tengah/
+  kanan/kanan-kiri, dan **Spasi baris**.
+- **Ctrl+V** menempel gambar dari papan klip — misalnya tangkapan layar dari
+  Win+Shift+S — ke tengah halaman. Pilih gambar → **Pangkas** untuk memotong
+  sisi-sisinya.
+- Pilih beberapa objek (Shift+klik, atau tarik kotak di ruang kosong) → panel
+  properti → **Ratakan** (kiri, tengah, kanan, atas, tengah, bawah) atau
+  **Distribusikan** (jarak antarobjek disamakan; butuh tiga objek). Objek yang
+  dikunci tidak ikut digeser.
+- Panel **Anotasi** → **Ekspor daftar (CSV)** menulis semua anotasi dokumen ke
+  berkas yang bisa dibuka di Excel.
+
+### Menyalin satu kolom tabel
+
+Tahan **Alt** lalu tarik kotak di atas teks: hanya teks di dalam kotak itu yang
+disalin, baris per baris — cara mengambil satu kolom tabel tanpa kolom di
+sebelahnya. Tempel dengan Ctrl+V di mana saja.
+
+### Bookmark Saya
+
+**Ctrl+B** (atau tombol di panel **Bookmark Saya**) menandai halaman yang sedang
+dibaca. Klik untuk melompat ke sana, klik ikon pensil (atau klik dua kali) untuk
+mengganti namanya. Bookmark disimpan di aplikasi, **tidak** di dalam berkas PDF,
+jadi berkas yang dikirim orang tidak berubah karena Anda menandainya.
+
+### Lampiran
+
+Panel **Lampiran** menampilkan berkas yang tertanam di dalam PDF (misalnya
+lampiran Excel di dokumen instansi). **Simpan** menulisnya ke folder yang Anda
+pilih. Lampiran tidak dibuka langsung dari aplikasi ini: ia bisa berupa berkas
+apa saja dari pembuat PDF-nya, jadi buka lewat File Explorer bila Anda
+memercayainya.
+
+### Aksesibilitas
+
+- Semua tombol bisa dicapai dengan Tab; tab dokumen di atas berpindah dengan
+  panah kiri/kanan dan ditutup dengan **Delete** (atau Ctrl+W).
+- Narrator dan pembaca layar lain membaca teks halaman, per halaman.
+- Tema kontras tinggi Windows didukung: halaman tetap tampil apa adanya, dan
+  yang sedang dipilih ditandai garis.
+
+### Yang perlu diketahui soal anotasi
+
 
 - Kotak teks, stempel, dan catatan memakai font standar PDF (Helvetica, Times,
   Courier) yang tidak ditanam ke berkas; pembaca lain menampilkannya dengan
@@ -417,7 +510,10 @@ Penggantian **ditolak**, dengan pesan alasannya, bila:
 di situlah draf anotasi yang belum disimpan berada.
 
 Versi portabel menyimpan ketiganya di folder `data` di samping berkas `.exe`,
-sehingga seluruh aplikasi beserta datanya dapat dibawa di flash disk.
+sehingga seluruh aplikasi beserta datanya dapat dibawa di flash disk. Yang
+membuatnya portabel adalah berkas `portable.txt` di samping `.exe`; hapus
+berkas itu kalau ingin salinan tersebut memakai data di profil Windows. Versi
+portabel juga tidak mencatat berkas yang dibuka ke daftar *Terbaru* Windows.
 
 ## Jika sebuah tab menampilkan pesan galat
 

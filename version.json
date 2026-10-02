@@ -1,9 +1,9 @@
 {
   "name": "PDF Studio Izul",
   "codename": "Atlas",
-  "version": "7.0.0-alpha.7",
-  "phase": "7",
-  "phaseName": "Kecerdasan",
+  "version": "7.0.0-beta.1",
+  "phase": "8",
+  "phaseName": "Penghalusan & Rilis",
   "buildChannel": "dev",
   "pdfiumVersion": "151.0.7881.0",
   "minWindows": "10.0.19041",
