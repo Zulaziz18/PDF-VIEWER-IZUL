@@ -189,6 +189,23 @@ const EMPTY_LAYOUT: Layout = {
   horizontal: false,
 };
 
+/**
+ * The zoom step for one Ctrl+wheel event.
+ *
+ * A mouse notch arrives as one event of ~100 units, and a quarter of an e-fold
+ * per notch is a comfortable step. A touchpad pinch arrives as a stream of
+ * small events whose deltas Chromium derives as 100·ln(scale), so dividing by
+ * 100 makes the page follow the fingers exactly; dividing those by 400 too
+ * made a pinch feel four times too stiff. The size of one event tells the two
+ * apart: an ordinary notch is 100 units or more, a pinch frame stays well under
+ * 40. A high-resolution wheel that reports small steps zooms faster per notch
+ * under this rule — rare, and still usable.
+ */
+export function wheelZoomFactor(deltaY: number): number {
+  const divisor = Math.abs(deltaY) < 40 ? 100 : 400;
+  return Math.min(2, Math.max(0.5, Math.exp(-deltaY / divisor)));
+}
+
 export class ViewportRenderer {
   #solo: number | null = null;
   #host: RendererHost;
@@ -257,9 +274,7 @@ export class ViewportRenderer {
       x: this.#host.scroller.scrollLeft,
       y: this.#host.scroller.scrollTop,
     };
-    // A wheel notch is ~100 units; the exponent turns any device's deltas into
-    // the same perceptual step and keeps the zoom smooth on a trackpad.
-    const factor = Math.exp(-e.deltaY / 400);
+    const factor = wheelZoomFactor(e.deltaY);
     const next = this.#state.zoom * factor;
     this.#zoomAnchor = {
       contentX: scroll.x + clientX,

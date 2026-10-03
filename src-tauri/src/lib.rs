@@ -48,6 +48,7 @@ pub mod indexing;
 pub mod logging;
 pub mod ocr;
 pub mod pagemap;
+pub mod pinch;
 pub mod printing;
 pub mod protocol;
 pub mod render;
@@ -267,6 +268,10 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
         .setup(move |app| {
             if let Some(w) = app.get_webview_window("main") {
                 let _ = w.set_title(&title);
+                #[cfg(windows)]
+                if let Err(e) = w.with_webview(|webview| pinch::enable(&webview)) {
+                    tracing::warn!(error = %e, "webview tidak terjangkau untuk zoom cubit");
+                }
             }
             // A crashed worker must reach the user as a tab that reloads itself,
             // not as a viewport that quietly stops updating (SPEC 3.4).

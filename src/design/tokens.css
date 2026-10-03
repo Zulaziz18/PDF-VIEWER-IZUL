@@ -119,6 +119,9 @@ body,
 }
 
 body {
+  /* A touchscreen pinch must not scale the interface now that WebView2 pinch
+     zoom is on for the touchpad (src-tauri/src/pinch.rs). */
+  touch-action: pan-x pan-y;
   background: var(--izul-canvas);
   color: var(--izul-text);
   font-family: var(--izul-font);

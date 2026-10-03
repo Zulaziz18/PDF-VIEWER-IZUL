@@ -46,6 +46,13 @@ parking_lot.workspace = true
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
+# Touchpad pinch reaches the page only with WebView2 pinch zoom on (pinch.rs).
+# Pinned to the versions tauri-runtime-wry already links, so nothing new is
+# built and the COM interfaces are the same types wry hands us.
+[target.'cfg(windows)'.dependencies]
+webview2-com = "=0.38.2"
+windows-core = "0.61"
+
 [target.'cfg(windows)'.dependencies.windows]
 version = "0.62"
 features = [
