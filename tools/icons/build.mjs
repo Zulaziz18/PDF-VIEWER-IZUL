@@ -103,6 +103,8 @@ const ICONS = {
   toImages: "image_multiple",
   flatten: "layer",
   extractPages: "document_arrow_right",
+  // 7.1.0: "Ke Word".
+  toWord: "document_text_extract",
   warning: "warning",
   reload: "arrow_sync",
   draft: "document_sync",

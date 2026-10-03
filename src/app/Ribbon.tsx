@@ -40,7 +40,7 @@ import { insertImage, markupSelection, pickAndOpen } from "./actions";
 import { startTextEdit } from "./textEdit";
 import type { ThemePref } from "@/design/theme";
 import { keyOf, useKeymap, withKeys } from "@/state/keymapStore";
-import { exportFlat, requestCloseAll, requestCloseTab, saveDocument } from "./fileActions";
+import { exportDocx, exportFlat, requestCloseAll, requestCloseTab, saveDocument } from "./fileActions";
 import {
   deletePages,
   duplicatePages,
@@ -705,6 +705,7 @@ function ConvertPanel(): JSX.Element {
         onClick={() => ui().setExporting("pages")}
       />
       <RibbonButton icon="flatten" tone="violet" label={t("convert.flat")} hint={t("convert.flatHint")} onClick={() => void exportFlat()} />
+      <RibbonButton icon="toWord" tone="blue" label={t("convert.word")} hint={t("convert.wordHint")} onClick={() => void exportDocx()} />
       <RibbonDivider />
       <RibbonButton icon="ocr" tone="teal" label={t("ocr.button")} hint={t("ocr.hint")} onClick={() => ui().setOcring(true)} />
       <RibbonDivider />

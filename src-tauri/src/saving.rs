@@ -817,6 +817,67 @@ pub async fn export(
     result
 }
 
+/// "Ke Word" (7.1.0): the document as the editor has it, as an editable .docx.
+///
+/// Annotations are flattened into the working copy first, so a text box the
+/// user typed and a picture they inserted come across as text and picture;
+/// then the worker reads each page (`WorkLayout`, one page per request so
+/// it answers heartbeats in between), and this process — which does not link
+/// PDFium — builds the package with `izul_docx` and writes it atomically.
+pub async fn export_docx(
+    pool: &Arc<RwLock<Pool>>,
+    annots: &AnnotState,
+    doc: u64,
+    source: &str,
+    scratch: &Path,
+    target: &str,
+    title: &str,
+) -> Out<izul_docx::layout::Stats> {
+    let temp = current_as_temp(pool, annots, doc, source, scratch, false).await?;
+    let worker = worker_of(pool, doc).await?;
+    let id = DocId(doc);
+    let page_count = expect_work(
+        &worker,
+        Request::WorkOpen {
+            doc: id,
+            path: temp.temp_path().to_string_lossy().to_string(),
+        },
+    )
+    .await?;
+    let read = async {
+        let mut first = 0;
+        while first < page_count {
+            expect_work(
+                &worker,
+                Request::WorkFlatten {
+                    doc: id,
+                    first,
+                    count: 25,
+                },
+            )
+            .await?;
+            first += 25;
+        }
+        let mut pages = Vec::with_capacity(page_count as usize);
+        for page in 0..page_count {
+            let bytes = expect_blob(&worker, Request::WorkLayout { doc: id, page }).await?;
+            let layout: izul_docx::PageLayout = postcard::from_bytes(&bytes)
+                .map_err(|e| format!("tata letak halaman {}: {e}", page + 1))?;
+            pages.push(layout);
+        }
+        Ok::<_, String>(pages)
+    }
+    .await;
+    let _ = ask(&worker, Request::WorkClose { doc: id }).await;
+    drop(temp);
+    let pages = read?;
+    let built = izul_docx::build(&izul_docx::analyse(pages), title).map_err(|e| e.to_string())?;
+    PendingWrite::write(Path::new(target), &built.bytes)
+        .and_then(PendingWrite::commit)
+        .map_err(|e| format!("{target}: {e}"))?;
+    Ok(built.stats)
+}
+
 /// Takes one page's saved annotations from the worker into the editor.
 /// Does nothing for a page already imported.
 pub async fn import_page(

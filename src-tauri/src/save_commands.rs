@@ -318,6 +318,58 @@ pub async fn export_document(
     Ok(written)
 }
 
+/// What "Ke Word" made, for the message afterwards.
+#[derive(Debug, Serialize)]
+pub struct DocxReport {
+    pub path: String,
+    pub pages: u32,
+    pub paragraphs: u32,
+    pub pictures: u32,
+    /// Sideways characters left out.
+    pub skipped_turned: u32,
+    pub skipped_pictures: u32,
+    /// Pages with no text — scans not yet through OCR — which came across as
+    /// pictures only.
+    pub pages_without_text: u32,
+}
+
+#[tauri::command]
+pub async fn export_docx(
+    state: tauri::State<'_, AppState>,
+    doc: u64,
+    target: String,
+) -> CmdResult<DocxReport> {
+    let (path, file_id, _) = doc_path(&state, doc)?;
+    prepare_all_fonts(&state, doc).await?;
+    let title = std::path::Path::new(&path)
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let scratch = state.data_dir.join("tmp");
+    let stats = saving::export_docx(
+        &state.pool,
+        &state.annots,
+        doc,
+        &path,
+        &scratch,
+        &target,
+        &title,
+    )
+    .await?;
+    if let (Ok(conn), true) = (state.db(), file_id > 0) {
+        let _ = exports::record(&conn, files::FileId(file_id), &target, "docx");
+    }
+    Ok(DocxReport {
+        path: target,
+        pages: stats.pages,
+        paragraphs: stats.paragraphs,
+        pictures: stats.pictures,
+        skipped_turned: stats.skipped_turned,
+        skipped_pictures: stats.skipped_pictures,
+        pages_without_text: stats.pages_without_text,
+    })
+}
+
 #[derive(Debug, Serialize)]
 pub struct ExportOut {
     pub source: String,

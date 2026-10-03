@@ -40,6 +40,7 @@ pub mod geom;
 mod golden;
 pub mod invert;
 pub mod izul;
+pub mod layout;
 pub mod ocr_layer;
 pub mod outline;
 pub mod redaction;

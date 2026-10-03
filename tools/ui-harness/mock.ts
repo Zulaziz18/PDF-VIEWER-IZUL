@@ -154,6 +154,21 @@ export function installMocks(data: HarnessData): void {
             portable: false,
             releasesUrl: "https://github.com/Zulaziz18/PDF-VIEWER-IZUL/releases",
           };
+        // 7.1.0: "Ke Word" — the save dialog answers, and the report is
+        // what `docx-proof` measured on the sample (33 pages, 235 paragraphs,
+        // the cover's sideways "2026").
+        case "plugin:dialog|save":
+          return "C:\\Users\\contoh\\Documents\\Panduan Studi 2026.docx";
+        case "export_docx":
+          return {
+            path: String(args["target"]),
+            pages: 33,
+            paragraphs: 235,
+            pictures: 0,
+            skipped_turned: 4,
+            skipped_pictures: 0,
+            pages_without_text: 0,
+          };
         case "pool_health":
           return {
             pool_size: 8,

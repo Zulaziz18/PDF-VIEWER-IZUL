@@ -19,7 +19,7 @@ import type { Layout } from "@/state/panels";
 import type { ViewMode } from "@/viewport/layout";
 import { goToPage, insertImage, markupSelection, pickAndOpen } from "./actions";
 import { toggleCompare } from "./compare";
-import { exportFlat, requestCloseAll, requestCloseTab, saveDocument } from "./fileActions";
+import { exportDocx, exportFlat, requestCloseAll, requestCloseTab, saveDocument } from "./fileActions";
 import { deletePages, duplicatePages, extractPages, insertBlankPage, mergeFile, splitDocument } from "./pageActions";
 import { markText, openSearchForMarking, toggleAreaTool } from "./redaction";
 import { startTextEdit } from "./textEdit";
@@ -207,6 +207,7 @@ export const COMMANDS: readonly Command[] = [
   { id: "convert.images", label: "convert.toImages", group: "convert", keys: [], needsDoc: true, run: () => ui().setExporting("images") },
   { id: "convert.pages", label: "convert.pages", group: "convert", keys: [], needsDoc: true, run: () => ui().setExporting("pages") },
   { id: "convert.flat", label: "convert.flat", group: "convert", keys: [], needsDoc: true, run: () => void exportFlat() },
+  { id: "convert.word", label: "convert.word", group: "convert", keys: [], needsDoc: true, run: () => void exportDocx() },
   { id: "convert.ocr", label: "ocr.button", group: "convert", keys: [], needsDoc: true, run: () => ui().setOcring(true) },
 
   // Aplikasi

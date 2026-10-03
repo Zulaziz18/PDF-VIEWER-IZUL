@@ -413,6 +413,51 @@ export async function exportFlat(doc: number | null = activeDoc()): Promise<bool
   return await runExport(doc, { kind: "flat", target: withPdfExtension(chosen) });
 }
 
+interface DocxReport {
+  path: string;
+  pages: number;
+  paragraphs: number;
+  pictures: number;
+  skipped_turned: number;
+  skipped_pictures: number;
+  pages_without_text: number;
+}
+
+/**
+ * "Ke Word" (7.1.0): the document as it is in the editor, as a .docx whose
+ * text can be edited. What could not come across is said, not hidden: pages
+ * that are only a scan, and sideways text.
+ */
+export async function exportDocx(doc: number | null = activeDoc()): Promise<boolean> {
+  if (doc === null) return false;
+  const path = currentPath(doc);
+  if (path === null) return false;
+  const chosen = await saveDialog({
+    defaultPath: join(folderOf(path), `${stemOf(path)}.docx`),
+    filters: [{ name: t("dialog.word"), extensions: ["docx"] }],
+  });
+  if (chosen === null) return false;
+  const target = /\.docx$/i.test(chosen) ? chosen : `${chosen}.docx`;
+  const ui = useUi.getState();
+  ui.notify({ kind: "ok", text: t("convert.wordRunning") });
+  try {
+    const r = await invoke<DocxReport>("export_docx", { doc, target });
+    const notes = [
+      r.pages_without_text > 0 ? fill(t("convert.wordScanned"), { count: r.pages_without_text }) : null,
+      r.skipped_turned > 0 ? fill(t("convert.wordTurned"), { count: r.skipped_turned }) : null,
+    ].filter((n): n is string => n !== null);
+    ui.notify({
+      kind: "ok",
+      text: fill(t("convert.wordDone"), { name: nameOf(r.path), paragraphs: r.paragraphs, pictures: r.pictures }),
+      detail: [r.path, ...notes].join("\n"),
+    });
+    return true;
+  } catch (e) {
+    ui.notify({ kind: "error", text: t("convert.wordFailed"), detail: String(e) });
+    return false;
+  }
+}
+
 /** Some pages as a new PDF, annotations kept editable. */
 export async function exportPages(doc: number, pages: number[]): Promise<boolean> {
   const path = currentPath(doc);

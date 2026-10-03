@@ -391,6 +391,15 @@ const SCENES = {
       await page.getByRole("tab", { name: "Konversi", exact: true }).click();
     },
   },
+  // 7.1.0: "Ke Word" and what it says afterwards.
+  word: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await page.getByRole("tab", { name: "Konversi", exact: true }).click();
+      await page.getByRole("button", { name: "Ke Word", exact: true }).click();
+      await page.getByText(/Dokumen Word dibuat/).waitFor();
+    },
+  },
   export: {
     session: OPEN_ALL,
     async steps(page) {

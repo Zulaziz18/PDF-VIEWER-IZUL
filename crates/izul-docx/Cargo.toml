@@ -1,0 +1,17 @@
+[package]
+name = "izul-docx"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+# PDF to Word (7.1.0). Pure: no PDFium and no I/O beyond the bytes it returns,
+# so the UI process — which must not link PDFium — can assemble the file, and
+# every rule is testable without a document.
+[dependencies]
+serde.workspace = true
+# Deflate for the ZIP container; already built for izul-write and izul-redact.
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
+
+[lints]
+workspace = true

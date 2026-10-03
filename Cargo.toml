@@ -10,6 +10,7 @@ members = [
     "crates/izul-write",
     "crates/izul-redact",
     "crates/izul-ocr",
+    "crates/izul-docx",
     "bench",
     "tests-integration",
     "src-tauri",
@@ -31,6 +32,7 @@ izul-store = { path = "crates/izul-store" }
 izul-write = { path = "crates/izul-write" }
 izul-redact = { path = "crates/izul-redact" }
 izul-ocr = { path = "crates/izul-ocr" }
+izul-docx = { path = "crates/izul-docx" }
 
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }

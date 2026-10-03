@@ -21,7 +21,7 @@ use izul_model::geom::{PageFrame, PdfRectF, RotationQuarter};
 /// So the worker announces this number the moment it connects, and the
 /// supervisor refuses a worker that does not match. Bump it whenever anything
 /// in [`Request`] or [`Response`] changes shape.
-pub const PROTOCOL_VERSION: u32 = 15;
+pub const PROTOCOL_VERSION: u32 = 16;
 
 /// The OCR models' file names inside the folder `Request::WorkOcr` names:
 /// PP-OCRv6 small (7.0.0), fetched by `vendor/ocr/fetch.sh`. Here, where both
@@ -351,6 +351,13 @@ pub enum Request {
     AttachmentData {
         doc: DocId,
         index: u32,
+    },
+    /// 7.1.0: what `page` of the working copy holds for the Word conversion
+    /// (`izul_pdf::layout`), postcard-encoded and answered with `BlobReady` —
+    /// a page of pictures is larger than one frame.
+    WorkLayout {
+        doc: DocId,
+        page: u32,
     },
 }
 
@@ -888,6 +895,16 @@ mod tests {
                 .unwrap()
             ),
             34
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Request::WorkLayout {
+                    doc: DocId(1),
+                    page: 0
+                })
+                .unwrap()
+            ),
+            35
         );
         assert_eq!(
             index(

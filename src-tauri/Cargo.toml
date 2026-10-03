@@ -24,6 +24,8 @@ izul-render.workspace = true
 postcard.workspace = true
 izul-store.workspace = true
 izul-write.workspace = true
+# 7.1.0: "Ke Word" — the package is built here, from the pages the worker reads.
+izul-docx.workspace = true
 rusqlite.workspace = true
 image.workspace = true
 regex = "1"
@@ -68,6 +70,8 @@ features = [
 izul-store.workspace = true
 # Reads every stream of a redacted file, to prove what is not in it.
 izul-redact.workspace = true
+# Opens the parts of an exported .docx (7.1.0).
+flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 
 [lints]
 workspace = true

@@ -91,7 +91,7 @@ fn string_value(
     }
 }
 
-fn filter_is_dct(bindings: &dyn PdfiumLibraryBindings, object: FPDF_PAGEOBJECT) -> bool {
+pub(crate) fn filter_is_dct(bindings: &dyn PdfiumLibraryBindings, object: FPDF_PAGEOBJECT) -> bool {
     // SAFETY: `object` is a live page object; each call writes at most
     // `buf.len()` bytes into `buf`.
     unsafe {
@@ -157,6 +157,36 @@ fn extract_image(
             f: 0.0,
         };
         bindings.FPDFPageObj_SetMatrix(object, &natural);
+        rendered_png(doc, page, object).map(|bytes| ExtractedImage {
+            mime: "image/png",
+            bytes,
+        })
+    }
+}
+
+/// An image object's pixels as PDFium draws them — soft mask applied — as PNG,
+/// at whatever size its current matrix gives it.
+pub(crate) fn rendered_png(
+    doc: &Document,
+    page: FPDF_PAGE,
+    object: FPDF_PAGEOBJECT,
+) -> Option<Vec<u8>> {
+    let image = rendered_rgba(doc, page, object)?;
+    let mut png = std::io::Cursor::new(Vec::new());
+    image.write_to(&mut png, image::ImageFormat::Png).ok()?;
+    Some(png.into_inner())
+}
+
+/// The same pixels, not yet encoded.
+pub(crate) fn rendered_rgba(
+    doc: &Document,
+    page: FPDF_PAGE,
+    object: FPDF_PAGEOBJECT,
+) -> Option<image::RgbaImage> {
+    let bindings = doc.engine().bindings();
+    // SAFETY: `page` and `object` are live handles of the same document; the
+    // bitmap is read within its reported stride and height, then destroyed.
+    unsafe {
         let bitmap = bindings.FPDFImageObj_GetRenderedBitmap(doc.handle(), page, object);
         if bitmap.is_null() {
             return None;
@@ -181,14 +211,31 @@ fn extract_image(
         if rgba.len() != (bw * bh * 4) as usize {
             return None;
         }
-        let image = image::RgbaImage::from_raw(bw, bh, rgba)?;
-        let mut png = std::io::Cursor::new(Vec::new());
-        image.write_to(&mut png, image::ImageFormat::Png).ok()?;
-        Some(ExtractedImage {
-            mime: "image/png",
-            bytes: png.into_inner(),
-        })
+        image::RgbaImage::from_raw(bw, bh, rgba)
     }
+}
+
+/// Whether a JPEG has four components (CMYK or YCCK), read from its frame
+/// header. Word and most viewers cannot show one.
+pub(crate) fn jpeg_is_cmyk(bytes: &[u8]) -> bool {
+    let mut at = 2;
+    while at + 4 <= bytes.len() {
+        if bytes.get(at) != Some(&0xFF) {
+            return false;
+        }
+        let marker = bytes.get(at + 1).copied().unwrap_or(0);
+        let len = usize::from(bytes.get(at + 2).copied().unwrap_or(0)) << 8
+            | usize::from(bytes.get(at + 3).copied().unwrap_or(0));
+        // SOF0..SOF15, minus DHT (C4), JPG (C8) and DAC (CC).
+        if (0xC0..=0xCF).contains(&marker) && !matches!(marker, 0xC4 | 0xC8 | 0xCC) {
+            return bytes.get(at + 9) == Some(&4);
+        }
+        if marker == 0xDA {
+            return false;
+        }
+        at += 2 + len;
+    }
+    false
 }
 
 /// Takes this application's annotations out of a freshly loaded page.

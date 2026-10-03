@@ -297,6 +297,15 @@ impl Workbench {
                 let encoded = encode(geom.width, geom.height, geom.stride, &bgra, jpeg_quality)?;
                 Ok(self.put_blob(encoded))
             }
+            Request::WorkLayout { doc, page } => {
+                let layout = self
+                    .work(doc)?
+                    .page_layout(page)
+                    .map_err(|e| Failure::Pdf(Some(doc), e))?;
+                let bytes =
+                    postcard::to_allocvec(&layout).map_err(|e| Failure::Encode(e.to_string()))?;
+                Ok(self.put_blob(bytes))
+            }
             Request::WorkSave { doc } => {
                 let bytes = self
                     .work(doc)?

@@ -607,7 +607,8 @@ where
         | Request::BlobAppend { .. }
         | Request::RemoveBackground { .. }
         | Request::FillForm { working: true, .. }
-        | Request::WorkReplaceText { .. }) => {
+        | Request::WorkReplaceText { .. }
+        | Request::WorkLayout { .. }) => {
             let engine = sess.engine();
             let viewing =
                 |doc: DocId, page: u32| sess.get(doc).map(|open| open.doc.izul_annots(page));

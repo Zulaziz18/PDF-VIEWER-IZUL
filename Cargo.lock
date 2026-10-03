@@ -1964,7 +1964,9 @@ checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
 name = "izul-app"
 version = "7.0.1"
 dependencies = [
+ "flate2",
  "image",
+ "izul-docx",
  "izul-ipc",
  "izul-model",
  "izul-redact",
@@ -1998,6 +2000,7 @@ name = "izul-bench"
 version = "7.0.1"
 dependencies = [
  "image",
+ "izul-docx",
  "izul-ipc",
  "izul-model",
  "izul-ocr",
@@ -2013,6 +2016,14 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "izul-docx"
+version = "7.0.1"
+dependencies = [
+ "flate2",
+ "serde",
 ]
 
 [[package]]
@@ -2068,6 +2079,7 @@ version = "7.0.1"
 dependencies = [
  "flate2",
  "image",
+ "izul-docx",
  "izul-model",
  "izul-redact",
  "izul-write",
@@ -2127,6 +2139,7 @@ dependencies = [
  "izul-ocr",
  "izul-pdf",
  "parking_lot",
+ "postcard",
  "thiserror 2.0.20",
  "tokio",
  "tracing",

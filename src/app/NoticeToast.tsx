@@ -35,7 +35,7 @@ export function NoticeToast(): JSX.Element | null {
       <div className="flex-1 min-w-0">
         <p className="text-[13px] font-medium break-words">{notice.text}</p>
         {notice.detail && (
-          <p className="mt-0.5 text-[12px] text-[var(--izul-text-dim)] break-all select-text">{notice.detail}</p>
+          <p className="mt-0.5 text-[12px] text-[var(--izul-text-dim)] break-all whitespace-pre-line select-text">{notice.detail}</p>
         )}
       </div>
       <button
