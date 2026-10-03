@@ -902,6 +902,10 @@ bookmark pengguna, lampiran, Alt+drag, jump list). `PROTOCOL_VERSION` = 14
   jendela; job *Package (Windows)* menjalankannya di NSIS terpasang, MSI yang
   diekstrak, dan ZIP portabel. Portabel = ada `portable.txt` di samping exe.
 - Model OCR **dibundel sejak 7.0.0** (PP-OCRv6, Apache-2.0) — lihat "Keadaan Rilis 7.0.0".
+- **Rilis permanen = GitHub Release.** Push tag `vX.Y.Z` (harus sama dengan
+  `version.json`) → job *Package (Windows)* membangun, menjalankan self-test,
+  lalu `gh release create` melampirkan setup.exe, .msi, dan ZIP portabel.
+  Artifact CI biasa hanya 14 hari.
 
 **Aksesibilitas:** `npm run ui:shots -- --axe=true` (axe-core 4.13.0, WCAG 2.1
 A+AA) dan `--forced=true` (kontras tinggi). axe **tidak** menilai forced-colors:

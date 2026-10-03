@@ -3,6 +3,9 @@ name: CI
 on:
   push:
     branches: ["**"]
+    # A version tag (v7.0.0) also publishes the tested installers as a GitHub
+    # Release — kept for good, unlike the 14-day artifacts below.
+    tags: ["v*"]
   pull_request:
 
 env:
@@ -192,6 +195,8 @@ jobs:
   package:
     name: Package (Windows)
     runs-on: windows-latest
+    permissions:
+      contents: write # only used by the release step, on a version tag
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -279,6 +284,26 @@ jobs:
             target/release/bundle/nsis/*-setup.exe
             target/release/bundle/msi/*.msi
             *-portable.zip
+
+      # Only after every installer passed its self-test above. The tag must
+      # name the version in version.json, so a release can never carry an
+      # installer that calls itself something else.
+      - name: Publish the GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $v = (Get-Content version.json | ConvertFrom-Json).version
+          if ("${{ github.ref_name }}" -ne "v$v") { throw "tag ${{ github.ref_name }} != version.json v$v" }
+          $files = @(
+            (Get-ChildItem target/release/bundle/nsis/*-setup.exe).FullName
+            (Get-ChildItem target/release/bundle/msi/*.msi).FullName
+            (Get-ChildItem *-portable.zip).FullName
+          )
+          $notes = "PDF Studio Izul $v. Pasang dengan berkas *-setup.exe (disarankan), atau .msi, atau ekstrak ZIP portabel. Perubahan lengkap: CHANGELOG.md."
+          gh release create "v$v" @files --title "PDF Studio Izul $v" --notes $notes --verify-tag
 
   version-consistency:
     name: Version consistency
