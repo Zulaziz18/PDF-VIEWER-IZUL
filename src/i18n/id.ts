@@ -148,7 +148,7 @@ export const id = {
   "ocr.button": "Kenali Teks (OCR)",
   "ocr.hint": "Ubah halaman hasil pindaian jadi teks yang bisa dicari dan disalin",
   "ocr.title": "Kenali teks (OCR)",
-  "ocr.explain": "Huruf pada halaman hasil pindaian dibaca di komputer ini, lalu ditanam sebagai teks tak terlihat di atasnya: halaman bisa dicari dan disalin, tampilannya tidak berubah. Dikenali: huruf Latin cetak (bahasa Indonesia dan Inggris).",
+  "ocr.explain": "Huruf pada halaman hasil pindaian dibaca di komputer ini, lalu ditanam sebagai teks tak terlihat di atasnya: halaman bisa dicari dan disalin, tampilannya tidak berubah. Dikenali: huruf Latin cetak, termasuk huruf beraksen (bahasa Indonesia, Inggris, dan bahasa Eropa lain). Tulisan tangan dan aksara non-Latin belum.",
   "ocr.noModels": "Model OCR belum terpasang. Jalankan vendor/ocr/fetch.sh dan vendor/onnx/fetch.sh lalu bangun ulang aplikasi (lihat TESTING.md).",
   "ocr.which": "Halaman",
   "ocr.current": "Halaman ini ({page})",
