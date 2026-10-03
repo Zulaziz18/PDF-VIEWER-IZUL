@@ -208,6 +208,7 @@ fn mark(page: u32, quads: Vec<PdfRectF>) -> AnnotObject {
         AnnotPayload::Markup {
             quads,
             color: Rgba::BLACK,
+            thickness: 1.0,
         },
     );
     obj.recompute_rect();

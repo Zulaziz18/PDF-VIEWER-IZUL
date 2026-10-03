@@ -912,7 +912,7 @@ impl AnnotState {
                 std::collections::BTreeMap::new();
             let mut doomed = BTreeSet::new();
             for obj in e.doc.iter().filter(|o| o.kind == AnnotKind::Redact) {
-                let AnnotPayload::Markup { quads, color } = &obj.payload else {
+                let AnnotPayload::Markup { quads, color, .. } = &obj.payload else {
                     continue;
                 };
                 doomed.insert(obj.id.0);
@@ -1317,6 +1317,7 @@ mod redaction_tests {
             AnnotPayload::Markup {
                 quads: vec![PdfRectF::new(100.0, 100.0, 200.0, 120.0)],
                 color: Rgba::BLACK,
+                thickness: 1.0,
             },
         );
         o.recompute_rect();

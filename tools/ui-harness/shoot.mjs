@@ -603,6 +603,18 @@ const SCENES = {
       await page.getByRole("heading", { name: "Cetak", exact: true }).waitFor();
     },
   },
+  // 7.1.0: a highlight's thickness, set to 60 % — the slider in the panel.
+  highlight: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await page.getByRole("tab", { name: "Komentar", exact: true }).click();
+      await izul(page, (z) => z.goToPage(2));
+      await settle(page);
+      await izul(page, (z) => z.select([201]));
+      await page.getByRole("slider", { name: /Tebal stabilo/ }).fill("0.6");
+      await settle(page, 800);
+    },
+  },
   // 7.1.0: menus float over the page. In 7.0.0 the bottom bar's zoom menu
   // opened below the window and dragged the layout up, and the ribbon's menus
   // were clipped inside the ribbon.
@@ -790,6 +802,11 @@ async function newPage({ width, height, theme, scale, scene }) {
       const { header } = await ask({ op: "formfill", path, values: [[a.name, a.value]] });
       formValues.set(`${path}\u0000${a.name}`, a.value);
       return { objects: [], can_undo: true, can_redo: false, dirty: true, map_revision: 0, repaint: header.pages };
+    }
+    if (cmd === "annot_replace") {
+      // The edited objects go back through the real display-list builder.
+      await ask({ op: "replace", path, objects: a.objects });
+      return { objects: [], can_undo: true, can_redo: false, dirty: true, map_revision: 0 };
     }
     if (cmd === "document_outline") return (await ask({ op: "outline", path })).header.outline;
     if (cmd === "page_text") return (await ask({ op: "text", path, page: a.page, rotation: a.rotation ?? 0 })).header;

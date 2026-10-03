@@ -486,6 +486,8 @@ export const id = {
   "props.color": "Warna",
   "props.opacity": "Opasitas",
   "props.strokeWidth": "Tebal garis",
+  "props.thickness": "Tebal stabilo",
+  "props.thicknessHint": "Kecilkan bila stabilo menumpuk ke baris atas atau bawah. Stabilo berikutnya ikut tebal ini.",
   "props.font": "Font",
   "props.fontSize": "Ukuran",
   "props.text": "Teks",

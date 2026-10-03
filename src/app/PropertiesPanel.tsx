@@ -15,6 +15,7 @@ import { useDocument } from "@/state/documentStore";
 import type { AnnotObject, Rgba, TextAlign } from "@/annots/types";
 import { align, distribute, type Alignment, type Axis } from "@/annots/arrange";
 import { cropOf, textStyleOf, withCrop, withTextStyle, type CropEdge } from "@/annots/style";
+import { MIN_HIGHLIGHT_THICKNESS, rememberHighlightThickness } from "@/annots/factory";
 import { Icon } from "@/design/Icon";
 import type { IconName } from "@/design/icons.generated";
 import { cssColor, rgba } from "@/annots/types";
@@ -95,6 +96,19 @@ function withStrokeWidth(obj: AnnotObject, width: number): AnnotObject {
   else if ("Line" in p) p.Line.width = width;
   else if ("Shape" in p) p.Shape.style.stroke_width = width;
   else if ("Polygon" in p) p.Polygon.style.stroke_width = width;
+  return next;
+}
+
+/** A highlight's thickness; `null` for anything else, including underline. */
+function thicknessOf(obj: AnnotObject): number | null {
+  const p = obj.payload;
+  return obj.kind === "Highlight" && "Markup" in p ? p.Markup.thickness : null;
+}
+
+function withThickness(obj: AnnotObject, thickness: number): AnnotObject {
+  const next = structuredClone(obj);
+  const p = next.payload;
+  if (next.kind === "Highlight" && "Markup" in p) p.Markup.thickness = thickness;
   return next;
 }
 
@@ -208,6 +222,7 @@ export function PropertiesPanel(): React.JSX.Element | null {
   const first = objects[0] as AnnotObject;
   const color = colorOf(first);
   const width = strokeWidthOf(first);
+  const thickness = objects.every((o) => o.kind === "Highlight") ? thicknessOf(first) : null;
   const text = objects.length === 1 ? textOf(first) : null;
   const font = objects.length === 1 ? fontOf(first) : null;
   const style = objects.length === 1 ? textStyleOf(first) : null;
@@ -327,6 +342,33 @@ export function PropertiesPanel(): React.JSX.Element | null {
             </button>
           </div>
           <span className="text-[11px] text-[var(--izul-text-dim)]">{t("bg.undoHint")}</span>
+        </section>
+      )}
+
+      {thickness !== null && (
+        <section>
+          <label className="block text-[12px] text-[var(--izul-text-dim)]">
+            <span className="block mb-1">
+              {t("props.thickness")} — {Math.round(thickness * 100)}%
+            </span>
+            <input
+              type="range"
+              min={MIN_HIGHLIGHT_THICKNESS}
+              max={1}
+              step={0.05}
+              value={thickness}
+              aria-valuetext={`${Math.round(thickness * 100)}%`}
+              onChange={(e) => {
+                const value = Number(e.target.value);
+                rememberHighlightThickness(value);
+                apply((o) => withThickness(o, value));
+              }}
+              className="w-full"
+            />
+          </label>
+          <span className="block mt-1 text-[11px] text-[var(--izul-text-dim)]">
+            {t("props.thicknessHint")}
+          </span>
         </section>
       )}
 

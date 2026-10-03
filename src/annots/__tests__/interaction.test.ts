@@ -92,6 +92,7 @@ describe("hitTest", () => {
         Markup: {
           quads: [{ left: 10, bottom: 48, right: 110, top: 60 }],
           color: rgba(255, 235, 59, 0.4),
+          thickness: 1,
         },
       },
     });

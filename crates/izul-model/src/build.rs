@@ -63,8 +63,12 @@ pub fn display_list(obj: &AnnotObject, fonts: &dyn FontCtx) -> Result<DisplayLis
     // the same colour on screen as in the file.
     let alpha = obj.opacity.clamp(0.0, 1.0);
     match &obj.payload {
-        AnnotPayload::Markup { quads, color } => {
-            markup(&mut dl, obj, quads, fade(*color, alpha));
+        AnnotPayload::Markup {
+            quads,
+            color,
+            thickness,
+        } => {
+            markup(&mut dl, obj, quads, *thickness, fade(*color, alpha));
         }
         AnnotPayload::FreeText {
             text,
@@ -290,12 +294,18 @@ fn paint(dl: &mut DisplayList, path: Path, style: &ShapeStyle, alpha: f32, rule:
 
 /// Highlight, underline and strike-out, which differ only in what they draw per
 /// quad.
-fn markup(dl: &mut DisplayList, obj: &AnnotObject, quads: &[PdfRectF], color: Rgba) {
+fn markup(
+    dl: &mut DisplayList,
+    obj: &AnnotObject,
+    quads: &[PdfRectF],
+    thickness: f32,
+    color: Rgba,
+) {
     use crate::annot::AnnotKind;
     for quad in quads {
         match obj.kind {
             AnnotKind::Highlight => dl.push(DisplayOp::FillPath {
-                path: Path::rect(*quad),
+                path: Path::rect(thinned(*quad, thickness)),
                 color,
                 rule: FillRule::NonZero,
                 // Multiply, so the text underneath stays legible instead of
@@ -345,6 +355,19 @@ fn markup(dl: &mut DisplayList, obj: &AnnotObject, quads: &[PdfRectF], color: Rg
             _ => {}
         }
     }
+}
+
+/// A highlight quad cut down to `thickness` of its height, about its middle.
+/// Out-of-range values (a hand-edited file) are clamped, never trusted.
+fn thinned(quad: PdfRectF, thickness: f32) -> PdfRectF {
+    let t = if thickness.is_finite() {
+        thickness.clamp(crate::annot::MIN_HIGHLIGHT_THICKNESS, 1.0)
+    } else {
+        1.0
+    };
+    let mid = (quad.bottom + quad.top) / 2.0;
+    let half = quad.height() * t / 2.0;
+    PdfRectF::new(quad.left, mid - half, quad.right, mid + half)
 }
 
 /// How a redaction mark looks before it is applied.
@@ -784,7 +807,7 @@ fn text_block(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::annot::{AnnotId, AnnotKind, FontSpec, ShapeStyle};
+    use crate::annot::{AnnotId, AnnotKind, FontSpec, ShapeStyle, MIN_HIGHLIGHT_THICKNESS};
     use crate::font::FixedFont;
 
     fn pt(x: f32, y: f32) -> PdfPointF {
@@ -807,6 +830,7 @@ mod tests {
             AnnotPayload::Markup {
                 quads: vec![rect(72.0, 700.0, 200.0, 712.0)],
                 color: Rgba::from_rgb8(255, 235, 59, 0.4),
+                thickness: 1.0,
             },
         )
     }
@@ -954,6 +978,41 @@ mod tests {
             }
             other => panic!("stabilo harus mengisi, bukan {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_thinner_highlight_keeps_to_the_middle_of_its_line() {
+        let fonts = FixedFont::default();
+        let height_of = |thickness: f32| {
+            let mut o = markup_obj(AnnotKind::Highlight);
+            if let AnnotPayload::Markup { thickness: t, .. } = &mut o.payload {
+                *t = thickness;
+            }
+            let dl = display_list(&o, &fonts).expect("list");
+            match dl.ops.first() {
+                Some(DisplayOp::FillPath { path, .. }) => path.control_bounds().expect("kotak"),
+                other => panic!("stabilo harus mengisi, bukan {other:?}"),
+            }
+        };
+        let full = height_of(1.0);
+        assert_eq!((full.bottom, full.top), (700.0, 712.0));
+        let half = height_of(0.5);
+        assert_eq!(
+            (half.bottom, half.top),
+            (703.0, 709.0),
+            "setengah, di tengah baris"
+        );
+        assert_eq!(
+            (half.left, half.right),
+            (full.left, full.right),
+            "lebar tidak berubah"
+        );
+        let floor = height_of(0.0);
+        assert!(
+            floor.height() >= 12.0 * MIN_HIGHLIGHT_THICKNESS - 1e-4,
+            "tidak pernah hilang"
+        );
+        assert_eq!(height_of(f32::NAN), full, "nilai rusak dibaca utuh");
     }
 
     #[test]

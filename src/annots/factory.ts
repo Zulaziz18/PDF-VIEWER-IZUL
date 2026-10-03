@@ -18,7 +18,22 @@ import type {
   Rgba,
   ShapeStyle,
 } from "./types";
+import { lineQuads } from "./lines";
 import { rgba, NEW_OBJECT_ID, REDACT_FILL } from "./types";
+
+/** The thinnest a highlight may be; the model clamps to the same value. */
+export const MIN_HIGHLIGHT_THICKNESS = 0.2;
+
+/**
+ * The thickness the next highlight gets: the last one the user chose, for the
+ * rest of the session. Changing it on one highlight and then marking up the
+ * next line should not mean dragging the slider again.
+ */
+let highlightThickness = 1;
+
+export function rememberHighlightThickness(value: number): void {
+  highlightThickness = Math.min(1, Math.max(MIN_HIGHLIGHT_THICKNESS, value));
+}
 
 /** What the tools draw with until the user changes it. */
 export interface AnnotStyle {
@@ -169,7 +184,7 @@ export function objectFromDrawn(
       break;
     case "Redact":
       // A dragged area is one quad; applying fills it with the mark's colour.
-      payload = { Markup: { quads: [atLeast(drawn.rect)], color: REDACT_FILL } };
+      payload = { Markup: { quads: [atLeast(drawn.rect)], color: REDACT_FILL, thickness: 1 } };
       break;
     case "Highlight":
     case "Underline":
@@ -211,6 +226,9 @@ export function markupFromQuads(
   style: AnnotStyle,
   now = 0,
 ): AnnotObject | null {
+  // Redaction keeps the selection's own boxes: it widens them to whole
+  // characters later, and trimming them here could only leave text behind.
+  if (kind !== "Redact") quads = lineQuads(quads);
   if (quads.length === 0) return null;
   const rect = quads.reduce((a, b) => ({
     left: Math.min(a.left, b.left),
@@ -238,6 +256,7 @@ export function markupFromQuads(
         // is what its area becomes once applied, black unless changed.
         color:
           kind === "Redact" ? REDACT_FILL : kind === "Highlight" ? style.highlightColor : style.color,
+        thickness: kind === "Highlight" ? highlightThickness : 1,
       },
     },
   };

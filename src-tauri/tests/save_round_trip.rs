@@ -127,6 +127,7 @@ fn objects(image: u32) -> Vec<AnnotObject> {
         AnnotPayload::Markup {
             quads: vec![PdfRectF::new(58.0, 735.0, 300.0, 760.0)],
             color: Rgba::new(1.0, 0.85, 0.0, 1.0),
+            thickness: 1.0,
         },
     );
     let ink = AnnotObject::new(
