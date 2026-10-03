@@ -1,0 +1,40 @@
+Adu OCR — ocrs (yang dikirim aplikasi) lawan PaddleOCR (v4 dan v6) dan Tesseract
+
+ocrs 0.13.1; RapidOCR 3.9.2 (PP-OCRv6 small) dan 1.4.4 (PP-OCRv4); tesseract 5.3.4
+Semua halaman buatan (sintetis): 5 set x 4 halaman, teks karangan sendiri. Bukan pindaian nyata.
+Mesin: 4 inti. Angka di belakang nama = dpi render. ms = rata-rata per halaman.
+(ocrs: render + baca + tulis lapisan teks; lainnya: baca saja, tanpa render.)
+
+CER (%) per set — salah per karakter, makin kecil makin baik:
+              ocrs 150     PPv4 150     PPv4 300     PPv6 150     PPv6 300     Tess 300
+bersih            2.51         7.77         2.76         0.04         1.80         0.08
+foto_hp          42.48         2.38         4.93         2.01         1.75        80.95
+pudar             3.22         1.17         1.00         2.05         0.04         0.29
+kecil             1.38        19.55         3.72         0.00         2.26         0.13
+angka             5.26        19.27         8.57         5.31         9.13         0.39
+
+Kata utuh ditemukan (%) per set — makin besar makin baik, tak peduli urutan:
+              ocrs 150     PPv4 150     PPv4 300     PPv6 150     PPv6 300     Tess 300
+bersih            98.6         35.1         95.3         99.4         97.0         99.4
+foto_hp           71.0         73.5         69.3         97.2         98.1         16.6
+pudar             95.0         87.3         89.8         97.5        100.0         99.4
+kecil             96.7         11.0         86.5        100.0         94.5         99.2
+angka             95.8         34.6         88.0         86.7         83.1         98.5
+
+Seluruh set digabung:
+              ocrs 150     PPv4 150     PPv4 300     PPv6 150     PPv6 300     Tess 300
+CER %            11.01         9.95         4.16         1.85         2.95        16.50
+CER tanpa spasi        11.23         4.74         3.24         1.80         2.99        16.48
+WER %             20.6         51.5         14.5          3.7          5.3         18.1
+kata utuh %         91.3         48.5         85.7         96.3         94.7         82.4
+hal. terburuk         65.0         37.6         13.4         12.4         18.3        100.0
+ms/halaman          500         1275         4227         1404         5906         1203
+
+Cuplikan halaman 1 set foto_hp (150 karakter pertama):
+  [BENAR] Laporan kegiatan bulanan ini disusun untuk memberikan gambaran tentang pelaksanaan program kerja selama bulan September. Rapat koordinasi diadakan pad
+  [ocrs 150] Laporan kegiatan DUlanan in disusin u??k tentang pelaksanaan iiem?erkan camherane program Kera selama bilan Rapat koordinasi diadakan September Dertem
+  [PPv4 150] Laporan kegiatan bulanan ini disusun untuk memberikan gambaran tentang pelaksanaan programkerja selama bulanSeptember. Rapatkoordinasi diadakanpada ha
+  [PPv4 300] Laporankegiatan bulanan ini disusun untukmemberikan gambaran tentang pelaksanaan programkerja selama bulan September. Rapatkoordinasi diadakan pada ha
+  [PPv6 150] Laporan kegiatan bulanan ini disusun untuk memberikan gambaran tentang pelaksanaan program kerja selama bulan September. Rapat koordinasì diadakan pad
+  [PPv6 300] Laporan kegiatan bulanan ini disusun untuk memberikan gambaran tentang pelaksanaan program kerja selama bulan September. Rapat koordinasi diadakan pad
+  [Tess 300] memberikan gambaran bulan September. Pukul 09.30 gi ruang pa kendala yang ditemui antara lain keterlambatan man barang dan perubahan eiié Ne
