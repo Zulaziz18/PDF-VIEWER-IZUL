@@ -603,6 +603,25 @@ const SCENES = {
       await page.getByRole("heading", { name: "Cetak", exact: true }).waitFor();
     },
   },
+  // 7.1.0: menus float over the page. In 7.0.0 the bottom bar's zoom menu
+  // opened below the window and dragged the layout up, and the ribbon's menus
+  // were clipped inside the ribbon.
+  zoommenu: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await settle(page);
+      await page.locator("button[aria-haspopup=menu]").filter({ hasText: /^\d+%$/ }).click();
+      await page.getByRole("menu").waitFor();
+    },
+  },
+  viewmenu: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await settle(page);
+      await page.getByRole("button", { name: "Tampilan", exact: true }).click();
+      await page.getByRole("menu").waitFor();
+    },
+  },
   invert: {
     session: OPEN_ALL,
     async steps(page) {
