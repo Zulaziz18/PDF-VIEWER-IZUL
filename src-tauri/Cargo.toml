@@ -31,6 +31,9 @@ regex = "1"
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-single-instance = "2"
+# 2.10.x: newer releases require tauri 2.12, which would move wry under the
+# custom-protocol fixes of Phase 1 (bugs #2, #8) without anyone re-checking them.
+tauri-plugin-updater = "=2.10.1"
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true

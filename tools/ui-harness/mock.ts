@@ -145,6 +145,15 @@ export function installMocks(data: HarnessData): void {
           return "C:\\Users\\contoh\\AppData\\Local\\PDF Studio Izul\\logs";
         case "open_log_folder":
           return null;
+        // 7.0.1: a newer release waiting, as the scene "update" shows it.
+        case "update_check":
+          return {
+            current: data.version.version,
+            available: "7.1.0",
+            notes: "Perbaikan pencarian dan OCR lebih cepat.",
+            portable: false,
+            releasesUrl: "https://github.com/Zulaziz18/PDF-VIEWER-IZUL/releases",
+          };
         case "pool_health":
           return {
             pool_size: 8,

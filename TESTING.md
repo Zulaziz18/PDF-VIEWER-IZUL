@@ -894,6 +894,17 @@ Lalu periksa:
       `pdf-studio-izul.exe` dari sana: folder `data` muncul di samping exe, dan
       berkas yang dibuka tidak masuk jump list Windows.
 
+### 7.0.1 — Periksa pembaruan
+
+- [ ] Pasang 7.0.1 dari Releases. Buka Tentang → **Periksa pembaruan**: tertulis
+      "Versi 7.0.1 sudah yang terbaru".
+- [ ] Setelah 7.0.2 terbit: di 7.0.1, Periksa pembaruan → "Versi 7.0.2
+      tersedia" → **Unduh dan pasang**. Ada dokumen belum disimpan? Aplikasi
+      bertanya dulu. Sesudahnya aplikasi menutup, installer berjalan, dan
+      Tentang menunjukkan 7.0.2.
+- [ ] Matikan Wi-Fi lalu Periksa pembaruan: pesan "tidak bisa menghubungi
+      GitHub", aplikasi tetap jalan.
+
 ### Menyusul (fase terkait)
 
 - [x] Dark mode dengan invert cerdas: teks terang, foto tidak terbalik (Fase 8; test piksel `inversion_flips_the_page_and_leaves_its_picture`, sisanya di checklist Fase 8).

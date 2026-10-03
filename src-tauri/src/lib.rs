@@ -59,6 +59,7 @@ pub mod supervisor;
 pub mod textedit;
 pub mod textsearch;
 pub mod thumbs;
+pub mod updates;
 pub mod version;
 pub mod workspace;
 
@@ -235,7 +236,10 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
             }
         }))
         .plugin(tauri_plugin_dialog::init())
+        // Checks only when asked (About → Periksa pembaruan); see updates.rs.
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(state)
+        .manage(updates::Pending::default())
         .register_asynchronous_uri_scheme_protocol("izul", move |ctx, request, responder| {
             // Asynchronous on purpose: a tile that is not cached has to wait for
             // a worker, and the synchronous form would block a webview thread
@@ -287,6 +291,8 @@ pub fn run(data_dir: std::path::PathBuf, v: version::VersionInfo) -> Result<(), 
             commands::app_version,
             commands::log_folder,
             commands::open_log_folder,
+            updates::update_check,
+            updates::update_install,
             commands::pool_health,
             commands::open_document,
             commands::close_document,

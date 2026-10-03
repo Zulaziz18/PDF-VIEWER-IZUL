@@ -353,6 +353,21 @@ benar; foto dari HP yang agak miring juga terbaca baik (sekitar 98 dari 100
 huruf pada contoh uji kami). Tulisan tangan, tabel rumit, dan aksara non-Latin
 (Arab, Mandarin) belum didukung.
 
+### Memperbarui aplikasi
+
+Buka **Tentang** (lewat menu Berkas, atau Ctrl+Shift+P lalu ketik "Tentang"),
+lalu tekan **Periksa pembaruan**.
+
+- Kalau tertulis "sudah yang terbaru", tidak ada yang perlu dilakukan.
+- Kalau ada versi baru, tekan **Unduh dan pasang**. Aplikasi menanyakan dulu
+  dokumen yang belum disimpan, mengunduh pembaruan, memeriksa keasliannya,
+  lalu menutup sendiri dan memasangnya. Windows mungkin meminta izin
+  Administrator — pilih **Yes**.
+
+Aplikasi hanya menghubungi internet saat tombol itu ditekan. Kalau Anda
+memakai versi portabel (ZIP), unduh ZIP terbaru dari halaman Releases dan
+ekstrak di atas folder lama.
+
 ### Menghapus latar gambar
 
 Untuk gambar yang sudah Anda tambahkan ke halaman (misalnya foto tanda tangan):

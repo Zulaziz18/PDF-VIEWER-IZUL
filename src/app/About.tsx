@@ -12,6 +12,7 @@ import { Logo } from "@/design/Logo";
 import { Icon } from "@/design/Icon";
 import { t } from "@/i18n";
 import { useUi } from "@/state/uiStore";
+import { UpdateSection } from "./UpdateSection";
 
 interface VersionInfo {
   name: string;
@@ -91,6 +92,7 @@ export function About(): JSX.Element | null {
             {openError}
           </p>
         )}
+        <UpdateSection />
         <p className="text-[12px] text-[var(--izul-text-dim)]">{t("about.licenses")}</p>
         <form method="dialog" className="flex justify-end">
           <button className="h-9 px-4 rounded-[8px] bg-[var(--izul-accent)] text-[var(--izul-on-accent)] font-medium">

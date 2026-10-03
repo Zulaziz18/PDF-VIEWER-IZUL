@@ -3,6 +3,29 @@
 Semua perubahan penting per fase. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/);
 versi mengikuti `version.json` sebagai sumber tunggal.
 
+## [7.0.1] — Periksa pembaruan
+
+### Ditambahkan
+
+- **Periksa pembaruan** di kotak Tentang. Aplikasi menghubungi GitHub Releases
+  **hanya saat tombol itu ditekan**: tidak ada pemeriksaan saat mulai atau di
+  latar. Kalau ada versi baru, tersedia tombol *Unduh dan pasang*: installer
+  diunduh, tanda tangannya diperiksa terhadap kunci publik di aplikasi, lalu
+  dipasang (aplikasi menutup sendiri). Dokumen yang belum disimpan ditanyakan
+  lebih dulu. Salinan portabel diarahkan mengunduh ZIP baru.
+- CI menandatangani installer (secret `TAURI_SIGNING_PRIVATE_KEY`) dan
+  menerbitkan `latest.json` ke Release.
+
+### Diubah
+
+- SPEC Bagian 2 diberi satu pengecualian bertanggal untuk tombol itu, atas
+  keputusan pengguna.
+- `tauri-plugin-updater` dipatok 2.10.1: versi yang lebih baru menuntut Tauri
+  2.12 dan akan mengganti wry di bawah perbaikan protokol Fase 1.
+
+Pengguna 7.0.0 perlu memasang 7.0.1 sekali secara manual; sesudahnya
+pembaruan bisa lewat tombol.
+
 ## [7.0.0] — Rilis
 
 Rilis penuh, atas keputusan pengguna (3 Oktober 2026). Checklist Windows di

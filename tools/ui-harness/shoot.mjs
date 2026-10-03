@@ -548,6 +548,18 @@ const SCENES = {
       await page.getByRole("dialog", { name: /PDF Studio Izul/ }).waitFor();
     },
   },
+  update: {
+    session: OPEN_ALL.slice(0, 1),
+    async steps(page) {
+      await settle(page);
+      await page.keyboard.press("Control+Shift+P");
+      await page.getByRole("combobox", { name: "Ketik nama perintah…" }).fill("Tentang");
+      await page.keyboard.press("Enter");
+      await page.getByRole("dialog", { name: /PDF Studio Izul/ }).waitFor();
+      await page.getByRole("button", { name: "Periksa pembaruan", exact: true }).click();
+      await page.getByRole("button", { name: "Unduh dan pasang", exact: true }).waitFor();
+    },
+  },
   palette: {
     session: OPEN_ALL,
     async steps(page) {

@@ -52,6 +52,7 @@ Ditulis eksplisit supaya tidak merembes masuk:
 
 - Thumbnail handler Explorer (butuh shell extension COM terpisah — dibuang).
 - Sinkronisasi cloud, akun, kolaborasi, atau fitur apa pun yang menyentuh jaringan.
+  *(Diubah 3 Oktober 2026, atas keputusan pengguna: satu pengecualian — tombol **Periksa pembaruan** di kotak Tentang menghubungi GitHub Releases, hanya saat ditekan; tidak ada pemeriksaan otomatis, saat mulai, atau di latar. Installer pembaruan wajib bertanda tangan. Lihat `src-tauri/src/updates.rs`.)*
 - Pembuatan tanda tangan digital (verifikasi tanda tangan yang ada: boleh, hanya tampil).
 - Dukungan XFA.
 - Reflow paragraf saat menyunting teks asli dokumen.
@@ -146,6 +147,7 @@ Session, recent files, posisi baca, draf autosave, cache thumbnail, dan indeks p
 **Larangan keras:**
 
 - Nol koneksi jaringan. Tidak ada telemetri, CDN, font online, atau pengecekan pembaruan. Semua aset dibundel.
+  *(Diubah 3 Oktober 2026, atas keputusan pengguna: satu pengecualian — tombol **Periksa pembaruan** di kotak Tentang menghubungi GitHub Releases, hanya saat ditekan; tidak ada pemeriksaan otomatis, saat mulai, atau di latar. Installer pembaruan wajib bertanda tangan. Lihat `src-tauri/src/updates.rs`.)*
 - Tidak ada ketergantungan Python di mesin pengguna.
 - Jangan render PDF di thread utama. Jangan pernah taruh logika kanvas di dalam komponen React.
 - Jangan salurkan bitmap lewat `invoke` Tauri (data diubah jadi string — anggaran 16 ms langsung habis).

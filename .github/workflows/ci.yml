@@ -226,8 +226,24 @@ jobs:
       # copies every resource into the target folder on *every* build, and a
       # debug build would then fail on the missing release worker, or copy a
       # stale one over its own.
+      # With the updater key (repository secret TAURI_SIGNING_PRIVATE_KEY,
+      # 7.0.1) the installers are also signed for "Periksa pembaruan": a .sig
+      # beside each, which latest.json carries. Without it — a fork, or before
+      # the secret is set — the build is the same minus the signatures.
       - name: Build NSIS and MSI
-        run: npm run package
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ($env:TAURI_SIGNING_PRIVATE_KEY) {
+            npm run package -- --config src-tauri/tauri.updater.json
+          } else {
+            Write-Host "::warning::TAURI_SIGNING_PRIVATE_KEY tidak ada: installer tidak ditandatangani untuk pembaruan"
+            npm run package
+          }
+          if ($LASTEXITCODE -ne 0) { throw "npm run package gagal ($LASTEXITCODE)" }
 
       - name: A PDF to open
         shell: bash
@@ -301,12 +317,36 @@ jobs:
           $ErrorActionPreference = "Stop"
           $v = (Get-Content version.json | ConvertFrom-Json).version
           if ("${{ github.ref_name }}" -ne "v$v") { throw "tag ${{ github.ref_name }} != version.json v$v" }
-          $files = @(
-            (Get-ChildItem target/release/bundle/nsis/*-setup.exe).FullName
-            (Get-ChildItem target/release/bundle/msi/*.msi).FullName
-            (Get-ChildItem *-portable.zip).FullName
-          )
-          $notes = "PDF Studio Izul $v. Pasang dengan berkas *-setup.exe (disarankan), atau .msi, atau ekstrak ZIP portabel. Perubahan lengkap: CHANGELOG.md."
+          # GitHub turns spaces in asset names into dots; latest.json must name
+          # the assets as GitHub serves them, so they are renamed first.
+          New-Item -ItemType Directory -Force out | Out-Null
+          $nsis = Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          $msi = Get-ChildItem target/release/bundle/msi/*.msi | Select-Object -First 1
+          $zip = Get-ChildItem *-portable.zip | Select-Object -First 1
+          foreach ($f in $nsis, $msi, $zip) { Copy-Item $f.FullName ("out/" + ($f.Name -replace ' ', '.')) }
+          $base = "https://github.com/${{ github.repository }}/releases/download/v$v"
+          $nsisSig = "$($nsis.FullName).sig"
+          $msiSig = "$($msi.FullName).sig"
+          if ((Test-Path $nsisSig) -and (Test-Path $msiSig)) {
+            $platforms = [ordered]@{
+              "windows-x86_64-nsis" = @{ url = "$base/" + ($nsis.Name -replace ' ', '.'); signature = (Get-Content $nsisSig -Raw).Trim() }
+              "windows-x86_64-msi"  = @{ url = "$base/" + ($msi.Name -replace ' ', '.'); signature = (Get-Content $msiSig -Raw).Trim() }
+            }
+            # Plain windows-x86_64 for a copy whose bundle type is unknown:
+            # the NSIS installer, the recommended one.
+            $platforms["windows-x86_64"] = $platforms["windows-x86_64-nsis"]
+            [ordered]@{
+              version = $v
+              notes = "Lihat CHANGELOG.md di repositori untuk daftar perubahan."
+              pub_date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+              platforms = $platforms
+            } | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8NoBOM out/latest.json
+            Get-Content out/latest.json
+          } else {
+            Write-Host "::warning::tanpa tanda tangan pembaruan: latest.json tidak diterbitkan, Periksa pembaruan tidak akan menemukan rilis ini"
+          }
+          $files = (Get-ChildItem out).FullName
+          $notes = "PDF Studio Izul $v. Pasang dengan berkas *-setup.exe (disarankan), atau .msi, atau ekstrak ZIP portabel. Sudah memakai versi 7.0.1 atau lebih baru? Buka Tentang, lalu Periksa pembaruan. Perubahan lengkap: CHANGELOG.md."
           # The release may already exist: making it on the website is what
           # creates the tag. Then only the installers are attached.
           gh release view "v$v" *> $null

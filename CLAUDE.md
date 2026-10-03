@@ -1011,6 +1011,32 @@ executable besar di sana membebaskan ~12 GB. Penanda simulasi Windows harus
 OCR untuk tulisan tangan/aksara non-Latin (model rec PP-OCRv6 mengenal CJK,
 tapi lapisan teks hanya bisa menulis Latin-1 sampai font ditanam).
 
+## Keadaan 7.0.1 (Periksa pembaruan, 3 Oktober 2026)
+
+Pengguna memilih **pembaruan atas permintaan** (pilihan B dari tiga): satu-satunya
+koneksi jaringan aplikasi adalah tombol *Periksa pembaruan* di About. SPEC
+Bagian 2 diberi pengecualian bertanggal. Jangan menambah pemeriksaan otomatis
+tanpa keputusan baru pengguna.
+
+- `src-tauri/src/updates.rs`: `update_check` / `update_install` di atas
+  `tauri-plugin-updater` **=2.10.1** (2.11+ menuntut tauri 2.12 → wry baru di
+  bawah perbaikan bug #2/#8 Fase 1; Cargo.lock dicek: nol crate lama berubah).
+  Salinan portabel tidak pernah diperbarui di tempat (installer NSIS akan
+  memasang salinan kedua) — exe portabel adalah exe yang sama dengan yang
+  di-patch bundle type `nsis`.
+- Endpoint: `releases/latest/download/latest.json`. CI (job Package, saat tag
+  `v*` / Release dipublikasikan) membuat `latest.json` dengan kunci
+  `windows-x86_64-nsis`, `-msi`, dan `windows-x86_64`, dari berkas `.sig` yang
+  dibuat `tauri.updater.json` (`createUpdaterArtifacts`) — hanya kalau secret
+  `TAURI_SIGNING_PRIVATE_KEY` ada (kata sandi kosong). Nama aset memakai titik
+  menggantikan spasi, persis seperti GitHub menamainya.
+- Pasangan kunci dibuktikan cocok dengan `minisign-verify` (pustaka yang sama
+  dengan plugin): tanda tangan asli diterima, berkas yang diubah satu bit
+  ditolak. **Kunci privat tidak ada di repo**; hanya di secret GitHub milik
+  pengguna. Hilang kunci = pengguna lama tidak bisa diperbarui lewat tombol.
+- Pembaruan sungguhan pertama baru bisa diuji pada 7.0.2 (7.0.0 tidak punya
+  tombolnya).
+
 ## Alur kerja proyek ini
 
 - Branch per fase: `claude/pdf-studio-izul-v7-fase-4` (Langkah 0 + Fase 4,
