@@ -149,7 +149,7 @@ export function installMocks(data: HarnessData): void {
         case "update_check":
           return {
             current: data.version.version,
-            available: "7.1.0",
+            available: "7.2.0",
             notes: "Perbaikan pencarian dan OCR lebih cepat.",
             portable: false,
             releasesUrl: "https://github.com/Zulaziz18/PDF-VIEWER-IZUL/releases",

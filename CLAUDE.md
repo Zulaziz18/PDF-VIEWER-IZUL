@@ -1034,8 +1034,61 @@ tanpa keputusan baru pengguna.
   dengan plugin): tanda tangan asli diterima, berkas yang diubah satu bit
   ditolak. **Kunci privat tidak ada di repo**; hanya di secret GitHub milik
   pengguna. Hilang kunci = pengguna lama tidak bisa diperbarui lewat tombol.
-- Pembaruan sungguhan pertama baru bisa diuji pada 7.0.2 (7.0.0 tidak punya
+- Pembaruan sungguhan pertama baru bisa diuji pada 7.1.1 (7.0.1 tidak pernah dirilis; 7.0.0 tidak punya
   tombolnya).
+
+## Keadaan 7.1.0 (Ke Word + perbaikan uji pemakaian, 3 Oktober 2026)
+
+Pengguna menguji 7.0.0 terpasang di Windows dan melaporkan tujuh hal; 7.0.1 belum
+dirilis, jadi semuanya masuk **7.1.0** (fitur baru → minor). `wix.version`
+7.1.0.1000, `PROTOCOL_VERSION` 16.
+
+**Cacat yang hanya ada di build terpasang — pelajaran utamanya:**
+`tauri.conf.json` `csp` `img-src` hanya `izul:`, padahal semua URL kita
+`http://izul.localhost/...` → **gambar sisipan dan halaman cetak kosong**. Dev
+server dan harness tidak menerapkan CSP, jadi tidak ada yang bisa melihatnya
+selain pengguna. Kini dijaga `src/app/__tests__/csp.test.ts` (setiap URL yang
+dibangun frontend harus diizinkan CSP; terbukti gagal pada konfigurasi lama),
+dan dibuktikan di Chromium (`naturalWidth` 0 → 1). **Kalau menambah URL
+`izul.localhost` baru untuk `<img>`/`fetch`/`<iframe>`, tambahkan ke test itu.**
+
+**Diukur dan dipatok (jangan ditebak ulang):**
+
+- WebView2: wry mematikan `IsPinchZoomEnabled` bersama tombol zoom → cubit
+  touchpad tidak pernah sampai ke halaman. `src-tauri/src/pinch.rs` menyalakan
+  pinch saja (webview2-com =0.38.2, windows-core 0.61 — versi yang sudah ditaut
+  wry). Chromium (CDP `synthesizePinchGesture`, sumber touchpad): tiap frame =
+  wheel `ctrlKey`, deltaY kecil, hasil kali `exp(-d/100)` = skala cubit persis;
+  bila dibatalkan, `visualViewport.scale` tetap 1. `main.tsx` membatalkan semua
+  Ctrl+wheel.
+- `FPDFText_GetFontSize` = operan `Tf` saja (`Tf 1` + matriks 12× → 1). Ukuran
+  yang tampil = operan × skala `FPDFText_GetMatrix`.
+- `FPDFText_GetCharAngle` **searah jarum jam** (`0 1 -1 0` → 3π/2); `/Rotate`
+  ditambahkan.
+- `FPDFImageObj_GetImageDataRaw` = stream mentah **sebelum semua filter**:
+  `[/ASCII85Decode /DCTDecode]` (reportlab) memberi teks ASCII85, bukan JPEG.
+  JPEG asli hanya dipakai bila filternya satu-satunya DCT dan byte diawali
+  `FF D8 FF`.
+- Gambar di dalam form XObject: `FPDFPageObj_GetBounds` anaknya di ruang form;
+  kalikan dengan `FPDFPageObj_GetMatrix` form (sudah termasuk `/Matrix`-nya).
+  Di sanalah gambar anotasi yang di-flatten berada.
+
+**Ke Word** (`crates/izul-docx`, `izul-pdf/src/layout.rs`, `saving::export_docx`):
+salinan kerja → flatten (kotak teks & gambar pengguna ikut) → `WorkLayout` per
+halaman (blob postcard) → `izul_docx::analyse` + `build` di proses UI → tulis
+atomik. Urutan teks = urutan PDFium; semua aturan paragraf ada di `layout.rs`
+dan diuji dengan halaman buatan tangan (`layout/tests.rs`). Bukti:
+`tools/docx-proof/run.py` (CI ubuntu; butuh `libreoffice-writer` dan
+`python-docx`). **Jebakan:** LibreOffice yang terpasang di kontainer hanya
+`libreoffice-core` — tanpa Writer ia menolak membuka apa pun ("source file
+could not be loaded"), termasuk berkas .txt. Itu bukan tanda .docx-nya rusak.
+
+**UI:** menu `MenuButton` diportal ke `<body>` (`placeMenu`, teruji); catatan
+tempel = ikon notepad tanpa pegangan + `NotePopup.tsx`; stabilo per baris
+(`src/annots/lines.ts`) + `thickness` di payload `Markup` (serde default 1.0).
+Harness kini meneruskan `annot_replace` ke pembangun display list sungguhan,
+jadi scene bisa mengubah properti. Scene baru: `zoommenu`, `viewmenu`,
+`highlight`, `note`, `word`.
 
 ## Alur kerja proyek ini
 

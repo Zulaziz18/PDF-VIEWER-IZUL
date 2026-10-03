@@ -894,14 +894,30 @@ Lalu periksa:
       `pdf-studio-izul.exe` dari sana: folder `data` muncul di samping exe, dan
       berkas yang dibuka tidak masuk jump list Windows.
 
-### 7.0.1 — Periksa pembaruan
+### 7.1.0 — Periksa pembaruan, Ke Word, dan perbaikan uji pemakaian
 
-- [ ] Pasang 7.0.1 dari Releases. Buka Tentang → **Periksa pembaruan**: tertulis
-      "Versi 7.0.1 sudah yang terbaru".
-- [ ] Setelah 7.0.2 terbit: di 7.0.1, Periksa pembaruan → "Versi 7.0.2
+7.0.1 tidak pernah dirilis; tombol pembaruan pertama kali hadir di 7.1.0.
+
+- [ ] Pasang 7.1.0 dari Releases. Buka Tentang → **Periksa pembaruan**: tertulis
+      "Versi 7.1.0 sudah yang terbaru".
+- [ ] Setelah 7.1.1 terbit: di 7.1.0, Periksa pembaruan → "Versi 7.1.1
       tersedia" → **Unduh dan pasang**. Ada dokumen belum disimpan? Aplikasi
       bertanya dulu. Sesudahnya aplikasi menutup, installer berjalan, dan
-      Tentang menunjukkan 7.0.2.
+      Tentang menunjukkan 7.1.1.
+- [ ] **Gambar sisipan tampil** (Edit → Tambah Gambar): gambarnya terlihat di
+      halaman, bukan hanya kotak bergaris putus-putus.
+- [ ] **Cetak** (Ctrl+P → Cetak): pratinjau cetak Windows menampilkan isi
+      halaman, bukan halaman kosong.
+- [ ] **Cubit touchpad** di atas halaman memperbesar/memperkecil halaman,
+      bukan seluruh tampilan aplikasi. Cubit di atas pita tidak melakukan apa-apa.
+- [ ] **Menu zoom** di bilah bawah (angka persen) membuka ke atas, utuh, dan
+      tampilan tidak bergeser. Menu **Tampilan** dan **Jendela** di pita juga utuh.
+- [ ] **Stabilo** pada judul dua baris: tidak ada pita yang lebih gelap; geser
+      **Tebal stabilo** ke 60 %, stabilonya menipis di tengah baris.
+- [ ] **Catatan tempel**: klik di halaman → muncul ikon kertas kecil dan kertas
+      notepad kuning siap diketik. Simpan, buka di Edge: catatannya terbaca.
+- [ ] **Ke Word**: Konversi → Ke Word → simpan → buka hasilnya di Microsoft
+      Word. Teks bisa diketik, judul tebal dan besar, gambar ada.
 - [ ] Matikan Wi-Fi lalu Periksa pembaruan: pesan "tidak bisa menghubungi
       GitHub", aplikasi tetap jalan.
 

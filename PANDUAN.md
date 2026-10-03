@@ -4,14 +4,14 @@
 > fitur yang belum ada hanya akan menyesatkan, jadi bagian yang belum bisa
 > dipakai sengaja dikosongkan sampai fasenya selesai.
 
-## Status: Fase 8 (beta)
+## Status: 7.1.0
 
 Semua fase selesai. Aplikasi ini bisa dipakai membaca banyak dokumen sekaligus,
 mencari, menganotasi dan **menyimpan** anotasi ke berkas PDF (terlihat di
 pembaca lain, tetap bisa disunting di sini), menyusun halaman, meredaksi,
-mengenali teks pindaian, mengisi formulir, mencetak, dan presentasi. Versinya
-**beta**: sebagian hal baru bisa dipastikan setelah dicoba di Windows
-sungguhan — daftar yang perlu dicoba ada di `TESTING.md`, bagian "Fase 8".
+mengenali teks pindaian, mengisi formulir, mencetak, presentasi, dan
+mengubah PDF ke Word. Hal-hal yang hanya bisa dipastikan di Windows sungguhan
+didaftar di `TESTING.md`, bagian "Fase 8" dan "7.1.0".
 
 ### Memasang
 
@@ -37,6 +37,10 @@ Halaman yang belum sempat dirender tajam tampil sebagai versi buram lebih dulu,
 lalu berganti tajam. Itu disengaja: yang penting halaman tidak pernah kosong.
 
 ### Perbesaran
+
+**Cubit di touchpad** (dua jari dirapatkan atau direnggangkan) memperbesar dan
+memperkecil halaman, dan bagian di bawah jari tetap di tempatnya. `Ctrl` +
+gulir mouse melakukan hal yang sama.
 
 | Perintah | Cara |
 |---|---|
@@ -160,13 +164,23 @@ halaman.
 | Kotak, elips | seret untuk membentuk kotak pembatasnya |
 | Poligon | seret; bentuknya mengikuti jalur yang dilalui |
 | Kotak teks | seret untuk membuat kotaknya, lalu ketik isinya di panel properti |
-| Catatan tempel | klik di tempat catatan ingin ditempelkan |
+| Catatan tempel | klik di tempat catatan ingin ditempelkan; kertas notepad kuning muncul di sampingnya, langsung tulis catatannya di situ |
 | Stempel | seret untuk membentuk badgenya, lalu ubah tulisannya di panel properti |
 | Gambar | tombol gambar membuka pemilih berkas; gambarnya muncul di tengah halaman |
 
 Untuk stabilo, garis bawah, dan coret: **tandai dulu teksnya** dengan menyeret
 kursor di atas halaman, lalu tekan tombolnya. Ketiganya mengikuti teks yang
 ditandai, jadi tombolnya tidak melakukan apa-apa kalau tidak ada yang ditandai.
+
+**Tebal stabilo.** Kalau stabilo terlihat menumpuk ke baris atas atau bawah
+(sering terjadi pada judul yang barisnya rapat), klik stabilonya lalu geser
+**Tebal stabilo** di panel Properti, misalnya ke 60 %. Stabilo berikutnya ikut
+memakai tebal terakhir yang Anda pilih.
+
+**Catatan tempel** tampil sebagai ikon kertas notepad kecil di halaman.
+Ukurannya tetap, supaya tidak menutupi tulisan. Klik ikonnya untuk membuka
+kertas catatannya, lalu ketik atau baca isinya di sana. Isi catatan ini juga
+terbaca di Acrobat dan Edge.
 
 ### Mengubah anotasi yang sudah ada
 
@@ -236,6 +250,14 @@ Tab pita **Konversi**:
 - **Ekspor Rata** — PDF baru dengan semua anotasi menyatu ke halaman. Cocok
   untuk dikirim ke orang lain bila anotasinya tidak boleh diubah atau
   dihapus.
+- **Ke Word** — dokumen Word (`.docx`) yang teksnya bisa diketik ulang.
+  Ukuran huruf, tebal/miring, warna, judul, paragraf, rata kiri/tengah/kanan,
+  dan gambar ikut terbawa. Kotak teks dan gambar yang Anda tambahkan sendiri
+  juga ikut. Yang **tidak** sama persis: tabel menjadi baris berisi tab
+  (kolomnya tetap lurus, tapi tanpa garis), halaman dua kolom menjadi satu
+  kolom, dan bentuk gambar vektor (pita warna, diagram dari garis) tidak ikut.
+  Halaman hasil pindaian masuk sebagai gambar, jadi jalankan **Kenali Teks
+  (OCR)** dulu kalau ingin teksnya bisa disunting.
 
 Ekspor tidak pernah mengubah berkas yang sedang Anda buka, dan menolak menimpa
 berkas yang sedang terbuka di tab lain. Semua hasil ekspor tercatat di

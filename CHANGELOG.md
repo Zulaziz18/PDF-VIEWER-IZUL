@@ -3,6 +3,39 @@
 Semua perubahan penting per fase. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/);
 versi mengikuti `version.json` sebagai sumber tunggal.
 
+## [7.1.0] — Ke Word, dan perbaikan dari uji pemakaian
+
+Dirilis langsung sesudah 7.0.1 yang belum sempat dirilis, jadi tombol
+*Periksa pembaruan* juga pertama kali hadir di versi ini.
+
+### Ditambahkan
+
+- **Ke Word** di pita Konversi: PDF menjadi `.docx` yang teksnya bisa
+  disunting. Crate baru `izul-docx` menyusun huruf menjadi paragraf dengan
+  judul, ukuran, tebal/miring, warna, rata, inden, spasi, dan tab tabel di
+  posisi kolomnya; gambar ikut, termasuk gambar sisipan pengguna. Diperiksa
+  oleh python-docx dan LibreOffice Writer (`tools/docx-proof`).
+- **Zoom cubit touchpad** di Windows.
+- **Tebal stabilo** (20–100 %) di panel Properti.
+
+### Diperbaiki
+
+- **Gambar sisipan tidak tampil, dan halaman cetak kosong**, di aplikasi
+  terpasang: aturan keamanan (CSP) `img-src` tidak mengizinkan alamat tempat
+  gambar dilayani. Dev server dan harness tidak menerapkan CSP, jadi hanya
+  build terpasang yang kena.
+- **Menu tarik-turun** (zoom, Tampilan, Jendela, Bentuk) terpotong di dalam
+  pita, dan membukanya menggeser seluruh tampilan. Kini melayang di atas
+  halaman dan membuka ke atas bila ruang di bawah tidak cukup.
+- **Stabilo bertumpuk**: satu baris bisa tersusun dari kotak yang dobel dan
+  setinggi baris lapisan teks. Kini satu kotak per baris, tanpa tumpang tindih.
+
+### Diubah
+
+- **Catatan tempel** menjadi ikon kertas notepad kecil berukuran tetap.
+  Isinya ditulis di kertas notepad bergaris yang muncul di sampingnya.
+- `PROTOCOL_VERSION` 15 → 16 (`Request::WorkLayout`).
+
 ## [7.0.1] — Periksa pembaruan
 
 ### Ditambahkan

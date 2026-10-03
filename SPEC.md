@@ -324,6 +324,7 @@ Semua objek hidup: pilih, geser, ubah ukuran, putar, hapus. Seleksi jamak, ratak
 - Hapus, putar, susun ulang, sisip halaman kosong, ekstrak, duplikat.
 - Gabung dokumen, pecah berdasarkan rentang atau bookmark.
 - Simpan, Simpan Sebagai, Ekspor rata, ekspor rentang, ekspor halaman sebagai PNG/JPG resolusi tinggi.
+- *(Ditambahkan 3 Oktober 2026, 7.1.0, atas permintaan pengguna.)* Ekspor ke Word (`.docx`) dengan teks yang bisa disunting: paragraf, judul, gaya huruf, rata, gambar. Bukan salinan tata letak — tabel menjadi baris bertab, halaman berkolom menjadi satu kolom, grafik vektor tidak ikut — dan hasilnya diperiksa oleh pembaca yang bukan aplikasi ini (python-docx, LibreOffice).
 - Kompresi berkas dengan pratinjau dampak ke kualitas.
 - Riwayat ekspor yang bisa diklik.
 - Recent Files bergambar thumbnail, bisa di-pin, deteksi berkas yang dipindah.

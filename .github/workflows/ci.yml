@@ -154,6 +154,19 @@ jobs:
         if: runner.os == 'Linux'
         run: python3 tools/textedit-proof/run.py --out textedit-proof.txt
 
+      # 7.1.0: "Ke Word". The .docx the application makes is opened by two
+      # readers that are not the application — python-docx (structure) and
+      # LibreOffice Writer (which has to lay it out and save it as PDF) — and
+      # must carry the source's words in order, its look where that is the
+      # point of the case, and its pictures; two deliberate mutations must
+      # fail the same checks.
+      - name: Word conversion proof
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y --no-install-recommends libreoffice-writer
+          python3 -m pip install --quiet python-docx==1.1.2
+          python3 tools/docx-proof/run.py --out docx-proof.txt
+
       # The Windows runtime as the application loads it: onnxruntime.dll and
       # DirectML.dll beside the executable (src-tauri/build.rs put them in
       # target/debug). Prints where the model ran — DirectML on the runner's
@@ -346,7 +359,7 @@ jobs:
             Write-Host "::warning::tanpa tanda tangan pembaruan: latest.json tidak diterbitkan, Periksa pembaruan tidak akan menemukan rilis ini"
           }
           $files = (Get-ChildItem out).FullName
-          $notes = "PDF Studio Izul $v. Pasang dengan berkas *-setup.exe (disarankan), atau .msi, atau ekstrak ZIP portabel. Sudah memakai versi 7.0.1 atau lebih baru? Buka Tentang, lalu Periksa pembaruan. Perubahan lengkap: CHANGELOG.md."
+          $notes = "PDF Studio Izul $v. Pasang dengan berkas *-setup.exe (disarankan), atau .msi, atau ekstrak ZIP portabel. Sudah memakai versi 7.1.0 atau lebih baru? Buka Tentang, lalu Periksa pembaruan. Perubahan lengkap: CHANGELOG.md."
           # The release may already exist: making it on the website is what
           # creates the tag. Then only the installers are attached.
           gh release view "v$v" *> $null
