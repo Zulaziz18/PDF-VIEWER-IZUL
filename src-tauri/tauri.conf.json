@@ -26,7 +26,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' izul: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost izul: http://izul.localhost https://izul.localhost"
+      "csp": "default-src 'self'; img-src 'self' izul: http://izul.localhost https://izul.localhost data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost izul: http://izul.localhost https://izul.localhost"
     }
   },
   "bundle": {
