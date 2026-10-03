@@ -6,6 +6,10 @@ on:
     # A version tag (v7.0.0) also publishes the tested installers as a GitHub
     # Release — kept for good, unlike the 14-day artifacts below.
     tags: ["v*"]
+  # A release published on the website: its ref is the tag, so the same step
+  # attaches the installers (whichever of the two runs does it last wins).
+  release:
+    types: [published]
   pull_request:
 
 env:
