@@ -38,6 +38,68 @@ Test integrasi (`crash_isolation`) membaca PDFium langsung dari
 aplikasi secara otomatis pada setiap `cargo build`. Tidak ada langkah salin
 manual yang diperlukan di kedua kasus — cukup `vendor/pdfium/fetch.sh` di atas.
 
+## Rilis 7.0.0 — mesin OCR baru
+
+Total `IZUL_REQUIRE_FIXTURES=1 cargo test --workspace --no-fail-fast`:
+**532 lulus, 0 gagal**; `npm test` 240 lulus. Bukti OCR resmi
+(`tools/ocr-proof/run.py`) LULUS dengan PP-OCRv6: CER 0,00 % di poppler, MuPDF,
+pdfminer, pypdf; 100 % kata di tempatnya; 0 piksel berubah
+(`bench/results/phase8-ocr.txt`).
+
+Adu mesin di lima jenis pindaian (`python3 tools/ocr-bakeoff/run.py`, butuh
+`pip install rapidocr rapidocr-onnxruntime` dan `tesseract-ocr`; hasil di
+`bench/results/ocr-bakeoff.txt`):
+
+| Set | `ocrs` (lama) | Aplikasi 7.0.0, dibaca MuPDF | RapidOCR Python, model sama | Tesseract 300 dpi |
+|---|---|---|---|---|
+| Bersih | 2,51 % | 0,00 % | 0,04 % | 0,08 % |
+| Foto HP | 42,48 % | 0,04 % | 2,01 % | 80,95 % |
+| Pudar | 3,22 % | 0,00 % | 2,05 % | 0,29 % |
+| Huruf kecil | 1,38 % | 0,00 % | 0,00 % | 0,13 % |
+| Angka | 5,26 % | 0,22 % | 5,31 % | 0,39 % |
+| **Kata utuh ditemukan** | 91,3 % | **99,3 %** | 96,3 % | 82,4 % |
+
+Halamannya sintetis, bukan pindaian nyata. Aplikasi lebih baik dari RapidOCR
+dengan model yang sama; sebabnya tidak diselidiki (beda yang diketahui: render
+PDFium vs pdftoppm, tanpa model orientasi). Di foto HP poppler membaca kata yang
+sama tetapi mencampur urutan baris halaman miring (CER 36 %, kata utuh 99,4 %).
+
+## Hasil Fase 8
+
+Dihitung dari keluaran `IZUL_REQUIRE_FIXTURES=1 cargo test --workspace
+--no-fail-fast` dan `npm test`, bukan dari ingatan.
+
+| Suite | Jumlah | Status |
+|---|---|---|
+| `izul-model` (… + **rata kanan-kiri**) | 80 | lulus |
+| `izul-ipc` (… + indeks `Attachments`/`AttachmentData`/`AttachmentsReady` terpatok) | 24 | lulus |
+| `izul-store` (… + **bookmark pengguna**, penanda portabel) | 52 | lulus |
+| `izul-redact` | 65 | lulus |
+| `izul-ocr` (… + **PP-OCR**: persegi minimum, urutan sudut, CTC, karakter yang bisa ditulis, celah di spasi, tinggi huruf — 7.0.0) | 8 | lulus |
+| `izul-pdf` (… + **invert cerdas**, **lampiran**) | 80 | lulus |
+| `izul-render` | 30 | lulus |
+| `izul-write` | 32 | lulus |
+| `izul-worker` | 9 | lulus |
+| `izul-app` (… + cetak tanpa anotasi, CSV daftar anotasi) | 109 | lulus |
+| `crash_isolation` + `render_pipeline` + `render_end_to_end` + `save_round_trip` + `page_ops` + `redaction` | 34 | lulus |
+| `ocr`, `background`, `forms`, `textedit`, **`attachments`** (pekerja nyata) | 6 | lulus |
+| `izul-bench` (`multidoc`) | 3 | lulus |
+| **Total Rust** | **526** | **lulus** |
+| Frontend (… + keymap, pintasan, presentasi, gaya, pangkas, ratakan, tempel, `textInRect`, `layerSlot`) | 240 | lulus |
+| **Total** | **766** | **lulus** |
+
+**Angka SPEC 13** ada di `bench/results/phase8-linux.txt` (ringkasannya di
+CHANGELOG). **Aksesibilitas** di `bench/results/phase8-a11y.txt`: 0 pelanggaran
+axe (WCAG 2.1 A+AA) di 64 tangkapan terang/gelap dan 32 tangkapan kontras
+tinggi.
+
+**Installer:** job CI *Package (Windows)* membangun NSIS, MSI dan ZIP
+portabel, lalu menjalankan `pdf-studio-izul --self-test` di ketiga tata letak
+yang sungguh terpasang (NSIS dipasang diam-diam, MSI diekstrak, ZIP dibongkar):
+kolam pekerja hidup dengan PDFium dari folder pasang, ONNX Runtime dan model
+ditemukan, PDF terbuka. Ketiganya 94,7 MB sebagai artefak (batas SPEC 200 MB).
+Artefaknya bisa diunduh dari halaman run CI selama 14 hari.
+
 ## Hasil Fase 7
 
 Dihitung dari keluaran `IZUL_REQUIRE_FIXTURES=1 cargo test --workspace
@@ -69,7 +131,7 @@ proof*); hasilnya di `bench/results/phase7-*.txt`:
 ```bash
 sudo apt-get install -y poppler-utils mupdf-tools fonts-dejavu-core fonts-liberation
 python3 -m pip install reportlab pikepdf pypdf pillow pdfminer.six
-./vendor/ocrs/fetch.sh && ./vendor/onnx/fetch.sh
+./vendor/ocr/fetch.sh && ./vendor/onnx/fetch.sh
 python3 tools/ocr-proof/run.py
 python3 tools/background-proof/run.py
 python3 tools/form-proof/run.py
@@ -78,7 +140,7 @@ python3 tools/textedit-proof/run.py
 
 | Kemampuan | Angka | Batas |
 |---|---|---|
-| OCR (5 halaman pindaian, 1 miring) | CER 0,87 %, WER 4,2 % di poppler/MuPDF/pdfminer/pypdf; 98,7–100 % kata di tempatnya; 0 piksel berubah; 750–942 ms/halaman (release) | CER ≤ 2 %, tempat ≥ 95 %, piksel = 0 |
+| OCR (5 halaman pindaian, 1 miring) | `ocrs` (Fase 7): CER 0,87 %, WER 4,2 % di poppler/MuPDF/pdfminer/pypdf; 98,7–100 % kata di tempatnya; 0 piksel berubah; 750–942 ms/halaman. **PP-OCRv6 (7.0.0, `bench/results/phase8-ocr.txt`): CER 0,00 %, WER 0,0 % di keempat alat; 100 % di tempatnya; 0 piksel; 1,0–1,4 dtk/halaman** | CER ≤ 2 %, tempat ≥ 95 %, piksel = 0 |
 | Hapus latar (5 gambar) | IoU 0,99 / 0,99 (foto), 1,00 / 1,00 (TTD, stempel di mode kertas), 0,90 (benda putih, mode foto); 154–240 ms (CPU) | mode yang tepat ≥ 0,85 |
 | Formulir (6 jenis isian) | nilai + tampilan terbaca di pypdf, poppler, MuPDF; pembanding naif gagal di 9 sel | semua "ya" |
 | Edit teks (2 kasus + 3 penolakan) | 0 piksel berubah di luar bagian yang diganti (poppler, MuPDF); teks baru terbaca di 3 pengekstrak | 0 piksel |
@@ -740,7 +802,7 @@ Seperti Fase 4: **pakai salinan**, karena menyimpan menimpa berkas.
 Siapkan dulu (sekali saja), di PowerShell biasa, di folder proyek:
 
 ```powershell
-bash vendor/ocrs/fetch.sh
+bash vendor/ocr/fetch.sh
 bash vendor/onnx/fetch.sh win-x64
 ```
 
@@ -772,8 +834,95 @@ terakhirnya.)
       ditolak dengan pesan yang menyebut hurufnya, dan tidak ada berkas yang
       ditulis. Coba juga blok dua baris sekaligus: ditolak.
 
+### Fase 8
+
+Cara paling mudah mencoba versi ini adalah **installer dari CI**, bukan
+`npm run tauri dev`:
+
+1. Buka halaman PR #7 di GitHub → tab **Checks** → pilih run **CI** terbaru →
+   gulir ke bawah ke bagian **Artifacts** → unduh **installers** (berkas zip,
+   ±95 MB).
+2. Ekstrak zip itu. Isinya tiga berkas: `…-setup.exe` (NSIS), `….msi`, dan
+   `…-portable.zip`.
+3. Klik dua kali `…-setup.exe`. Windows mungkin menampilkan "Windows protected
+   your PC" karena installernya belum ditandatangani — klik **More info** →
+   **Run anyway**. Ini wajar untuk aplikasi buatan sendiri.
+
+Lalu periksa:
+
+- [ ] Ikon aplikasi di Start menu, taskbar, dan desktop adalah halaman merah
+      bertulisan **iz** (bukan kotak biru).
+- [ ] Buka dua-tiga PDF, tutup aplikasi, lalu **klik kanan ikonnya di
+      taskbar**: berkas tadi muncul di daftar *Terbaru* (jump list).
+- [ ] **Tentang** (menu Berkas → Tentang) → *Buka folder log* membuka File
+      Explorer di folder log.
+- [ ] **Ctrl+Shift+P** membuka palet perintah; ketik "cetak" → Enter.
+      **F1** menampilkan semua pintasan; ubah satu, tutup aplikasi, buka lagi:
+      perubahannya masih ada.
+- [ ] **Cetak** (Ctrl+P): pratinjau Windows muncul; coba "tanpa anotasi" dan
+      rentang "1-2". Kalau punya printer, cetak satu halaman.
+- [ ] **F5** presentasi: layar penuh hitam, satu halaman; Page Down/panah/
+      spasi berpindah halaman; Esc keluar dan zoom kembali seperti semula.
+      **F11** mode fokus.
+- [ ] **Tema** (pita Beranda → Tema → Gelap), lalu *Balik warna halaman*: teks
+      jadi terang, **foto tidak ikut terbalik**.
+- [ ] **Kontras tinggi Windows**: Settings → Accessibility → Contrast themes →
+      pilih salah satu → Apply. Halaman tetap terbaca sekali (tidak dobel),
+      tab yang aktif bergaris, kotak warna di panel properti tetap berwarna.
+      Kembalikan ke "None" sesudahnya.
+- [ ] **Narrator** (Ctrl+Win+Enter): Tab berpindah antar tombol dan
+      namanya dibacakan; di halaman, Narrator membaca teks halaman. Tulis
+      bagian mana yang tidak dibacakan. Matikan lagi dengan Ctrl+Win+Enter.
+- [ ] **Gaya teks:** Tambah Teks → ketik beberapa kalimat → panel properti:
+      Tebal, Miring, Rata kanan-kiri, Spasi baris. Simpan, buka di **Edge**:
+      tampilannya sama.
+- [ ] **Tempel gambar:** tekan Win+Shift+S, ambil sebagian layar, lalu klik
+      halaman dan tekan **Ctrl+V**: potongan layar itu jadi gambar di halaman.
+      Pangkas sisinya lewat panel properti.
+- [ ] Pilih tiga objek (Shift+klik) → panel properti → *Ratakan kiri* lalu
+      *Jarak mendatar sama*.
+- [ ] **Alt+drag** di atas satu kolom tabel → tempel di Notepad: yang tersalin
+      hanya kolom itu, baris per baris.
+- [ ] **Ctrl+B** menandai halaman; panel *Bookmark Saya* menampilkannya; ganti
+      namanya. Tutup-buka berkas: bookmark masih ada.
+- [ ] PDF yang punya lampiran (misalnya dari e-faktur/instansi): panel
+      *Lampiran* menampilkannya; *Simpan* menulis berkasnya utuh.
+- [ ] Panel Anotasi → *Ekspor daftar (CSV)* → buka di Excel: huruf seperti
+      "é" dan "—" tampil benar, kolomnya terpisah.
+- [ ] **Hapus latar di GPU** (sisa Fase 7): pesan menyebut GPU atau CPU?
+- [ ] **Versi portabel:** ekstrak `…-portable.zip` ke flashdisk, jalankan
+      `pdf-studio-izul.exe` dari sana: folder `data` muncul di samping exe, dan
+      berkas yang dibuka tidak masuk jump list Windows.
+
+### 7.1.0 — Periksa pembaruan, Ke Word, dan perbaikan uji pemakaian
+
+7.0.1 tidak pernah dirilis; tombol pembaruan pertama kali hadir di 7.1.0.
+
+- [ ] Pasang 7.1.0 dari Releases. Buka Tentang → **Periksa pembaruan**: tertulis
+      "Versi 7.1.0 sudah yang terbaru".
+- [ ] Setelah 7.1.1 terbit: di 7.1.0, Periksa pembaruan → "Versi 7.1.1
+      tersedia" → **Unduh dan pasang**. Ada dokumen belum disimpan? Aplikasi
+      bertanya dulu. Sesudahnya aplikasi menutup, installer berjalan, dan
+      Tentang menunjukkan 7.1.1.
+- [ ] **Gambar sisipan tampil** (Edit → Tambah Gambar): gambarnya terlihat di
+      halaman, bukan hanya kotak bergaris putus-putus.
+- [ ] **Cetak** (Ctrl+P → Cetak): pratinjau cetak Windows menampilkan isi
+      halaman, bukan halaman kosong.
+- [ ] **Cubit touchpad** di atas halaman memperbesar/memperkecil halaman,
+      bukan seluruh tampilan aplikasi. Cubit di atas pita tidak melakukan apa-apa.
+- [ ] **Menu zoom** di bilah bawah (angka persen) membuka ke atas, utuh, dan
+      tampilan tidak bergeser. Menu **Tampilan** dan **Jendela** di pita juga utuh.
+- [ ] **Stabilo** pada judul dua baris: tidak ada pita yang lebih gelap; geser
+      **Tebal stabilo** ke 60 %, stabilonya menipis di tengah baris.
+- [ ] **Catatan tempel**: klik di halaman → muncul ikon kertas kecil dan kertas
+      notepad kuning siap diketik. Simpan, buka di Edge: catatannya terbaca.
+- [ ] **Ke Word**: Konversi → Ke Word → simpan → buka hasilnya di Microsoft
+      Word. Teks bisa diketik, judul tebal dan besar, gambar ada.
+- [ ] Matikan Wi-Fi lalu Periksa pembaruan: pesan "tidak bisa menghubungi
+      GitHub", aplikasi tetap jalan.
+
 ### Menyusul (fase terkait)
 
-- [ ] Dark mode dengan invert cerdas: teks terang, foto tidak terbalik (Fase 8).
+- [x] Dark mode dengan invert cerdas: teks terang, foto tidak terbalik (Fase 8; test piksel `inversion_flips_the_page_and_leaves_its_picture`, sisanya di checklist Fase 8).
 - [x] Paritas anotasi saat objek diam, ambang perseptual < 0,5 % (Fase 3;
       berkas tersimpan 0,000 % di Fase 4).

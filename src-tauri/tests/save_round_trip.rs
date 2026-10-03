@@ -127,6 +127,7 @@ fn objects(image: u32) -> Vec<AnnotObject> {
         AnnotPayload::Markup {
             quads: vec![PdfRectF::new(58.0, 735.0, 300.0, 760.0)],
             color: Rgba::new(1.0, 0.85, 0.0, 1.0),
+            thickness: 1.0,
         },
     );
     let ink = AnnotObject::new(
@@ -426,6 +427,7 @@ async fn exports_write_new_files_and_touch_nothing_else() {
         Export::Flat {
             target: flat.to_string_lossy().into(),
         },
+        false,
     )
     .await
     .unwrap();
@@ -445,6 +447,7 @@ async fn exports_write_new_files_and_touch_nothing_else() {
             target: one.to_string_lossy().into(),
             pages: vec![1],
         },
+        false,
     )
     .await
     .unwrap();
@@ -469,12 +472,47 @@ async fn exports_write_new_files_and_touch_nothing_else() {
             dpi: 72,
             jpeg_quality: None,
         },
+        false,
     )
     .await
     .unwrap();
     assert_eq!(images.len(), 2);
     let first = image::open(&images[0]).unwrap();
     assert_eq!((first.width(), first.height()), (595, 842));
+
+    // Printing "without annotations" (Phase 8): the same page, bare. Page 2
+    // carries ink, text and a picture, so the two renders must differ — and
+    // the bare one must be the page as the file has it.
+    let bare_dir = live.dir.join("tanpa");
+    std::fs::create_dir_all(&bare_dir).unwrap();
+    let bare = saving::export(
+        &live.pool,
+        &state,
+        1,
+        &source,
+        &scratch,
+        Export::Images {
+            folder: bare_dir.to_string_lossy().into(),
+            stem: "hal".into(),
+            pages: vec![1],
+            dpi: 72,
+            jpeg_quality: None,
+        },
+        true,
+    )
+    .await
+    .unwrap();
+    let with = image::open(&images[1]).unwrap().to_rgba8();
+    let without = image::open(&bare[0]).unwrap().to_rgba8();
+    let differing = with
+        .pixels()
+        .zip(without.pixels())
+        .filter(|(a, b)| a.0.iter().zip(b.0.iter()).any(|(x, y)| x.abs_diff(*y) > 40))
+        .count();
+    assert!(
+        differing > 500,
+        "anotasi tidak ikut tercetak berbeda: {differing}"
+    );
 
     assert_eq!(
         std::fs::read(&path).unwrap(),
@@ -483,5 +521,102 @@ async fn exports_write_new_files_and_touch_nothing_else() {
     );
     assert!(state.is_dirty(1), "an export is not a save");
     assert!(live.leftovers().is_empty());
+    live.stop().await;
+}
+
+/// The parts of a ZIP package by name, inflated. Enough of the format for the
+/// packages `izul_docx` writes: local headers, stored or deflated.
+fn zip_parts(bytes: &[u8]) -> std::collections::HashMap<String, Vec<u8>> {
+    use std::io::Read as _;
+    let u16_at = |at: usize| u16::from_le_bytes([bytes[at], bytes[at + 1]]) as usize;
+    let u32_at = |at: usize| {
+        u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]) as usize
+    };
+    let mut out = std::collections::HashMap::new();
+    let mut at = 0;
+    while at + 30 <= bytes.len() && u32_at(at) == 0x0403_4b50 {
+        let method = u16_at(at + 8);
+        let size = u32_at(at + 18);
+        let name_len = u16_at(at + 26);
+        let extra = u16_at(at + 28);
+        let name = String::from_utf8_lossy(&bytes[at + 30..at + 30 + name_len]).to_string();
+        let start = at + 30 + name_len + extra;
+        let body = &bytes[start..start + size];
+        let data = if method == 8 {
+            let mut v = Vec::new();
+            flate2::read::DeflateDecoder::new(body)
+                .read_to_end(&mut v)
+                .unwrap();
+            v
+        } else {
+            body.to_vec()
+        };
+        out.insert(name, data);
+        at = start + size;
+    }
+    out
+}
+
+/// "Ke Word" through the real worker: the page text, the text box the user
+/// typed and the picture they inserted all reach the .docx — the last two
+/// because annotations are flattened into the working copy first — and the
+/// file the tab has open is not touched.
+#[tokio::test]
+async fn a_word_export_carries_the_page_and_what_was_added_to_it() {
+    let Some(live) = Live::start("docx").await else {
+        return skip("izul-worker atau PDFium belum dibangun");
+    };
+    let path = live.dir.join("dokumen.pdf");
+    std::fs::write(&path, source_pdf()).unwrap();
+    let original = std::fs::read(&path).unwrap();
+    let pages = live.open(1, &path).await;
+    let state = AnnotState::new();
+    for p in 0..pages {
+        saving::import_page(&live.pool, &state, 1, p).await.unwrap();
+    }
+    edit(&live, &state, 1).await;
+
+    let target = live.dir.join("dokumen.docx");
+    let stats = saving::export_docx(
+        &live.pool,
+        &state,
+        1,
+        &path.to_string_lossy(),
+        &live.dir.join("tmp"),
+        &target.to_string_lossy(),
+        "dokumen",
+    )
+    .await
+    .unwrap();
+    assert_eq!(stats.pages, 2);
+    assert_eq!(
+        std::fs::read(&path).unwrap(),
+        original,
+        "berkas asli tidak diubah"
+    );
+    assert!(state.is_dirty(1), "ekspor bukan simpan");
+
+    let parts = zip_parts(&std::fs::read(&target).unwrap());
+    let document = String::from_utf8(parts["word/document.xml"].clone()).unwrap();
+    assert_eq!(
+        document.matches("Dokumen uji simpan").count(),
+        2,
+        "teks kedua halaman"
+    );
+    assert!(
+        document.contains("Teks disimpan"),
+        "kotak teks pengguna ikut"
+    );
+    assert!(
+        document.contains("<w:pageBreakBefore/>"),
+        "halaman kedua di halaman baru"
+    );
+    assert!(stats.pictures >= 1, "gambar sisipan ikut: {stats:?}");
+    assert!(
+        parts.keys().any(|k| k.starts_with("word/media/")),
+        "{:?}",
+        parts.keys().collect::<Vec<_>>()
+    );
+    assert!(live.leftovers().is_empty(), "{:?}", live.leftovers());
     live.stop().await;
 }

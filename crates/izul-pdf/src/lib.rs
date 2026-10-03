@@ -28,6 +28,7 @@
 )]
 
 pub mod arrange;
+pub mod attachments;
 pub mod engine;
 pub mod error;
 mod ffi_guard;
@@ -37,7 +38,9 @@ pub mod forms;
 pub mod geom;
 #[cfg(test)]
 mod golden;
+pub mod invert;
 pub mod izul;
+pub mod layout;
 pub mod ocr_layer;
 pub mod outline;
 pub mod redaction;

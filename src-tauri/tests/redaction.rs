@@ -208,6 +208,7 @@ fn mark(page: u32, quads: Vec<PdfRectF>) -> AnnotObject {
         AnnotPayload::Markup {
             quads,
             color: Rgba::BLACK,
+            thickness: 1.0,
         },
     );
     obj.recompute_rect();
@@ -301,6 +302,7 @@ async fn marked_text_is_gone_from_the_file_and_nothing_else_is() {
             redaction: Some(redaction.clone()),
             ocr: None,
             text: None,
+            bare: false,
         }),
     )
     .await
@@ -384,6 +386,7 @@ async fn a_redaction_that_cannot_be_done_writes_nothing() {
             redaction: Some(redaction.clone()),
             ocr: None,
             text: None,
+            bare: false,
         }),
     )
     .await

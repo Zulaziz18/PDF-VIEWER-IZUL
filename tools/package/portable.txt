@@ -1,0 +1,8 @@
+PDF Studio Izul — salinan portabel
+
+Selama berkas ini ada di samping pdf-studio-izul.exe, aplikasi menyimpan
+semua datanya (berkas terbaru, sesi, draf, log) di folder "data" di sini,
+bukan di profil Windows. Folder ini bisa dibawa di flashdisk.
+
+Hapus berkas ini kalau ingin salinan ini memakai data di profil Windows
+seperti versi yang dipasang.

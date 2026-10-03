@@ -107,6 +107,22 @@ const BLEND: Record<string, GlobalCompositeOperation> = {
 };
 
 /**
+ * On a page inverted for dark mode (Phase 8), a highlight multiplied over
+ * dark paper would vanish; over the inverted page the colour that marks
+ * without hiding the text is the screen of it, which is what multiply is
+ * over white. The saved file is unaffected — this is only how it is shown.
+ */
+let inverted = false;
+export function setCanvasInversion(on: boolean): void {
+  inverted = on;
+}
+function blendOf(name: string): GlobalCompositeOperation {
+  const mode = BLEND[name] ?? "source-over";
+  if (!inverted) return mode;
+  return mode === "multiply" ? "screen" : mode === "darken" ? "lighten" : mode;
+}
+
+/**
  * Draws one display list.
  *
  * `images` resolves an `ImageRef` to something drawable. A reference with no
@@ -152,7 +168,7 @@ export function drawDisplayList(
     if ("FillPath" in op) {
       const { path, color, rule, blend } = op.FillPath;
       ctx.save();
-      ctx.globalCompositeOperation = BLEND[blend] ?? "source-over";
+      ctx.globalCompositeOperation = blendOf(blend);
       ctx.fillStyle = css(color);
       tracePath(ctx, path);
       ctx.fill(rule === "EvenOdd" ? "evenodd" : "nonzero");
@@ -162,7 +178,7 @@ export function drawDisplayList(
     if ("StrokePath" in op) {
       const { path, color, style, blend } = op.StrokePath;
       ctx.save();
-      ctx.globalCompositeOperation = BLEND[blend] ?? "source-over";
+      ctx.globalCompositeOperation = blendOf(blend);
       ctx.strokeStyle = css(color);
       ctx.lineWidth = style.width;
       ctx.lineCap = style.cap === "Round" ? "round" : style.cap === "Square" ? "square" : "butt";
@@ -206,7 +222,7 @@ export function drawDisplayList(
     if ("DrawText" in op) {
       const { glyphs, size, matrix, color, blend } = op.DrawText;
       ctx.save();
-      ctx.globalCompositeOperation = BLEND[blend] ?? "source-over";
+      ctx.globalCompositeOperation = blendOf(blend);
       ctx.fillStyle = css(color);
       // The font here draws glyph *shapes*; every glyph's position came from
       // the layout, which used the metrics the exported file will use. A

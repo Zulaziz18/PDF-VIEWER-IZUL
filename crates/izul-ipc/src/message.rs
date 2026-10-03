@@ -21,7 +21,15 @@ use izul_model::geom::{PageFrame, PdfRectF, RotationQuarter};
 /// So the worker announces this number the moment it connects, and the
 /// supervisor refuses a worker that does not match. Bump it whenever anything
 /// in [`Request`] or [`Response`] changes shape.
-pub const PROTOCOL_VERSION: u32 = 12;
+pub const PROTOCOL_VERSION: u32 = 16;
+
+/// The OCR models' file names inside the folder `Request::WorkOcr` names:
+/// PP-OCRv6 small (7.0.0), fetched by `vendor/ocr/fetch.sh`. Here, where both
+/// the application (which finds the folder) and the worker (which loads the
+/// files) can see them — the application must not link the OCR crate, which
+/// links PDFium.
+pub const OCR_DETECTION_MODEL: &str = "PP-OCRv6_det_small.onnx";
+pub const OCR_RECOGNITION_MODEL: &str = "PP-OCRv6_rec_small.onnx";
 
 /// Identifies one open document within a worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -94,6 +102,8 @@ pub enum Request {
         rotation: RotationQuarter,
         quality: RenderQuality,
         generation: Generation,
+        /// Dark mode's smart inversion (`izul_pdf::invert`).
+        invert: bool,
     },
     /// A whole page at thumbnail resolution: the low-resolution first tier of
     /// SPEC 9's two-tier render, and the sidebar's thumbnail, which are the
@@ -104,6 +114,7 @@ pub enum Request {
         max_edge_px: u32,
         rotation: RotationQuarter,
         generation: Generation,
+        invert: bool,
     },
     /// Page text, and — when `with_boxes` is set — the per-character boxes the
     /// selection layer needs, in display space at `rotation`.
@@ -280,14 +291,16 @@ pub enum Request {
     /// read onto the page as invisible text (`izul_ocr::ocr_page`). One page
     /// per request, so a worker is never silent long enough for the heartbeat
     /// to take it for hung, and the UI can report progress and stop between
-    /// pages. `models` is the folder holding the two `.rten` files. A page
-    /// that already has text is left alone unless `force`. Answered with
+    /// pages. `models` is the folder holding the two PP-OCR `.onnx` files,
+    /// `runtime` the ONNX Runtime library (7.0.0; protocol 15). A page that
+    /// already has text is left alone unless `force`. Answered with
     /// `WorkOcrDone`.
     WorkOcr {
         doc: DocId,
         page: u32,
         models: String,
         force: bool,
+        runtime: String,
     },
     /// Adds bytes to a blob in the worker, for input too large for one frame
     /// (a picture). `blob` 0 starts a new one. Answered with `BlobAppended`.
@@ -327,6 +340,24 @@ pub enum Request {
         page: u32,
         rect: PdfRectF,
         text: String,
+    },
+    /// The files embedded in the open document (`izul_pdf::attachments`),
+    /// Phase 8. Answered with `AttachmentsReady`.
+    Attachments {
+        doc: DocId,
+    },
+    /// The bytes of embedded file `index`, answered with `BlobReady`: an
+    /// attachment can be larger than one frame.
+    AttachmentData {
+        doc: DocId,
+        index: u32,
+    },
+    /// 7.1.0: what `page` of the working copy holds for the Word conversion
+    /// (`izul_pdf::layout`), postcard-encoded and answered with `BlobReady` —
+    /// a page of pictures is larger than one frame.
+    WorkLayout {
+        doc: DocId,
+        page: u32,
     },
 }
 
@@ -573,6 +604,11 @@ pub enum Response {
         /// Glyphs taken out.
         glyphs: u32,
     },
+    AttachmentsReady {
+        doc: DocId,
+        /// Name and size in bytes of each embedded file, in order.
+        items: Vec<(String, u64)>,
+    },
 }
 
 /// One saved annotation as the worker found it: its `/IzulObj` value, and —
@@ -765,7 +801,8 @@ mod tests {
                     doc: DocId(1),
                     page: 0,
                     models: String::new(),
-                    force: false
+                    force: false,
+                    runtime: String::new(),
                 })
                 .unwrap()
             ),
@@ -844,6 +881,40 @@ mod tests {
                 .unwrap()
             ),
             32
+        );
+        assert_eq!(
+            index(postcard::to_allocvec(&Request::Attachments { doc: DocId(1) }).unwrap()),
+            33
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Request::AttachmentData {
+                    doc: DocId(1),
+                    index: 0
+                })
+                .unwrap()
+            ),
+            34
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Request::WorkLayout {
+                    doc: DocId(1),
+                    page: 0
+                })
+                .unwrap()
+            ),
+            35
+        );
+        assert_eq!(
+            index(
+                postcard::to_allocvec(&Response::AttachmentsReady {
+                    doc: DocId(1),
+                    items: vec![]
+                })
+                .unwrap()
+            ),
+            25
         );
         assert_eq!(
             index(

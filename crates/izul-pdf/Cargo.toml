@@ -9,6 +9,8 @@ license.workspace = true
 # Phase 6: the redactor, driven and checked from here (`redaction.rs`).
 izul-redact.workspace = true
 izul-model.workspace = true
+# 7.1.0: the page reading the Word conversion starts from (`layout.rs`).
+izul-docx.workspace = true
 pdfium-render.workspace = true
 memmap2.workspace = true
 thiserror.workspace = true

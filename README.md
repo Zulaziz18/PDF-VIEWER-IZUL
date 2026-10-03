@@ -72,13 +72,14 @@ sebagian didasarkan pada karya Independent JPEG Group* (this software is based
 in part on the work of the Independent JPEG Group). Kalimat itu juga ada di
 kotak Tentang aplikasi.
 
-Fase 7 membawa komponen dengan lisensinya sendiri, **belum dibundel ke
-installer** (itu Fase 8, sesudah keputusan pengguna):
+Komponen Fase 7 dan apa yang ikut ke installer (Fase 8; OCR diganti di 7.0.0). Semua yang dibundel
+disertai lisensinya di folder `licenses/` aplikasi terpasang
+(`src-tauri/licenses/NOTICE.txt` + berkas lisensi aslinya):
 
-| Komponen | Lisensi | Catatan |
+| Komponen | Lisensi | Di installer? |
 |---|---|---|
-| `ocrs` + `rten` (mesin OCR) | MIT / Apache-2.0 | kode, ditautkan ke pekerja |
-| Model OCR `ocrs` (deteksi + pengenalan) | **belum jelas** | dilatih pada HierText (CC BY-SA 4.0); repositori modelnya tanpa berkas LICENSE. Hanya diambil `vendor/ocrs/fetch.sh` untuk pengembangan |
-| ONNX Runtime 1.24.4 | MIT (Microsoft) | dimuat saat berjalan |
-| `DirectML.dll` | lisensi redistribusi Microsoft | `vendor/onnx/*/ThirdPartyNotices.txt` |
-| Model `u2netp` (U²-Net kecil) | Apache-2.0 | Xuebin Qin dkk., rilis rembg |
+| Model OCR PP-OCRv6 small (deteksi + pengenalan) | Apache-2.0 — PaddleOCR (PaddlePaddle Authors), versi ONNX dari RapidOCR (Apache-2.0) | ya, `ocr/` (sejak 7.0.0; diambil `vendor/ocr/fetch.sh`, terpatok SHA-256) |
+| ONNX Runtime 1.24.4 | MIT (Microsoft) | ya |
+| `DirectML.dll` | lisensi redistribusi Microsoft (`ThirdPartyNotices.txt`) | ya |
+| Model `u2netp` (U²-Net kecil) | Apache-2.0, Xuebin Qin dkk., rilis rembg | ya |
+| PDFium + pustaka yang dibawanya | BSD-3 dan lisensi masing-masing (FreeType, ICU, libjpeg-turbo, …) | ya, `licenses/pdfium/` |

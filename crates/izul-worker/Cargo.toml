@@ -20,6 +20,8 @@ tracing-subscriber.workspace = true
 tokio.workspace = true
 parking_lot.workspace = true
 image.workspace = true
+# 7.1.0: a page's layout travels to the UI process as one postcard blob.
+postcard.workspace = true
 
 [lints]
 workspace = true

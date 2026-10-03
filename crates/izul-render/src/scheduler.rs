@@ -532,6 +532,7 @@ impl RenderService {
                 rotation,
                 quality,
                 generation: Generation(job.generation),
+                invert: job.key.invert,
             },
             JobSpec::Preview {
                 max_edge_px,
@@ -542,6 +543,7 @@ impl RenderService {
                 max_edge_px,
                 rotation,
                 generation: Generation(job.generation),
+                invert: job.key.invert,
             },
         };
         self.backend.render(doc, request).await
@@ -774,6 +776,7 @@ mod tests {
             col: 0,
             row: 0,
             kind: TileKind::Sharp,
+            invert: false,
         }
     }
 

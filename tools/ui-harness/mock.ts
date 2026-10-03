@@ -104,12 +104,71 @@ export function installMocks(data: HarnessData): void {
     edit: { objects: [], can_undo: true, can_redo: false, dirty: true, map_revision: revision },
   });
 
+  const bookmarks = new Map<number, { id: number; page: number; label: string; created_at: number }[]>();
+  let bookmarkId = 0;
+
   mockIPC(
     async (cmd, raw) => {
       const args = (raw ?? {}) as Record<string, unknown>;
       switch (cmd) {
         case "app_version":
           return data.version;
+        // Phase 8: user bookmarks, kept in memory for the harness's run.
+        case "bookmarks_list":
+        case "bookmark_add":
+        case "bookmark_rename":
+        case "bookmark_remove": {
+          const doc = Number(args["doc"]);
+          const list = bookmarks.get(doc) ?? [];
+          if (cmd === "bookmark_add")
+            list.push({ id: ++bookmarkId, page: Number(args["page"]), label: String(args["label"]), created_at: data.now });
+          if (cmd === "bookmark_rename") {
+            const b = list.find((x) => x.id === Number(args["id"]));
+            if (b) b.label = String(args["label"]);
+          }
+          const kept = cmd === "bookmark_remove" ? list.filter((x) => x.id !== Number(args["id"])) : list;
+          kept.sort((a, b) => a.page - b.page || a.id - b.id);
+          bookmarks.set(doc, kept);
+          return kept.map((b) => ({ ...b }));
+        }
+        case "attachments_list":
+          return Number(args["doc"]) === 1
+            ? [
+                { index: 0, name: "Jadwal Kuliah 2026.xlsx", size: 48_213 },
+                { index: 1, name: "Formulir KRS.docx", size: 21_902 },
+                { index: 2, name: "Peta Kampus.png", size: 1_874_551 },
+              ]
+            : [];
+        case "attachment_save":
+          return 1;
+        case "log_folder":
+          return "C:\\Users\\contoh\\AppData\\Local\\PDF Studio Izul\\logs";
+        case "open_log_folder":
+          return null;
+        // 7.0.1: a newer release waiting, as the scene "update" shows it.
+        case "update_check":
+          return {
+            current: data.version.version,
+            available: "7.2.0",
+            notes: "Perbaikan pencarian dan OCR lebih cepat.",
+            portable: false,
+            releasesUrl: "https://github.com/Zulaziz18/PDF-VIEWER-IZUL/releases",
+          };
+        // 7.1.0: "Ke Word" — the save dialog answers, and the report is
+        // what `docx-proof` measured on the sample (33 pages, 235 paragraphs,
+        // the cover's sideways "2026").
+        case "plugin:dialog|save":
+          return "C:\\Users\\contoh\\Documents\\Panduan Studi 2026.docx";
+        case "export_docx":
+          return {
+            path: String(args["target"]),
+            pages: 33,
+            paragraphs: 235,
+            pictures: 0,
+            skipped_turned: 4,
+            skipped_pictures: 0,
+            pages_without_text: 0,
+          };
         case "pool_health":
           return {
             pool_size: 8,
@@ -156,6 +215,7 @@ export function installMocks(data: HarnessData): void {
         case "page_text":
         case "annot_list":
         case "annot_display_lists":
+        case "annot_replace":
         case "redact_preview":
           return window.__harnessBackend ? window.__harnessBackend(cmd, args) : [];
         case "file_status":

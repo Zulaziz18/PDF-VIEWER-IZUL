@@ -8,7 +8,9 @@
  * still be there when they look at the next.
  */
 
+import { invoke } from "@tauri-apps/api/core";
 import { create } from "zustand";
+import { applyTheme, THEME_PREFS, type ThemePref } from "@/design/theme";
 import type { PdfRect } from "@/annots/types";
 
 /** Text selected on a page, as the "Edit Teks" dialog opens with it. */
@@ -80,6 +82,21 @@ export interface UiState {
   ocring: boolean;
   /** The "Edit Teks" dialog, with the text it was opened on (Phase 7). */
   editingText: TextSelection | null;
+  /** Phase 8: the command palette (Ctrl+Shift+P) and the shortcut list (F1). */
+  paletteOpen: boolean;
+  shortcutsOpen: boolean;
+  /** The print dialog. */
+  printing: boolean;
+  /** Presentation mode (F5): the page alone, full screen. */
+  presenting: boolean;
+  /** Focus mode (F11): the chrome folded away, the document stays. */
+  focusMode: boolean;
+  /** Light, dark, or as Windows is — stored (`ui.theme`). */
+  themePref: ThemePref;
+  /** Pages drawn inverted in dark mode, pictures left as they are (`ui.invert`). */
+  invertPages: boolean;
+  /** Whether they are, now: asked for, and the theme is dark. */
+  pagesInverted: boolean;
   setRibbon(tab: RibbonTab): void;
   armMarkup(kind: MarkupKind | null): void;
   setAboutOpen(open: boolean): void;
@@ -95,6 +112,20 @@ export interface UiState {
   setRedacting(open: boolean): void;
   setOcring(open: boolean): void;
   setEditingText(sel: TextSelection | null): void;
+  setPaletteOpen(open: boolean): void;
+  setShortcutsOpen(open: boolean): void;
+  setPrinting(open: boolean): void;
+  setPresenting(on: boolean): void;
+  setFocusMode(on: boolean): void;
+  setThemePref(pref: ThemePref): void;
+  cycleTheme(): void;
+  setInvertPages(on: boolean): void;
+  /** Reads the stored preferences; called once at startup. */
+  loadPrefs(): Promise<void>;
+}
+
+function store(key: string, value: string): void {
+  void invoke("pref_set", { key, value }).catch(() => undefined);
 }
 
 export const useUi = create<UiState>((set, get) => ({
@@ -116,6 +147,14 @@ export const useUi = create<UiState>((set, get) => ({
   redacting: false,
   ocring: false,
   editingText: null,
+  paletteOpen: false,
+  shortcutsOpen: false,
+  printing: false,
+  presenting: false,
+  focusMode: false,
+  themePref: "system",
+  invertPages: false,
+  pagesInverted: false,
   ask(spec) {
     const previous = get().prompt;
     if (previous) previous.resolve(previous.spec.cancelId);
@@ -143,5 +182,43 @@ export const useUi = create<UiState>((set, get) => ({
   },
   setEditingText(editingText) {
     set({ editingText });
+  },
+  setPaletteOpen(paletteOpen) {
+    set({ paletteOpen });
+  },
+  setShortcutsOpen(shortcutsOpen) {
+    set({ shortcutsOpen });
+  },
+  setPrinting(printing) {
+    set({ printing });
+  },
+  setPresenting(presenting) {
+    set({ presenting });
+  },
+  setFocusMode(focusMode) {
+    set({ focusMode });
+  },
+  setThemePref(themePref) {
+    set({ themePref });
+    applyTheme(themePref);
+    store("ui.theme", themePref);
+  },
+  cycleTheme() {
+    const at = THEME_PREFS.indexOf(get().themePref);
+    get().setThemePref(THEME_PREFS[(at + 1) % THEME_PREFS.length] ?? "system");
+  },
+  setInvertPages(invertPages) {
+    set({ invertPages });
+    store("ui.invert", invertPages ? "1" : "0");
+  },
+  async loadPrefs() {
+    const read = (key: string) => invoke<string | null>("pref_get", { key }).catch(() => null);
+    const [theme, invert] = await Promise.all([read("ui.theme"), read("ui.invert")]);
+    const pref = THEME_PREFS.find((p) => p === theme);
+    if (pref !== undefined && pref !== get().themePref) {
+      set({ themePref: pref });
+      applyTheme(pref);
+    }
+    if (invert === "1") set({ invertPages: true });
   },
 }));

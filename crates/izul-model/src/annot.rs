@@ -177,6 +177,14 @@ pub enum NoteIcon {
     Help,
 }
 
+/// The thickness of a highlight saved before it could be changed.
+fn full_thickness() -> f32 {
+    1.0
+}
+
+/// The thinnest a highlight may be, as a share of its line.
+pub const MIN_HIGHLIGHT_THICKNESS: f32 = 0.2;
+
 /// Everything that varies between kinds.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum AnnotPayload {
@@ -186,6 +194,13 @@ pub enum AnnotPayload {
     Markup {
         quads: Vec<PdfRectF>,
         color: Rgba,
+        /// How much of each line's height a highlight covers, centred on the
+        /// line: 1.0 is the whole quad. Lets a highlight on tightly set lines
+        /// stop overlapping the lines above and below (asked for in 7.0.0).
+        /// Underline, strike-out and redaction marks ignore it. Absent in
+        /// objects saved before 7.1.0, which therefore read as 1.0.
+        #[serde(default = "full_thickness")]
+        thickness: f32,
     },
     FreeText {
         text: String,
@@ -538,6 +553,7 @@ mod tests {
                     rect(72.0, 688.0, 200.0, 700.0),
                 ],
                 color: Rgba::from_rgb8(255, 235, 59, 0.4),
+                thickness: 1.0,
             },
         );
         obj.recompute_rect();

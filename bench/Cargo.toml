@@ -45,6 +45,11 @@ path = "src/fase5_uji.rs"
 name = "redact-proof"
 path = "src/redact_proof.rs"
 
+# 7.1.0: PDF to Word, checked by LibreOffice (tools/docx-proof).
+[[bin]]
+name = "docx-proof"
+path = "src/docx_proof.rs"
+
 [[bin]]
 name = "ocr-probe"
 path = "src/ocr_probe.rs"
@@ -61,7 +66,15 @@ path = "src/form_probe.rs"
 name = "textedit-probe"
 path = "src/textedit_probe.rs"
 
+# SPEC 13's search targets (Phase 8): FTS5 in a document and across the
+# library, and PDFium's find for the highlights.
+[[bin]]
+name = "search-bench"
+path = "src/search_bench.rs"
+
 [dependencies]
+izul-store.workspace = true
+rusqlite.workspace = true
 izul-ocr.workspace = true
 izul-pdf.workspace = true
 izul-ipc.workspace = true
@@ -69,6 +82,7 @@ izul-render.workspace = true
 izul-model.workspace = true
 izul-write.workspace = true
 izul-redact.workspace = true
+izul-docx.workspace = true
 image.workspace = true
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time", "net", "io-util", "process", "sync"] }
 parking_lot.workspace = true

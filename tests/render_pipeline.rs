@@ -241,6 +241,7 @@ async fn the_preview_tier_answers_with_a_whole_page_small_enough_to_be_instant()
             max_edge_px: 256,
             rotation: RotationQuarter::None,
             generation: Generation(1),
+            invert: false,
         })
         .await;
     let slot = match reply {
@@ -291,6 +292,7 @@ async fn a_rotated_page_renders_turned_rather_than_stretched() {
             max_edge_px: 256,
             rotation: RotationQuarter::None,
             generation: Generation(1),
+            invert: false,
         })
         .await
     {
@@ -304,6 +306,7 @@ async fn a_rotated_page_renders_turned_rather_than_stretched() {
             max_edge_px: 256,
             rotation: RotationQuarter::Cw90,
             generation: Generation(1),
+            invert: false,
         })
         .await
     {
@@ -347,6 +350,7 @@ async fn a_page_with_its_own_rotate_is_laid_out_and_drawn_the_same_way() {
             max_edge_px: 256,
             rotation: RotationQuarter::None,
             generation: Generation(1),
+            invert: false,
         })
         .await;
     let slot = match reply {
@@ -400,6 +404,7 @@ async fn the_tiles_of_a_page_cover_it_and_line_up_with_their_neighbours() {
                     rotation: RotationQuarter::None,
                     quality: RenderQuality::Sharp,
                     generation: Generation(1),
+                    invert: false,
                 })
                 .await;
             let slot = match reply {
@@ -451,6 +456,7 @@ async fn work_from_a_superseded_generation_is_dropped_rather_than_rendered() {
             rotation: RotationQuarter::None,
             quality: RenderQuality::Sharp,
             generation: Generation(4),
+            invert: false,
         })
         .await;
     assert!(
@@ -469,6 +475,7 @@ async fn work_from_a_superseded_generation_is_dropped_rather_than_rendered() {
             rotation: RotationQuarter::None,
             quality: RenderQuality::Sharp,
             generation: Generation(5),
+            invert: false,
         })
         .await;
     assert!(matches!(current, Response::TileReady { .. }));
@@ -482,6 +489,7 @@ async fn work_from_a_superseded_generation_is_dropped_rather_than_rendered() {
             max_edge_px: 128,
             rotation: RotationQuarter::None,
             generation: Generation(1),
+            invert: false,
         })
         .await;
     assert!(
@@ -616,6 +624,7 @@ async fn a_thumbnail_sweep_does_not_leave_the_whole_document_resident() {
                 max_edge_px: 128,
                 rotation: RotationQuarter::None,
                 generation: Generation(1),
+                invert: false,
             })
             .await;
         assert!(
@@ -659,6 +668,7 @@ async fn a_zoomed_tile_of_the_top_left_corner_is_never_blank() {
                 rotation: RotationQuarter::None,
                 quality: RenderQuality::Sharp,
                 generation: Generation(1),
+                invert: false,
             })
             .await;
         match reply {

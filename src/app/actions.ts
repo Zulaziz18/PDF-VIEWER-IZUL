@@ -11,6 +11,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { DEFAULT_STYLE, markupFromQuads } from "@/annots/factory";
 import { NEW_OBJECT_ID } from "@/annots/types";
+import { loadImage } from "@/annots/images";
 import { useDocument } from "@/state/documentStore";
 import { useUi, type MarkupKind } from "@/state/uiStore";
 import { useWorkspace } from "@/state/workspaceStore";
@@ -72,8 +73,7 @@ export function markupSelection(kind: MarkupKind): void {
  * its natural aspect ratio and is moved and resized like anything else.
  */
 export async function insertImage(): Promise<void> {
-  const store = useDocument.getState;
-  const state = store();
+  const state = useDocument.getState();
   if (state.doc === null) return;
   const chosen = await openDialog({
     multiple: false,
@@ -82,27 +82,48 @@ export async function insertImage(): Promise<void> {
   if (typeof chosen !== "string") return;
   try {
     const image = await invoke<number>("annot_add_image", { doc: state.doc, path: chosen });
-    const page = state.page;
-    const size = state.pageSizes[page];
-    const width = Math.min(240, (size?.width ?? 400) * 0.5);
-    const height = width * 0.75;
-    const left = ((size?.width ?? 400) - width) / 2;
-    const bottom = ((size?.height ?? 600) - height) / 2;
-    await store().addAnnot({
-      id: NEW_OBJECT_ID,
-      page,
-      kind: "Image",
-      rect: { left, bottom, right: left + width, top: bottom + height },
-      rotation: 0,
-      opacity: 1,
-      z: 0,
-      locked: false,
-      created_at: Date.now(),
-      modified_at: Date.now(),
-      author_note: "",
-      payload: { Image: { image, crop: { left: 0, bottom: 0, right: 1, top: 1 }, opacity: 1 } },
-    });
+    await placeImage(state.doc, image);
   } catch (e) {
     console.warn("gambar tidak dapat disisipkan", e);
   }
+}
+
+/**
+ * A registered picture as a new object in the middle of the current page, at
+ * its own aspect ratio (Phase 8: until then every picture started 4:3 and had
+ * to be un-stretched by hand).
+ */
+export async function placeImage(doc: number, image: number): Promise<void> {
+  const store = useDocument.getState;
+  const state = store();
+  const page = state.page;
+  const size = state.pageSizes[page];
+  const element = await loadImage(doc, image);
+  const aspect =
+    element && element.naturalWidth > 0 ? element.naturalHeight / element.naturalWidth : 0.75;
+  const pageW = size?.width ?? 400;
+  const pageH = size?.height ?? 600;
+  let width = Math.min(240, pageW * 0.5);
+  let height = width * aspect;
+  // A tall picture fits the page's height rather than running off it.
+  if (height > pageH * 0.6) {
+    height = pageH * 0.6;
+    width = height / aspect;
+  }
+  const left = (pageW - width) / 2;
+  const bottom = (pageH - height) / 2;
+  await store().addAnnot({
+    id: NEW_OBJECT_ID,
+    page,
+    kind: "Image",
+    rect: { left, bottom, right: left + width, top: bottom + height },
+    rotation: 0,
+    opacity: 1,
+    z: 0,
+    locked: false,
+    created_at: Date.now(),
+    modified_at: Date.now(),
+    author_note: "",
+    payload: { Image: { image, crop: { left: 0, bottom: 0, right: 1, top: 1 }, opacity: 1 } },
+  });
 }

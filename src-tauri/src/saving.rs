@@ -110,8 +110,11 @@ pub struct OcrJob {
     pub pages: Vec<u32>,
     /// Read pages that already have text as well.
     pub force: bool,
-    /// Folder holding `text-detection.rten` and `text-recognition.rten`.
+    /// Folder holding the two PP-OCR models (`izul_ocr::DETECTION_MODEL`,
+    /// `RECOGNITION_MODEL`).
     pub models: PathBuf,
+    /// The ONNX Runtime library the worker runs them with.
+    pub runtime: PathBuf,
     pub progress: Option<Arc<dyn Fn(u32, u32) + Send + Sync>>,
     pub cancel: Arc<std::sync::atomic::AtomicBool>,
 }
@@ -122,6 +125,7 @@ impl std::fmt::Debug for OcrJob {
             .field("pages", &self.pages.len())
             .field("force", &self.force)
             .field("models", &self.models)
+            .field("runtime", &self.runtime)
             .finish()
     }
 }
@@ -142,6 +146,8 @@ pub struct Rewrite {
     pub redaction: Option<Redaction>,
     pub ocr: Option<OcrJob>,
     pub text: Option<TextJob>,
+    /// The file without our annotations (printing "tanpa anotasi").
+    pub bare: bool,
 }
 
 /// One text replacement (Phase 7): on a page of the file as it is on disk,
@@ -226,8 +232,18 @@ pub async fn build_current(
     let worker = worker_of(pool, doc).await?;
     annots.ensure_all_metrics(pool, doc).await?;
     let empty = BTreeSet::new();
-    let (pages, objects) =
-        annots.write_set_without(doc, redaction.map_or(&empty, |r| &r.doomed))?;
+    let every: BTreeSet<_>;
+    let omit = if rewrite.is_some_and(|r| r.bare) {
+        every = annots
+            .objects(doc, None)
+            .into_iter()
+            .map(|o| o.id.0)
+            .collect();
+        &every
+    } else {
+        redaction.map_or(&empty, |r| &r.doomed)
+    };
+    let (pages, objects) = annots.write_set_without(doc, omit)?;
     let placeholders: Vec<(u32, u64)> = objects.iter().map(|(o, _)| (o.page, o.id.0)).collect();
 
     expect_work(
@@ -409,6 +425,7 @@ async fn run_ocr(worker: &Worker, doc: u64, job: &OcrJob) -> Out<OcrSummary> {
                 page,
                 models: job.models.to_string_lossy().to_string(),
                 force: job.force,
+                runtime: job.runtime.to_string_lossy().to_string(),
             },
         )
         .await?;
@@ -615,8 +632,13 @@ async fn current_as_temp(
     doc: u64,
     source: &str,
     scratch: &Path,
+    bare: bool,
 ) -> Out<PendingWrite> {
-    let (bytes, _, _, _, _, _) = build_current(pool, annots, doc, source, None).await?;
+    let rewrite = Rewrite {
+        bare,
+        ..Rewrite::default()
+    };
+    let (bytes, _, _, _, _, _) = build_current(pool, annots, doc, source, Some(&rewrite)).await?;
     std::fs::create_dir_all(scratch).map_err(|e| e.to_string())?;
     PendingWrite::write(&scratch.join(format!("ekspor-{doc}.pdf")), &bytes)
         .map_err(|e| e.to_string())
@@ -656,8 +678,9 @@ pub async fn export(
     source: &str,
     scratch: &Path,
     what: Export,
+    bare: bool,
 ) -> Out<Vec<String>> {
-    let temp = current_as_temp(pool, annots, doc, source, scratch).await?;
+    let temp = current_as_temp(pool, annots, doc, source, scratch, bare).await?;
     let worker = worker_of(pool, doc).await?;
     let id = DocId(doc);
     let page_count = expect_work(
@@ -792,6 +815,67 @@ pub async fn export(
     let _ = ask(&worker, Request::WorkClose { doc: id }).await;
     drop(temp);
     result
+}
+
+/// "Ke Word" (7.1.0): the document as the editor has it, as an editable .docx.
+///
+/// Annotations are flattened into the working copy first, so a text box the
+/// user typed and a picture they inserted come across as text and picture;
+/// then the worker reads each page (`WorkLayout`, one page per request so
+/// it answers heartbeats in between), and this process — which does not link
+/// PDFium — builds the package with `izul_docx` and writes it atomically.
+pub async fn export_docx(
+    pool: &Arc<RwLock<Pool>>,
+    annots: &AnnotState,
+    doc: u64,
+    source: &str,
+    scratch: &Path,
+    target: &str,
+    title: &str,
+) -> Out<izul_docx::layout::Stats> {
+    let temp = current_as_temp(pool, annots, doc, source, scratch, false).await?;
+    let worker = worker_of(pool, doc).await?;
+    let id = DocId(doc);
+    let page_count = expect_work(
+        &worker,
+        Request::WorkOpen {
+            doc: id,
+            path: temp.temp_path().to_string_lossy().to_string(),
+        },
+    )
+    .await?;
+    let read = async {
+        let mut first = 0;
+        while first < page_count {
+            expect_work(
+                &worker,
+                Request::WorkFlatten {
+                    doc: id,
+                    first,
+                    count: 25,
+                },
+            )
+            .await?;
+            first += 25;
+        }
+        let mut pages = Vec::with_capacity(page_count as usize);
+        for page in 0..page_count {
+            let bytes = expect_blob(&worker, Request::WorkLayout { doc: id, page }).await?;
+            let layout: izul_docx::PageLayout = postcard::from_bytes(&bytes)
+                .map_err(|e| format!("tata letak halaman {}: {e}", page + 1))?;
+            pages.push(layout);
+        }
+        Ok::<_, String>(pages)
+    }
+    .await;
+    let _ = ask(&worker, Request::WorkClose { doc: id }).await;
+    drop(temp);
+    let pages = read?;
+    let built = izul_docx::build(&izul_docx::analyse(pages), title).map_err(|e| e.to_string())?;
+    PendingWrite::write(Path::new(target), &built.bytes)
+        .and_then(PendingWrite::commit)
+        .map_err(|e| format!("{target}: {e}"))?;
+    Ok(built.stats)
 }
 
 /// Takes one page's saved annotations from the worker into the editor.

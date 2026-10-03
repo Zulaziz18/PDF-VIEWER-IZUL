@@ -157,7 +157,7 @@ pub fn annotation_dict(
 
     let mut contents = obj.author_note.clone();
     match &obj.payload {
-        AnnotPayload::Markup { quads, color } if obj.kind == AnnotKind::Redact => {
+        AnnotPayload::Markup { quads, color, .. } if obj.kind == AnnotKind::Redact => {
             // A mark not yet applied (§12.5.6.23): the areas, and in /IC the
             // colour they are filled with once applied. The red of the mark
             // itself is in the appearance stream.
@@ -167,7 +167,7 @@ pub fn annotation_dict(
                 rgb(*color)
             ));
         }
-        AnnotPayload::Markup { quads, color } => {
+        AnnotPayload::Markup { quads, color, .. } => {
             d.push_str(&format!(
                 "/C{}/QuadPoints{}",
                 rgb(*color),
@@ -309,6 +309,7 @@ mod tests {
             AnnotPayload::Markup {
                 quads: vec![PdfRectF::new(10.0, 10.0, 50.0, 20.0)],
                 color: Rgba::new(1.0, 0.8, 0.0, 1.0),
+                thickness: 1.0,
             },
         );
         let d = dict(&o);
@@ -332,6 +333,7 @@ mod tests {
             AnnotPayload::Markup {
                 quads: vec![PdfRectF::new(10.0, 10.0, 50.0, 20.0)],
                 color: Rgba::BLACK,
+                thickness: 1.0,
             },
         );
         let d = dict(&o);

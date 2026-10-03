@@ -212,7 +212,14 @@ export type ZoomMode = "custom" | "fitWidth" | "fitPage" | "actual";
 
 /** What the sidebar is showing (SPEC 11.1). Search results are one of its
  * tabs, as SPEC 11.1 lists them, reached from the icon rail like the rest. */
-export type SidebarTab = "thumbnails" | "outline" | "annots" | "search" | "forms";
+export type SidebarTab =
+  | "thumbnails"
+  | "outline"
+  | "bookmarks"
+  | "annots"
+  | "search"
+  | "forms"
+  | "attachments";
 
 export interface DocumentState {
   doc: number | null;

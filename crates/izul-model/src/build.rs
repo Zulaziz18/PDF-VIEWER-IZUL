@@ -63,8 +63,12 @@ pub fn display_list(obj: &AnnotObject, fonts: &dyn FontCtx) -> Result<DisplayLis
     // the same colour on screen as in the file.
     let alpha = obj.opacity.clamp(0.0, 1.0);
     match &obj.payload {
-        AnnotPayload::Markup { quads, color } => {
-            markup(&mut dl, obj, quads, fade(*color, alpha));
+        AnnotPayload::Markup {
+            quads,
+            color,
+            thickness,
+        } => {
+            markup(&mut dl, obj, quads, *thickness, fade(*color, alpha));
         }
         AnnotPayload::FreeText {
             text,
@@ -290,12 +294,18 @@ fn paint(dl: &mut DisplayList, path: Path, style: &ShapeStyle, alpha: f32, rule:
 
 /// Highlight, underline and strike-out, which differ only in what they draw per
 /// quad.
-fn markup(dl: &mut DisplayList, obj: &AnnotObject, quads: &[PdfRectF], color: Rgba) {
+fn markup(
+    dl: &mut DisplayList,
+    obj: &AnnotObject,
+    quads: &[PdfRectF],
+    thickness: f32,
+    color: Rgba,
+) {
     use crate::annot::AnnotKind;
     for quad in quads {
         match obj.kind {
             AnnotKind::Highlight => dl.push(DisplayOp::FillPath {
-                path: Path::rect(*quad),
+                path: Path::rect(thinned(*quad, thickness)),
                 color,
                 rule: FillRule::NonZero,
                 // Multiply, so the text underneath stays legible instead of
@@ -345,6 +355,19 @@ fn markup(dl: &mut DisplayList, obj: &AnnotObject, quads: &[PdfRectF], color: Rg
             _ => {}
         }
     }
+}
+
+/// A highlight quad cut down to `thickness` of its height, about its middle.
+/// Out-of-range values (a hand-edited file) are clamped, never trusted.
+fn thinned(quad: PdfRectF, thickness: f32) -> PdfRectF {
+    let t = if thickness.is_finite() {
+        thickness.clamp(crate::annot::MIN_HIGHLIGHT_THICKNESS, 1.0)
+    } else {
+        1.0
+    };
+    let mid = (quad.bottom + quad.top) / 2.0;
+    let half = quad.height() * t / 2.0;
+    PdfRectF::new(quad.left, mid - half, quad.right, mid + half)
 }
 
 /// How a redaction mark looks before it is applied.
@@ -487,72 +510,85 @@ fn rounded_rect(r: PdfRectF, radius: f32) -> Path {
         .close()
 }
 
-/// The sticky-note badge: a rounded speech bubble with a tail, plus a mark that
-/// says which icon it is.
+/// The sticky-note badge: a sheet of notepad paper with its top-right corner
+/// folded down, ruled lines (or a question mark for `Help`) in a darker shade
+/// of the paper, and a thin outline in the same shade so a pale paper still
+/// shows on a white page. It replaced a solid speech bubble in 7.1.0, which a
+/// user read as a sign stuck over the text rather than a note.
 fn note_icon(dl: &mut DisplayList, rect: PdfRectF, icon: NoteIcon, color: Rgba) {
-    let body = PdfRectF::new(
-        rect.left,
-        rect.bottom + rect.height() * 0.22,
-        rect.right,
-        rect.top,
-    );
+    let ink = Rgba::new(color.r * 0.55, color.g * 0.55, color.b * 0.55, color.a);
+    let fold = rect.width().min(rect.height()) * 0.3;
+    let thin = (rect.width().min(rect.height()) * 0.05).max(0.4);
+    let stroke = |width: f32| StrokeStyle {
+        width,
+        miter_limit: 10.0,
+        ..Default::default()
+    };
+
+    let sheet = Path::new()
+        .move_to(PdfPointF::new(rect.left, rect.bottom))
+        .line_to(PdfPointF::new(rect.right, rect.bottom))
+        .line_to(PdfPointF::new(rect.right, rect.top - fold))
+        .line_to(PdfPointF::new(rect.right - fold, rect.top))
+        .line_to(PdfPointF::new(rect.left, rect.top))
+        .close();
     dl.push(DisplayOp::FillPath {
-        path: rounded_rect(body, body.height() * 0.25),
+        path: sheet.clone(),
         color,
         rule: FillRule::NonZero,
         blend: BlendMode::Normal,
     });
-    let tail = Path::new()
-        .move_to(PdfPointF::new(rect.left + rect.width() * 0.25, body.bottom))
-        .line_to(PdfPointF::new(rect.left + rect.width() * 0.25, rect.bottom))
-        .line_to(PdfPointF::new(rect.left + rect.width() * 0.5, body.bottom))
-        .close();
+    dl.push(DisplayOp::StrokePath {
+        path: sheet,
+        color: ink,
+        style: stroke(thin),
+        blend: BlendMode::Normal,
+    });
+    // The folded corner: the back of the paper, in the darker shade.
     dl.push(DisplayOp::FillPath {
-        path: tail,
-        color,
+        path: Path::new()
+            .move_to(PdfPointF::new(rect.right - fold, rect.top))
+            .line_to(PdfPointF::new(rect.right - fold, rect.top - fold))
+            .line_to(PdfPointF::new(rect.right, rect.top - fold))
+            .close(),
+        color: ink,
         rule: FillRule::NonZero,
         blend: BlendMode::Normal,
     });
 
-    // The mark inside, drawn in the page's background colour by knocking it out
-    // with even-odd is not possible in one path here, so it is stroked in white:
-    // the icons have to be distinguishable at 16 points, which is the size they
-    // are actually drawn at.
-    let ink = Rgba::new(1.0, 1.0, 1.0, color.a);
-    let width = (body.height() * 0.12).max(0.4);
-    let line = |dl: &mut DisplayList, fy: f32| {
-        let y = body.bottom + body.height() * fy;
+    let width = (rect.height() * 0.06).max(0.4);
+    let rule = |dl: &mut DisplayList, fy: f32, right_inset: f32| {
+        let y = rect.bottom + rect.height() * fy;
         dl.push(DisplayOp::StrokePath {
             path: Path::new()
-                .move_to(PdfPointF::new(body.left + body.width() * 0.2, y))
-                .line_to(PdfPointF::new(body.right - body.width() * 0.2, y)),
+                .move_to(PdfPointF::new(rect.left + rect.width() * 0.2, y))
+                .line_to(PdfPointF::new(rect.right - rect.width() * right_inset, y)),
             color: ink,
-            style: StrokeStyle {
-                width,
-                miter_limit: 10.0,
-                ..Default::default()
-            },
+            style: stroke(width),
             blend: BlendMode::Normal,
         });
     };
     match icon {
         NoteIcon::Comment => {
-            line(dl, 0.62);
-            line(dl, 0.38);
+            // The top line stops short of the fold.
+            rule(dl, 0.62, 0.38);
+            rule(dl, 0.42, 0.2);
+            rule(dl, 0.22, 0.2);
         }
         NoteIcon::Note => {
-            line(dl, 0.72);
-            line(dl, 0.5);
-            line(dl, 0.28);
+            rule(dl, 0.66, 0.38);
+            rule(dl, 0.5, 0.2);
+            rule(dl, 0.34, 0.2);
+            rule(dl, 0.18, 0.2);
         }
         NoteIcon::Help => {
             // A question mark drawn as an arc plus a dot, which reads at small
             // sizes where a glyph would need a font we might not have.
             let (cx, cy) = (
-                (body.left + body.right) / 2.0,
-                body.bottom + body.height() * 0.62,
+                (rect.left + rect.right) / 2.0,
+                rect.bottom + rect.height() * 0.5,
             );
-            let r = body.height() * 0.2;
+            let r = rect.width().min(rect.height()) * 0.18;
             dl.push(DisplayOp::StrokePath {
                 path: Path::new()
                     .move_to(PdfPointF::new(cx - r, cy + r * 0.3))
@@ -567,11 +603,7 @@ fn note_icon(dl: &mut DisplayList, rect: PdfRectF, icon: NoteIcon, color: Rgba) 
                         PdfPointF::new(cx, cy - r * 0.7),
                     ),
                 color: ink,
-                style: StrokeStyle {
-                    width,
-                    miter_limit: 10.0,
-                    ..Default::default()
-                },
+                style: stroke(width),
                 blend: BlendMode::Normal,
             });
             dl.push(DisplayOp::FillPath {
@@ -593,6 +625,48 @@ fn note_icon(dl: &mut DisplayList, rect: PdfRectF, icon: NoteIcon, color: Rgba) 
 struct Line {
     glyphs: Vec<PositionedGlyph>,
     width: f32,
+    /// Ended by the box edge, not by the paragraph: the only kind of line
+    /// justification stretches.
+    wrapped: bool,
+}
+
+/// Stretches a wrapped line to `max_width` by widening its interior spaces
+/// (Phase 8; `TextAlign::Justify` was drawn as left until then). The
+/// trailing spaces a wrap leaves are not interior and get nothing, and a line
+/// without an interior space — one long word — stays as it is.
+fn justify(line: &Line, max_width: f32, space: f32) -> Vec<PositionedGlyph> {
+    let end = line
+        .glyphs
+        .iter()
+        .rposition(|g| g.unicode != ' ')
+        .map_or(0, |i| i + 1);
+    let trailing = (line.glyphs.len() - end) as f32 * space;
+    let interior = line
+        .glyphs
+        .iter()
+        .take(end)
+        .filter(|g| g.unicode == ' ')
+        .count();
+    let slack = max_width - (line.width - trailing);
+    if interior == 0 || slack <= 0.0 {
+        return line.glyphs.clone();
+    }
+    let extra = slack / interior as f32;
+    let mut seen = 0usize;
+    line.glyphs
+        .iter()
+        .enumerate()
+        .map(|(i, g)| {
+            let shifted = PositionedGlyph {
+                offset: PdfPointF::new(g.offset.x + extra * seen as f32, g.offset.y),
+                ..*g
+            };
+            if g.unicode == ' ' && i < end {
+                seen += 1;
+            }
+            shifted
+        })
+        .collect()
 }
 
 /// Lays text out inside `rect` and emits one `DrawText` per line.
@@ -683,6 +757,7 @@ fn text_block(
                 lines.push(Line {
                     glyphs: std::mem::take(&mut current),
                     width: x,
+                    wrapped: true,
                 });
                 x = 0.0;
             }
@@ -699,6 +774,7 @@ fn text_block(
         lines.push(Line {
             glyphs: current,
             width: x,
+            wrapped: false,
         });
     }
 
@@ -718,8 +794,15 @@ fn text_block(
             TextAlign::Center => rect.left + (max_width - line.width) / 2.0,
             TextAlign::Right => rect.right - line.width,
         };
+        // The last line of a paragraph is not stretched: a two-word closing
+        // line spread across the box is what nobody's justification does.
+        let glyphs = if align == TextAlign::Justify && line.wrapped {
+            justify(line, max_width, advance(' '))
+        } else {
+            line.glyphs.clone()
+        };
         dl.push(DisplayOp::DrawText {
-            glyphs: line.glyphs.clone(),
+            glyphs,
             font,
             size,
             matrix: Matrix::translate(x, baseline),
@@ -733,7 +816,7 @@ fn text_block(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::annot::{AnnotId, AnnotKind, FontSpec, ShapeStyle};
+    use crate::annot::{AnnotId, AnnotKind, FontSpec, ShapeStyle, MIN_HIGHLIGHT_THICKNESS};
     use crate::font::FixedFont;
 
     fn pt(x: f32, y: f32) -> PdfPointF {
@@ -756,6 +839,7 @@ mod tests {
             AnnotPayload::Markup {
                 quads: vec![rect(72.0, 700.0, 200.0, 712.0)],
                 color: Rgba::from_rgb8(255, 235, 59, 0.4),
+                thickness: 1.0,
             },
         )
     }
@@ -903,6 +987,41 @@ mod tests {
             }
             other => panic!("stabilo harus mengisi, bukan {other:?}"),
         }
+    }
+
+    #[test]
+    fn a_thinner_highlight_keeps_to_the_middle_of_its_line() {
+        let fonts = FixedFont::default();
+        let height_of = |thickness: f32| {
+            let mut o = markup_obj(AnnotKind::Highlight);
+            if let AnnotPayload::Markup { thickness: t, .. } = &mut o.payload {
+                *t = thickness;
+            }
+            let dl = display_list(&o, &fonts).expect("list");
+            match dl.ops.first() {
+                Some(DisplayOp::FillPath { path, .. }) => path.control_bounds().expect("kotak"),
+                other => panic!("stabilo harus mengisi, bukan {other:?}"),
+            }
+        };
+        let full = height_of(1.0);
+        assert_eq!((full.bottom, full.top), (700.0, 712.0));
+        let half = height_of(0.5);
+        assert_eq!(
+            (half.bottom, half.top),
+            (703.0, 709.0),
+            "setengah, di tengah baris"
+        );
+        assert_eq!(
+            (half.left, half.right),
+            (full.left, full.right),
+            "lebar tidak berubah"
+        );
+        let floor = height_of(0.0);
+        assert!(
+            floor.height() >= 12.0 * MIN_HIGHLIGHT_THICKNESS - 1e-4,
+            "tidak pernah hilang"
+        );
+        assert_eq!(height_of(f32::NAN), full, "nilai rusak dibaca utuh");
     }
 
     #[test]
@@ -1096,6 +1215,66 @@ mod tests {
             centre_glyphs.iter().map(|g| g.offset.x).collect::<Vec<_>>(),
             "perataan menggeser barisnya, bukan jarak antar huruf"
         );
+    }
+
+    #[test]
+    fn justified_lines_reach_the_right_edge_and_the_last_line_does_not() {
+        let fonts = FixedFont::default();
+        let make = |align| {
+            let mut o = obj(
+                AnnotKind::FreeText,
+                AnnotPayload::FreeText {
+                    text: "aa bb cc dd ee ff gg hh ii jj".into(),
+                    font: FontSpec::default(),
+                    color: Rgba::BLACK,
+                    align,
+                    line_spacing: 1.2,
+                    background: None,
+                    border: None,
+                },
+            );
+            o.rect = rect(0.0, 0.0, 70.0, 200.0);
+            let dl = display_list(&o, &fonts).expect("list");
+            dl.ops
+                .into_iter()
+                .filter_map(|op| match op {
+                    DisplayOp::DrawText { glyphs, size, .. } => Some((glyphs, size)),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let lines = make(TextAlign::Justify);
+        assert!(
+            lines.len() >= 2,
+            "teksnya harus terbungkus: {}",
+            lines.len()
+        );
+        let right_ink = |glyphs: &[PositionedGlyph], size: f32| {
+            let last = glyphs
+                .iter()
+                .rev()
+                .find(|g| g.unicode != ' ')
+                .expect("huruf");
+            let adv = fonts
+                .glyph(fonts.font, last.unicode)
+                .expect("glif")
+                .advance_milli;
+            last.offset.x + f32::from(adv) / 1000.0 * size
+        };
+        let (first, size) = &lines[0];
+        assert!(
+            (right_ink(first, *size) - 70.0).abs() < 0.01,
+            "baris rata kanan-kiri berakhir di tepi kotak: {}",
+            right_ink(first, *size)
+        );
+        let (last, size) = &lines[lines.len() - 1];
+        assert!(
+            right_ink(last, *size) < 69.0,
+            "baris terakhir paragraf tidak diregangkan"
+        );
+        // Left alignment of the same text keeps the first line short of the edge.
+        let left = make(TextAlign::Left);
+        assert!(right_ink(&left[0].0, left[0].1) < 69.0);
     }
 
     /// SPEC 11.2: a missing font is refused with a clear message, never drawn as

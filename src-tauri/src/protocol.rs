@@ -121,6 +121,39 @@ pub fn parse_image_uri(uri: &str) -> Result<ImageUri, UriError> {
     })
 }
 
+/// An `izul://print/{job}/{index}` request: one page prepared for printing
+/// (Phase 8, `printing.rs`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PrintUri {
+    pub job: u64,
+    pub index: u32,
+}
+
+pub fn parse_print_uri(uri: &str) -> Result<PrintUri, UriError> {
+    let rest = strip_scheme(uri)?;
+    let path = rest.split(['?', '#']).next().unwrap_or(rest);
+    let mut parts = path.split('/');
+    if parts.next() != Some("print") {
+        return Err(UriError::UnknownKind(
+            path.split('/').next().unwrap_or_default().to_string(),
+        ));
+    }
+    let mut take = || -> Result<u64, UriError> {
+        let raw = parts.next().ok_or(UriError::Incomplete)?;
+        raw.parse::<u64>()
+            .map_err(|_| UriError::NotANumber(raw.to_string()))
+    };
+    let job = take()?;
+    let index = take()?;
+    if parts.next().is_some() {
+        return Err(UriError::Incomplete);
+    }
+    Ok(PrintUri {
+        job,
+        index: u32::try_from(index).map_err(|_| UriError::NotANumber(index.to_string()))?,
+    })
+}
+
 pub fn parse_tile_uri(uri: &str) -> Result<TileUri, UriError> {
     // Four spellings reach this handler for the same request, and which one
     // arrives is decided by the webview, not by us.
@@ -210,6 +243,7 @@ pub fn parse_tile_uri(uri: &str) -> Result<TileUri, UriError> {
             col: small(col, "col")?,
             row: small(row, "row")?,
             kind,
+            invert: query_value(query, "inv") == Some(1),
         },
         generation: query_value(query, "g").unwrap_or(0),
         priority: Priority::from_u8(query_value(query, "p").unwrap_or(2) as u8),
@@ -282,6 +316,40 @@ mod tests {
     /// leaves `localhost` behind as the custom scheme's authority, and reading
     /// it as the first path segment is what made every tile 400 in Phase 1.
     #[test]
+    fn dark_modes_inversion_is_read_from_the_query_and_is_its_own_tile() {
+        let light = key("izul://tile/7/3/0/1500/2/1/sharp?g=9&p=2");
+        let dark = key("izul://tile/7/3/0/1500/2/1/sharp?g=9&p=2&inv=1");
+        assert!(!light.invert);
+        assert!(dark.invert);
+        assert_ne!(
+            light, dark,
+            "ubin gelap dan terang tidak boleh berbagi entri cache"
+        );
+        assert!(!key("izul://tile/7/3/0/1500/2/1/sharp?inv=0").invert);
+    }
+
+    #[test]
+    fn a_print_uri_parses_in_every_spelling_and_nothing_else_does() {
+        for uri in [
+            "izul://print/4/12",
+            "izul://localhost/print/4/12",
+            "http://izul.localhost/print/4/12?v=1",
+            "https://izul.localhost/print/4/12",
+        ] {
+            assert_eq!(
+                parse_print_uri(uri),
+                Ok(PrintUri { job: 4, index: 12 }),
+                "{uri}"
+            );
+        }
+        assert!(parse_print_uri("izul://print/4").is_err());
+        assert!(parse_print_uri("izul://print/4/x").is_err());
+        assert!(parse_print_uri("izul://print/4/1/2").is_err());
+        assert!(parse_print_uri("izul://image/4/1").is_err());
+        assert!(parse_print_uri("izul://print/../../1").is_err());
+    }
+
+    #[test]
     fn an_image_uri_parses_in_every_spelling() {
         let expected = ImageUri { doc: 3, image: 7 };
         for uri in [
@@ -339,6 +407,7 @@ mod tests {
                 col: 2,
                 row: 1,
                 kind: TileKind::Sharp,
+                invert: false,
             }
         );
         assert_eq!(u.generation, 9);

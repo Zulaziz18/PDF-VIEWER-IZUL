@@ -105,6 +105,7 @@ fn job(page: u32, rect: PdfRectF, text: &str) -> saving::Rewrite {
             rect,
             text: text.to_string(),
         }),
+        bare: false,
     }
 }
 

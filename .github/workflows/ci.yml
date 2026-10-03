@@ -3,6 +3,13 @@ name: CI
 on:
   push:
     branches: ["**"]
+    # A version tag (v7.0.0) also publishes the tested installers as a GitHub
+    # Release — kept for good, unlike the 14-day artifacts below.
+    tags: ["v*"]
+  # A release published on the website: its ref is the tag, so the same step
+  # attaches the installers (whichever of the two runs does it last wins).
+  release:
+    types: [published]
   pull_request:
 
 env:
@@ -46,10 +53,11 @@ jobs:
         shell: bash
         run: ./vendor/pdfium/fetch.sh
 
-      # The OCR models (Phase 7), pinned by SHA-256 like PDFium is by tag.
+      # The OCR models (PP-OCRv6 since 7.0.0), pinned by SHA-256 like PDFium
+      # is by tag.
       - name: Fetch the pinned OCR models
         shell: bash
-        run: ./vendor/ocrs/fetch.sh
+        run: ./vendor/ocr/fetch.sh
 
       # ONNX Runtime (DirectML build on Windows) and the background model,
       # pinned by SHA-256 (Phase 7).
@@ -95,6 +103,18 @@ jobs:
           IZUL_REQUIRE_FIXTURES: "1"
         run: cargo test --workspace
 
+      # The benchmark harnesses are built on every push but were never run,
+      # and `viewport` had been dying on its first message since Phase 1
+      # without anyone knowing (Phase 8). Run them briefly — a debug build on a
+      # shared runner, so their timings mean nothing here and fail nothing;
+      # only a harness that no longer runs fails this step.
+      - name: Benchmarks still run
+        if: runner.os == 'Linux'
+        run: |
+          cargo run -q -p izul-bench --bin viewport -- --only startup,first-page,zoom
+          cargo run -q -p izul-bench --bin search-bench
+          cargo run -q -p izul-bench --bin multidoc -- --documents 5
+
       # SPEC 17, Phase 6: what is redacted cannot be found again by any
       # extraction tool. Six extractors that share no code look for the
       # secret in twelve kinds of page after the application's own redaction;
@@ -134,6 +154,19 @@ jobs:
         if: runner.os == 'Linux'
         run: python3 tools/textedit-proof/run.py --out textedit-proof.txt
 
+      # 7.1.0: "Ke Word". The .docx the application makes is opened by two
+      # readers that are not the application — python-docx (structure) and
+      # LibreOffice Writer (which has to lay it out and save it as PDF) — and
+      # must carry the source's words in order, its look where that is the
+      # point of the case, and its pictures; two deliberate mutations must
+      # fail the same checks.
+      - name: Word conversion proof
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get install -y --no-install-recommends libreoffice-writer
+          python3 -m pip install --quiet python-docx==1.1.2
+          python3 tools/docx-proof/run.py --out docx-proof.txt
+
       # The Windows runtime as the application loads it: onnxruntime.dll and
       # DirectML.dll beside the executable (src-tauri/build.rs put them in
       # target/debug). Prints where the model ran — DirectML on the runner's
@@ -167,6 +200,176 @@ jobs:
       - run: npm test
       - run: npm run build
 
+  # Phase 8: the installers SPEC 5 names — NSIS, MSI and a portable ZIP —
+  # built the way a release is, and each one checked the way it will be used:
+  # the NSIS build installed silently, the MSI unpacked with an administrative
+  # install, the ZIP unpacked, and in each folder the application's own
+  # `--self-test` starts the worker pool (every worker loads PDFium and passes
+  # the protocol handshake), finds ONNX Runtime and the background model, and
+  # opens a PDF. A resource the bundle forgot fails here, not on a user's
+  # machine — which is how an installer without PDFium went unnoticed until
+  # this job existed.
+  package:
+    name: Package (Windows)
+    runs-on: windows-latest
+    permissions:
+      contents: write # only used by the release step, on a version tag
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+
+      # The OCR models ship since 7.0.0 (PP-OCR, Apache-2.0); the self-test
+      # below fails an install without them.
+      - name: Vendor PDFium, ONNX Runtime and the OCR models
+        shell: bash
+        run: |
+          ./vendor/pdfium/fetch.sh
+          ./vendor/onnx/fetch.sh
+          ./vendor/ocr/fetch.sh
+
+      # `beforeBuildCommand` is `npm run build`, which builds the worker in
+      # release first — the bundle's resources name target/release/izul-worker.exe.
+      # The resources live in tauri.bundle.json, passed only here: tauri-build
+      # copies every resource into the target folder on *every* build, and a
+      # debug build would then fail on the missing release worker, or copy a
+      # stale one over its own.
+      # With the updater key (repository secret TAURI_SIGNING_PRIVATE_KEY,
+      # 7.0.1) the installers are also signed for "Periksa pembaruan": a .sig
+      # beside each, which latest.json carries. Without it — a fork, or before
+      # the secret is set — the build is the same minus the signatures.
+      - name: Build NSIS and MSI
+        shell: pwsh
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: |
+          $ErrorActionPreference = "Stop"
+          if ($env:TAURI_SIGNING_PRIVATE_KEY) {
+            npm run package -- --config src-tauri/tauri.updater.json
+          } else {
+            Write-Host "::warning::TAURI_SIGNING_PRIVATE_KEY tidak ada: installer tidak ditandatangani untuk pembaruan"
+            npm run package
+          }
+          if ($LASTEXITCODE -ne 0) { throw "npm run package gagal ($LASTEXITCODE)" }
+
+      - name: A PDF to open
+        shell: bash
+        run: python3 tools/package/tiny_pdf.py smoke.pdf
+
+      - name: Portable ZIP
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $v = (Get-Content version.json | ConvertFrom-Json).version
+          $dir = "portable/PDF Studio Izul"
+          New-Item -ItemType Directory -Force "$dir/onnx", "$dir/ocr", "$dir/licenses" | Out-Null
+          $rel = "target/release"
+          foreach ($f in "pdf-studio-izul.exe", "izul-worker.exe", "pdfium.dll", "onnxruntime.dll", "DirectML.dll") {
+            Copy-Item "$rel/$f" $dir
+          }
+          Copy-Item "$rel/onnx/u2netp.onnx" "$dir/onnx/"
+          Copy-Item "$rel/ocr/PP-OCRv6_det_small.onnx", "$rel/ocr/PP-OCRv6_rec_small.onnx" "$dir/ocr/"
+          Copy-Item src-tauri/licenses/NOTICE.txt "$dir/licenses/"
+          Copy-Item -Recurse vendor/pdfium/win-x64/licenses "$dir/licenses/pdfium"
+          New-Item -ItemType Directory -Force "$dir/licenses/onnxruntime" | Out-Null
+          Copy-Item vendor/onnx/win-x64/LICENSE "$dir/licenses/onnxruntime/LICENSE.txt"
+          Copy-Item vendor/onnx/win-x64/ThirdPartyNotices.txt "$dir/licenses/onnxruntime/"
+          Copy-Item tools/package/portable.txt $dir
+          Compress-Archive -Path "portable/PDF Studio Izul" -DestinationPath "PDF-Studio-Izul-$v-portable.zip"
+
+      - name: Self-test the NSIS install, the MSI and the portable copy
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $pdf = (Resolve-Path smoke.pdf).Path
+          function SelfTest($dir, $label) {
+            $exe = Get-ChildItem $dir -Recurse -Filter *.exe |
+              Where-Object { $_.Name -notmatch "izul-worker|uninstall" } | Select-Object -First 1
+            if (-not $exe) { throw "$label`: no application executable under $dir" }
+            Write-Host "== $label`: $($exe.FullName)"
+            Get-ChildItem $exe.DirectoryName -Recurse -File | ForEach-Object { Write-Host "   $($_.FullName.Substring($exe.DirectoryName.Length))" }
+            # A GUI-subsystem program: wait for it explicitly, read its exit code.
+            $p = Start-Process -FilePath $exe.FullName -ArgumentList "--self-test", "`"$pdf`"" `
+              -Wait -PassThru -NoNewWindow -RedirectStandardOutput "$label.txt"
+            Get-Content "$label.txt"
+            if ($p.ExitCode -ne 0) { throw "$label`: self-test exited with $($p.ExitCode)" }
+          }
+          $nsis = Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          Start-Process -FilePath $nsis.FullName -ArgumentList "/S", "/D=C:\izul-nsis" -Wait
+          SelfTest "C:\izul-nsis" "nsis"
+          $msi = Get-ChildItem target/release/bundle/msi/*.msi | Select-Object -First 1
+          Start-Process msiexec.exe -ArgumentList "/a", "`"$($msi.FullName)`"", "/qn", "TARGETDIR=C:\izul-msi" -Wait
+          SelfTest "C:\izul-msi" "msi"
+          Expand-Archive (Get-ChildItem *-portable.zip).FullName C:\izul-portable
+          SelfTest "C:\izul-portable" "portable"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installers
+          retention-days: 14
+          path: |
+            target/release/bundle/nsis/*-setup.exe
+            target/release/bundle/msi/*.msi
+            *-portable.zip
+
+      # Only after every installer passed its self-test above. The tag must
+      # name the version in version.json, so a release can never carry an
+      # installer that calls itself something else.
+      - name: Publish the GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $ErrorActionPreference = "Stop"
+          $v = (Get-Content version.json | ConvertFrom-Json).version
+          if ("${{ github.ref_name }}" -ne "v$v") { throw "tag ${{ github.ref_name }} != version.json v$v" }
+          # GitHub turns spaces in asset names into dots; latest.json must name
+          # the assets as GitHub serves them, so they are renamed first.
+          New-Item -ItemType Directory -Force out | Out-Null
+          $nsis = Get-ChildItem target/release/bundle/nsis/*-setup.exe | Select-Object -First 1
+          $msi = Get-ChildItem target/release/bundle/msi/*.msi | Select-Object -First 1
+          $zip = Get-ChildItem *-portable.zip | Select-Object -First 1
+          foreach ($f in $nsis, $msi, $zip) { Copy-Item $f.FullName ("out/" + ($f.Name -replace ' ', '.')) }
+          $base = "https://github.com/${{ github.repository }}/releases/download/v$v"
+          $nsisSig = "$($nsis.FullName).sig"
+          $msiSig = "$($msi.FullName).sig"
+          if ((Test-Path $nsisSig) -and (Test-Path $msiSig)) {
+            $platforms = [ordered]@{
+              "windows-x86_64-nsis" = @{ url = "$base/" + ($nsis.Name -replace ' ', '.'); signature = (Get-Content $nsisSig -Raw).Trim() }
+              "windows-x86_64-msi"  = @{ url = "$base/" + ($msi.Name -replace ' ', '.'); signature = (Get-Content $msiSig -Raw).Trim() }
+            }
+            # Plain windows-x86_64 for a copy whose bundle type is unknown:
+            # the NSIS installer, the recommended one.
+            $platforms["windows-x86_64"] = $platforms["windows-x86_64-nsis"]
+            [ordered]@{
+              version = $v
+              notes = "Lihat CHANGELOG.md di repositori untuk daftar perubahan."
+              pub_date = (Get-Date).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ssZ")
+              platforms = $platforms
+            } | ConvertTo-Json -Depth 5 | Set-Content -Encoding utf8NoBOM out/latest.json
+            Get-Content out/latest.json
+          } else {
+            Write-Host "::warning::tanpa tanda tangan pembaruan: latest.json tidak diterbitkan, Periksa pembaruan tidak akan menemukan rilis ini"
+          }
+          $files = (Get-ChildItem out).FullName
+          $notes = "PDF Studio Izul $v. Pasang dengan berkas *-setup.exe (disarankan), atau .msi, atau ekstrak ZIP portabel. Sudah memakai versi 7.1.0 atau lebih baru? Buka Tentang, lalu Periksa pembaruan. Perubahan lengkap: CHANGELOG.md."
+          # The release may already exist: making it on the website is what
+          # creates the tag. Then only the installers are attached.
+          gh release view "v$v" *> $null
+          if ($LASTEXITCODE -eq 0) {
+            gh release upload "v$v" @files --clobber
+          } else {
+            gh release create "v$v" @files --title "PDF Studio Izul $v" --notes $notes --verify-tag
+          }
+          if ($LASTEXITCODE -ne 0) { throw "gh release gagal ($LASTEXITCODE)" }
+
   version-consistency:
     name: Version consistency
     runs-on: ubuntu-latest
@@ -186,4 +389,16 @@ jobs:
             || { echo "package.json version != $V"; exit 1; }
           grep -q "\"version\": \"$V\"" src-tauri/tauri.conf.json \
             || { echo "tauri.conf.json version != $V"; exit 1; }
+          # MSI takes only numbers: major.minor.patch.build. The build number
+          # is the pre-release's: alpha.N -> N, beta.N -> 100+N, rc.N -> 200+N,
+          # a release -> 1000. Windows compares only the first three fields.
+          W=$(python3 - "$V" <<'PY'
+          import re, sys
+          m = re.fullmatch(r"(\d+\.\d+\.\d+)(?:-(alpha|beta|rc)\.(\d+))?", sys.argv[1])
+          base, stage, n = m.group(1), m.group(2), m.group(3)
+          print(f"{base}.{ {None: 1000, 'alpha': 0, 'beta': 100, 'rc': 200}[stage] + (int(n) if n else 0) }")
+          PY
+          )
+          grep -q "\"version\": \"$W\"" src-tauri/tauri.bundle.json \
+            || { echo "tauri.bundle.json wix.version != $W"; exit 1; }
           echo "all manifests agree"

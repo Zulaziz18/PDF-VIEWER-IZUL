@@ -28,6 +28,11 @@ export function viewportOf(doc: number): ViewportRenderer | null {
   return byDoc.get(doc) ?? null;
 }
 
+/** Every live viewport. */
+export function allViewports(): ViewportRenderer[] {
+  return [...byDoc.values()];
+}
+
 /** The viewport of the document in front. */
 export function viewport(): ViewportRenderer | null {
   const active = useWorkspace.getState().activeDoc;

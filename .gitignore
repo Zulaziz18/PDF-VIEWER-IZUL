@@ -13,8 +13,9 @@ dist
 /vendor/pdfium/*
 !/vendor/pdfium/fetch.sh
 # OCR models (Phase 7): pinned by SHA-256 in the script that fetches them.
-/vendor/ocrs/*
-!/vendor/ocrs/fetch.sh
+/vendor/ocr/*
+!/vendor/ocr/fetch.sh
+/vendor/ocrs/
 # ONNX Runtime + background model (Phase 7), pinned by SHA-256.
 /vendor/onnx/*
 !/vendor/onnx/fetch.sh

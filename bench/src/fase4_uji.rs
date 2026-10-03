@@ -170,6 +170,7 @@ fn objects() -> Vec<AnnotObject> {
         AnnotPayload::Markup {
             quads: vec![line(0)],
             color: rgb(0xffd43b),
+            thickness: 1.0,
         },
     );
     add(
@@ -178,6 +179,7 @@ fn objects() -> Vec<AnnotObject> {
         AnnotPayload::Markup {
             quads: vec![line(1)],
             color: rgb(0x1c7ed6),
+            thickness: 1.0,
         },
     );
     add(
@@ -186,6 +188,7 @@ fn objects() -> Vec<AnnotObject> {
         AnnotPayload::Markup {
             quads: vec![line(2)],
             color: red,
+            thickness: 1.0,
         },
     );
     add(

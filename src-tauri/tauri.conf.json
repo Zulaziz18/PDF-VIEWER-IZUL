@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "PDF Studio Izul",
   "identifier": "id.izul.pdfstudio",
-  "version": "7.0.0-alpha.7",
+  "version": "7.1.0",
   "build": {
     "frontendDist": "../dist",
     "devUrl": "http://localhost:5173",
@@ -26,7 +26,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' izul: data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost izul: http://izul.localhost https://izul.localhost"
+      "csp": "default-src 'self'; img-src 'self' izul: http://izul.localhost https://izul.localhost data: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self' ipc: http://ipc.localhost izul: http://izul.localhost https://izul.localhost"
     }
   },
   "bundle": {
@@ -57,5 +57,16 @@
         "role": "Editor"
       }
     ]
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEQ2MjdFMzEyQTlFQkUzRgpSV1EvdnA0cU1YNWlEYXdWdEZKYXRVYXZVd0ljaTZSSEw5NU1HMEhXd3RWQk95a0tkemVROStlWAo=",
+      "endpoints": [
+        "https://github.com/Zulaziz18/PDF-VIEWER-IZUL/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

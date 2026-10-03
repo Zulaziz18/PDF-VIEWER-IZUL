@@ -145,3 +145,41 @@ export function fitTextLayer(host: HTMLElement): void {
     }
   }
 }
+
+/**
+ * Where page `page`'s layer goes among the layers already there (their page
+ * numbers, in DOM order): before the first later page. A screen reader reads
+ * the DOM in its order, and pages arrive in the order they scroll into view.
+ */
+export function layerSlot(present: readonly number[], page: number): number {
+  const at = present.findIndex((p) => p > page);
+  return at < 0 ? present.length : at;
+}
+
+/**
+ * The text inside a rectangle, line by line (SPEC 11.1: "seleksi persegi
+ * (Alt+drag)", Phase 8) — a column of a table, a block beside a figure, what
+ * a flowing selection cannot take without the text around it.
+ *
+ * A character counts when its centre is inside, so a glyph the edge only
+ * grazes stays out. `rect` is in the same page space as the characters, in
+ * any orientation.
+ */
+export function textInRect(
+  chars: readonly TextChar[],
+  rect: { left: number; bottom: number; right: number; top: number },
+): string {
+  const l = Math.min(rect.left, rect.right);
+  const r = Math.max(rect.left, rect.right);
+  const b = Math.min(rect.bottom, rect.top);
+  const t = Math.max(rect.bottom, rect.top);
+  const inside = chars.filter((ch) => {
+    const x = (ch.left + ch.right) / 2;
+    const y = (ch.bottom + ch.top) / 2;
+    return x >= l && x <= r && y >= b && y <= t;
+  });
+  return groupIntoLines(inside)
+    .map((line) => line.text.trim())
+    .filter((text) => text.length > 0)
+    .join("\n");
+}

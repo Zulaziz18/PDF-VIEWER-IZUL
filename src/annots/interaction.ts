@@ -71,8 +71,11 @@ export function handlePoint(rect: PdfRect, handle: HandleId): PdfPoint {
 
 /** The handles an object offers. A redaction mark has no rotate handle: what
  * is applied is its upright quads, and a mark turned on screen would cover
- * something other than what goes. */
+ * something other than what goes. A sticky note has none at all: it is a
+ * badge of one size that is only moved — stretched, it covered the text it
+ * was a note about (reported on 7.0.0). */
 export function handlesFor(kind: AnnotObject["kind"]): HandleId[] {
+  if (kind === "Note") return [];
   return kind === "Redact" ? [...RESIZE_HANDLES] : [...RESIZE_HANDLES, "rotate"];
 }
 
@@ -274,4 +277,36 @@ export function angleTo(rect: PdfRect, point: PdfPoint): number {
 export function snapAngle(degrees: number, snap: boolean): number {
   if (!snap) return degrees;
   return Math.round(degrees / 15) * 15;
+}
+
+/**
+ * Moves an object's geometry, payload and all.
+ *
+ * A mirror of `AnnotObject::translate` in the model, and the duplication is
+ * deliberate rather than an oversight: this one only ever touches the *preview*
+ * copies during a drag, and the authoritative move is done by the Rust code
+ * when the gesture ends. If the two ever disagree, the object snaps into place
+ * on release — visible, and far better than the frontend's idea of the
+ * geometry ending up in the file.
+ */
+export function translateObject(obj: AnnotObject, dx: number, dy: number): void {
+  const shiftRect = (r: { left: number; bottom: number; right: number; top: number }): void => {
+    r.left += dx;
+    r.right += dx;
+    r.bottom += dy;
+    r.top += dy;
+  };
+  const shiftPoint = (p: { x: number; y: number }): void => {
+    p.x += dx;
+    p.y += dy;
+  };
+  shiftRect(obj.rect);
+  const payload = obj.payload;
+  if ("Markup" in payload) payload.Markup.quads.forEach(shiftRect);
+  else if ("Ink" in payload) payload.Ink.strokes.forEach((s) => s.forEach(shiftPoint));
+  else if ("Polygon" in payload) payload.Polygon.points.forEach(shiftPoint);
+  else if ("Line" in payload) {
+    shiftPoint(payload.Line.from);
+    shiftPoint(payload.Line.to);
+  }
 }

@@ -27,11 +27,17 @@ fn main() {
     };
     let engine = Engine::load_from(&lib).expect("PDFium");
     let t = Instant::now();
+    let runtime = if cfg!(windows) {
+        root.join("vendor/onnx/win-x64/onnxruntime.dll")
+    } else {
+        root.join("vendor/onnx/linux-x64/libonnxruntime.so")
+    };
     let ocr = Ocr::load(
-        &root.join("vendor/ocrs/text-detection.rten"),
-        &root.join("vendor/ocrs/text-recognition.rten"),
+        &runtime,
+        &root.join("vendor/ocr/PP-OCRv6_det_small.onnx"),
+        &root.join("vendor/ocr/PP-OCRv6_rec_small.onnx"),
     )
-    .expect("model OCR (vendor/ocrs/fetch.sh)");
+    .expect("model OCR (vendor/ocr/fetch.sh, vendor/onnx/fetch.sh)");
     eprintln!(
         "model dimuat dalam {:.0} ms",
         t.elapsed().as_secs_f64() * 1000.0

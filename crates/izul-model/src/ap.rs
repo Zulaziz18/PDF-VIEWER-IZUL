@@ -470,6 +470,7 @@ mod tests {
                 | AnnotKind::Redact => AnnotPayload::Markup {
                     quads: vec![PdfRectF::new(10.0, 10.0, 90.0, 24.0)],
                     color: Rgba::BLACK,
+                    thickness: 1.0,
                 },
                 AnnotKind::FreeText => AnnotPayload::FreeText {
                     text: "halo (dunia)".into(),

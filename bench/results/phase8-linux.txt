@@ -1,0 +1,202 @@
+# Fase 8 — angka akhir SPEC 13 (linux x86_64, build release, 25 September 2026)
+
+Dihasilkan oleh:
+  ./target/release/viewport --json bench/results/phase8-linux.json
+  ./target/release/multidoc                 (30 dokumen, bawaan)
+  ./target/release/multidoc --documents 50  (kriteria SPEC 17)
+  ./target/release/search-bench             (baru di Fase 8)
+
+Mesin: Intel Xeon 2.80 GHz, 4 core, 16 GB RAM, 8 pekerja, PDFium 151.0.7881.0.
+Windows adalah platform yang dikirim; angka di sana perlu diukur dengan aplikasi
+sungguhan (langkahnya di TESTING.md "Hasil Fase 8").
+
+## Ringkasan terhadap target
+
+| Metrik SPEC 13 | Target | Angka | Status |
+|---|---|---|---|
+| Cold start sampai jendela siap | < 1 s | 3,0 ms bagian pekerja (spawn + PDFium + ping); jendela + webview tidak terukur di sini | sebagian |
+| PDF 50 MB / 500 hal. sampai halaman pertama | < 400 ms | 16 ms pratinjau, 41 ms tajam (mixed-500p, 52 MB) | LULUS |
+| Scroll | refresh rate, nol frame drop, nol halaman putih | keputusan per frame p99 0,05 ms; 1 frame putih (frame pertama saja) | nol-frame-drop belum terbukti (butuh kompositor) |
+| Zoom | < 16 ms, tajam < 150 ms | 0,00 ms / tajam p95 24,6 ms | LULUS |
+| Berpindah tab | < 50 ms | tidak terukur di sini (UI) | belum |
+| Pencarian dokumen 500 hal. | < 200 ms | p95 2–65 ms (FTS5 + sorotan layar pertama) | LULUS |
+| Pencarian pustaka (FTS5) | < 100 ms | p95 1–71 ms, 20 x 500 halaman | LULUS |
+| RAM, 10 dokumen | < 1,5 GB | 448 MB (UI 346 + pekerja 102) | LULUS |
+| 50 dokumen | tanpa degradasi | 139 ms buka+render semua, 0,94 MB/dokumen, 200 siklus +8 KB/siklus | LULUS |
+
+## Catatan yang jujur
+
+- **Bench `viewport` ternyata rusak sejak Fase 1** dan tidak ada yang tahu: ia
+  tidak membaca salam `Hello` pekerja (bug #4 Fase 1), jadi balasan pertama yang
+  ditunggunya adalah salam itu dan setiap run mati di "open gagal: Hello". CI
+  hanya *membangun* binari bench, tidak menjalankannya. Diperbaiki di Fase 8.
+- **Pencarian sebelum indeks selesai** jatuh ke jalur tanpa indeks: find PDFium
+  di 500 halaman 747 ms — di atas target 200 ms. Indeks latar butuh ~0,8 s per
+  500 halaman untuk ekstraksi teks. Artinya target terpenuhi untuk dokumen yang
+  sudah terindeks (dokumen yang pernah dibuka, atau detik pertama sesudah buka
+  lewat), bukan untuk pencarian di detik pertama dokumen besar yang baru.
+- **"dua kata" di pustaka 71 ms** — lulus, tapi paling tipis. Pustaka lebih dari
+  20 x 500 halaman belum diukur.
+- Trim tetap tidak mengembalikan RAM pekerja ke sistem (temuan Fase 2, sama).
+
+
+================ viewport ================
+
+======================================================================================
+HOST
+--------------------------------------------------------------------------------------
+linux x86_64 · Intel(R) Xeon(R) Processor @ 2.80GHz · 4 core · 16095 MB RAM · profil release
+
+======================================================================================
+STARTUP
+--------------------------------------------------------------------------------------
+pekerja                    spawn + kanal + PDFium + ping pertama n=5    p50=    2.98ms  p95=    3.28ms  p99=    3.28ms  max=    3.28ms  LULUS vs 1000ms
+
+======================================================================================
+FIRST-PAGE
+--------------------------------------------------------------------------------------
+text-500p.pdf              buka dokumen (termasuk ukuran semua halaman) n=5    p50=    4.72ms  p95=    5.30ms  p99=    5.30ms  max=    5.30ms  
+text-500p.pdf              buka -> pratinjau halaman 1      n=5    p50=    8.94ms  p95=   11.00ms  p99=   11.00ms  max=   11.00ms  LULUS vs 400ms
+text-500p.pdf              buka -> layar pertama tajam      n=5    p50=   24.66ms  p95=   27.27ms  p99=   27.27ms  max=   27.27ms  LULUS vs 400ms
+
+======================================================================================
+FILL
+--------------------------------------------------------------------------------------
+text-500p.pdf              layar penuh, cache dingin        n=8    p50=   25.78ms  p95=   31.05ms  p99=   31.05ms  max=   31.05ms  
+text-500p.pdf              layar penuh, cache panas         n=8    p50=    1.25ms  p95=    2.28ms  p99=    2.28ms  max=    2.28ms  LULUS vs 16ms
+
+======================================================================================
+ZOOM
+--------------------------------------------------------------------------------------
+text-500p.pdf              zoom -> ada yang bisa digambar   n=8    p50=    0.00ms  p95=    0.00ms  p99=    0.00ms  max=    0.00ms  LULUS vs 16ms
+text-500p.pdf              zoom -> versi tajam              n=8    p50=   10.26ms  p95=   24.62ms  p99=   24.62ms  max=   24.62ms  LULUS vs 150ms
+
+======================================================================================
+SCROLL
+--------------------------------------------------------------------------------------
+text-500p.pdf              keputusan per frame (tanpa menggambar) n=240  p50=    0.01ms  p95=    0.04ms  p99=    0.05ms  max=    0.07ms  LULUS vs 16ms
+text-500p.pdf              frame dengan halaman putih              1.0 frame  
+text-500p.pdf              frame tanpa ubin tajam                 21.0 frame  
+text-500p.pdf              ubin dirender selama scroll           100.0 ubin  
+text-500p.pdf              cache terpakai                         67.9 MB  
+
+======================================================================================
+CANCEL
+--------------------------------------------------------------------------------------
+text-500p.pdf              delapan langkah zoom -> tajam    n=1    p50=   71.29ms  p95=   71.29ms  p99=   71.29ms  max=   71.29ms  
+text-500p.pdf              ubin diminta seluruhnya                64.0 ubin  
+text-500p.pdf              ubin dibuang tanpa dirender            11.0 ubin  
+text-500p.pdf              ubin benar-benar dirender              53.0 ubin  
+
+======================================================================================
+FIRST-PAGE
+--------------------------------------------------------------------------------------
+mixed-500p.pdf             buka dokumen (termasuk ukuran semua halaman) n=5    p50=    6.52ms  p95=    7.21ms  p99=    7.21ms  max=    7.21ms  
+mixed-500p.pdf             buka -> pratinjau halaman 1      n=5    p50=   16.09ms  p95=   16.84ms  p99=   16.84ms  max=   16.84ms  LULUS vs 400ms
+mixed-500p.pdf             buka -> layar pertama tajam      n=5    p50=   41.36ms  p95=   41.83ms  p99=   41.83ms  max=   41.83ms  LULUS vs 400ms
+
+======================================================================================
+FILL
+--------------------------------------------------------------------------------------
+mixed-500p.pdf             layar penuh, cache dingin        n=8    p50=   32.74ms  p95=   52.85ms  p99=   52.85ms  max=   52.85ms  
+mixed-500p.pdf             layar penuh, cache panas         n=8    p50=    1.22ms  p95=    2.24ms  p99=    2.24ms  max=    2.24ms  LULUS vs 16ms
+
+======================================================================================
+ZOOM
+--------------------------------------------------------------------------------------
+mixed-500p.pdf             zoom -> ada yang bisa digambar   n=8    p50=    0.00ms  p95=    0.00ms  p99=    0.00ms  max=    0.00ms  LULUS vs 16ms
+mixed-500p.pdf             zoom -> versi tajam              n=8    p50=   14.05ms  p95=   24.22ms  p99=   24.22ms  max=   24.22ms  LULUS vs 150ms
+
+======================================================================================
+SCROLL
+--------------------------------------------------------------------------------------
+mixed-500p.pdf             keputusan per frame (tanpa menggambar) n=240  p50=    0.01ms  p95=    0.04ms  p99=    0.04ms  max=    0.06ms  LULUS vs 16ms
+mixed-500p.pdf             frame dengan halaman putih              1.0 frame  
+mixed-500p.pdf             frame tanpa ubin tajam                 24.0 frame  
+mixed-500p.pdf             ubin dirender selama scroll           100.0 ubin  
+mixed-500p.pdf             cache terpakai                         67.9 MB  
+
+======================================================================================
+CANCEL
+--------------------------------------------------------------------------------------
+mixed-500p.pdf             delapan langkah zoom -> tajam    n=1    p50=   81.93ms  p95=   81.93ms  p99=   81.93ms  max=   81.93ms  
+mixed-500p.pdf             ubin diminta seluruhnya                64.0 ubin  
+mixed-500p.pdf             ubin dibuang tanpa dirender            11.0 ubin  
+mixed-500p.pdf             ubin benar-benar dirender              53.0 ubin  
+
+======================================================================================
+MEMORY
+--------------------------------------------------------------------------------------
+10 dokumen                 proses UI (termasuk cache ubin)       346.0 MB  
+10 dokumen                 proses pekerja                        102.0 MB  
+10 dokumen                 total                                 448.0 MB  
+10 dokumen                 cache ubin di dalamnya                 62.6 MB  
+10 dokumen                 kenaikan sejak kosong                 204.0 MB  
+
+hasil mentah -> bench/results/phase8-linux.json
+
+================ search-bench ================
+Fase 8 — pencarian (SPEC 13), linux x86_64, build release
+Dokumen: text-500p.pdf, 500 halaman.
+
+Indeks: ekstraksi teks 815 ms untuk 500 halaman; menulis 20 x 500 = 10000 halaman ke FTS5 1501 ms.
+
+kueri                           hal.    FTS p50    FTS p95    sorot p50  total p95  target 200 ms
+kata umum                        500    22.29ms    22.69ms      14.83ms    37.60ms  LULUS
+kata jarang (satu halaman)         1     0.58ms     0.63ms       1.46ms     2.16ms  LULUS
+dua kata                         500    26.88ms    41.11ms      14.80ms    65.43ms  LULUS
+
+pustaka (20 dokumen)           hasil        p50        p95  target 100 ms
+kata umum                        200    49.01ms    53.49ms  LULUS
+kata jarang (satu halaman)        20     1.01ms     1.14ms  LULUS
+dua kata                         200    63.81ms    71.32ms  LULUS
+
+Rujukan tanpa indeks: find PDFium di 500 halaman, "kesimpulan": 747 ms, 7684 kecocokan.
+Semua target: LULUS
+
+================ multidoc 30 ================
+izul-worker: profil release
+== 30 dokumen terbuka ==
+8 pekerja diam: 49.9 MB
+30 dokumen terbuka + dirender dalam 102 ms
+resident set seluruh pekerja: 83.1 MB (+33.2 MB, rata-rata 1.11 MB/dokumen)
+
+== tab tidak aktif (SPEC 10) ==
+60 halaman dibaca: 6.2 MB -> 13.7 MB (+7.5 MB)
+setelah Trim: 13.7 MB (kembali 0.0 MB)
+
+== 200 siklus buka-tutup ==
+  setelah  25 siklus: 12.13 MB
+  setelah  50 siklus: 12.15 MB
+  setelah  75 siklus: 12.16 MB
+  setelah 100 siklus: 12.16 MB
+  setelah 125 siklus: 12.16 MB
+  setelah 150 siklus: 12.16 MB
+  setelah 175 siklus: 12.17 MB
+  setelah 200 siklus: 12.18 MB
+sebelum 10.6 MB -> sesudah 12.2 MB (selisih +1.59 MB, +8.1 KB per siklus)
+200 siklus dalam 342 ms (1.7 ms/siklus)
+
+================ multidoc 50 ================
+izul-worker: profil release
+== 50 dokumen terbuka ==
+8 pekerja diam: 49.2 MB
+50 dokumen terbuka + dirender dalam 139 ms
+resident set seluruh pekerja: 96.2 MB (+46.9 MB, rata-rata 0.94 MB/dokumen)
+
+== tab tidak aktif (SPEC 10) ==
+60 halaman dibaca: 6.1 MB -> 13.7 MB (+7.6 MB)
+setelah Trim: 13.7 MB (kembali 0.0 MB)
+
+== 200 siklus buka-tutup ==
+  setelah  25 siklus: 12.12 MB
+  setelah  50 siklus: 12.14 MB
+  setelah  75 siklus: 12.15 MB
+  setelah 100 siklus: 12.16 MB
+  setelah 125 siklus: 12.16 MB
+  setelah 150 siklus: 12.16 MB
+  setelah 175 siklus: 12.16 MB
+  setelah 200 siklus: 12.17 MB
+sebelum 10.6 MB -> sesudah 12.2 MB (selisih +1.59 MB, +8.1 KB per siklus)
+200 siklus dalam 349 ms (1.7 ms/siklus)
+

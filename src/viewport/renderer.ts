@@ -45,7 +45,7 @@ import { pageAt, pageBox, toContentPoint, toPagePoint } from "./annotLayer";
 import { drawDisplayList } from "@/annots/canvas";
 import type { AnnotObject, DisplayListOut, PdfPoint } from "@/annots/types";
 import type { HandleId } from "@/annots/interaction";
-import { HANDLE_SIZE } from "@/annots/interaction";
+import { HANDLE_SIZE, translateObject } from "@/annots/interaction";
 import {
   angleTo,
   boundsOf,
@@ -60,7 +60,8 @@ import {
   snapAngle,
 } from "@/annots/interaction";
 import type { TextChar } from "./textLayer";
-import { buildTextLayer, fitTextLayer, groupIntoLines } from "./textLayer";
+import { buildTextLayer, fitTextLayer, groupIntoLines, layerSlot, textInRect } from "./textLayer";
+import { t } from "@/i18n";
 import type { Priority, TileRef } from "./tileSource";
 import {
   loadTile,
@@ -69,6 +70,7 @@ import {
   StaleTileError,
   SupersededTileError,
   tileKey,
+  isPageInverted,
 } from "./tileSource";
 
 /** Maximum edge of a preview bitmap, in pixels. Doubles as the thumbnail size. */
@@ -145,6 +147,8 @@ export interface RendererEvents {
   onTransform(objects: readonly AnnotObject[]): void;
   /** The user drew something with a creation tool. */
   onDraw(draft: DrawnShape): void;
+  /** Alt+drag took the text inside a rectangle (Phase 8). */
+  onTextBand?(text: string): void;
 }
 
 /**
@@ -185,7 +189,25 @@ const EMPTY_LAYOUT: Layout = {
   horizontal: false,
 };
 
+/**
+ * The zoom step for one Ctrl+wheel event.
+ *
+ * A mouse notch arrives as one event of ~100 units, and a quarter of an e-fold
+ * per notch is a comfortable step. A touchpad pinch arrives as a stream of
+ * small events whose deltas Chromium derives as 100·ln(scale), so dividing by
+ * 100 makes the page follow the fingers exactly; dividing those by 400 too
+ * made a pinch feel four times too stiff. The size of one event tells the two
+ * apart: an ordinary notch is 100 units or more, a pinch frame stays well under
+ * 40. A high-resolution wheel that reports small steps zooms faster per notch
+ * under this rule — rare, and still usable.
+ */
+export function wheelZoomFactor(deltaY: number): number {
+  const divisor = Math.abs(deltaY) < 40 ? 100 : 400;
+  return Math.min(2, Math.max(0.5, Math.exp(-deltaY / divisor)));
+}
+
 export class ViewportRenderer {
+  #solo: number | null = null;
   #host: RendererHost;
   #events: RendererEvents;
   #surface: Canvas2DSurface;
@@ -252,9 +274,7 @@ export class ViewportRenderer {
       x: this.#host.scroller.scrollLeft,
       y: this.#host.scroller.scrollTop,
     };
-    // A wheel notch is ~100 units; the exponent turns any device's deltas into
-    // the same perceptual step and keeps the zoom smooth on a trackpad.
-    const factor = Math.exp(-e.deltaY / 400);
+    const factor = wheelZoomFactor(e.deltaY);
     const next = this.#state.zoom * factor;
     this.#zoomAnchor = {
       contentX: scroll.x + clientX,
@@ -416,6 +436,13 @@ export class ViewportRenderer {
     this.#bitmaps.clear();
   }
 
+  /** Draws only `page` (presentation mode), or every page again with `null`. */
+  setSoloPage(page: number | null): void {
+    if (page === this.#solo) return;
+    this.#solo = page;
+    this.requestFrame();
+  }
+
   requestFrame(): void {
     if (this.#frame) return;
     this.#frame = requestAnimationFrame(() => {
@@ -516,7 +543,9 @@ export class ViewportRenderer {
       return;
     }
 
-    const pages = visiblePages(this.#layout, view, VISIBLE_MARGIN);
+    const nearby = visiblePages(this.#layout, view, VISIBLE_MARGIN);
+    // Presenting: the one page, its neighbours not drawn at all (Phase 8).
+    const pages = this.#solo === null ? nearby : nearby.filter((p) => p === this.#solo);
     let drawn = 0;
     let missing = 0;
     const wantText: number[] = [];
@@ -536,7 +565,7 @@ export class ViewportRenderer {
       // 1. The page is white even before anything has been rendered, so the
       //    user never sees the canvas background where a page should be.
       this.#surface.drawPageFrame({ x: originX, y: originY, w: pw, h: ph }, dpr);
-      this.#surface.drawPlaceholder({ x: originX, y: originY, w: pw, h: ph }, "#ffffff");
+      this.#surface.drawPlaceholder({ x: originX, y: originY, w: pw, h: ph }, isPageInverted() ? "#1c1c1c" : "#ffffff");
 
       // 2. The preview tier, upscaled to the page's box. A blank page has
       //    nothing to fetch: the white frame above is all of it.
@@ -720,8 +749,18 @@ export class ViewportRenderer {
         document,
       );
       layer.dataset["page"] = String(page);
+      // One named group per page, so a screen reader can move page by page.
+      layer.setAttribute("role", "group");
+      layer.setAttribute("aria-label", `${t("status.page")} ${page + 1}`);
       this.#host.textLayer.querySelector(`[data-page="${page}"]`)?.remove();
-      this.#host.textLayer.appendChild(layer);
+      // In page order, whatever order they scrolled into view in: a screen
+      // reader reads the DOM in its order (Phase 8).
+      const present = Array.from(this.#host.textLayer.children) as HTMLElement[];
+      const slot = layerSlot(
+        present.map((el) => Number(el.dataset["page"])),
+        page,
+      );
+      this.#host.textLayer.insertBefore(layer, present[slot] ?? null);
       fitTextLayer(layer);
       this.#textSignatures.set(page, signature);
     }
@@ -788,7 +827,7 @@ export class ViewportRenderer {
     const selected = this.#selectedObjects();
     const gesture = this.#gesture;
 
-    if (gesture?.kind === "band" && gesture.current) {
+    if ((gesture?.kind === "band" || gesture?.kind === "textBand") && gesture.current) {
       const box = this.#boxOfPage(gesture.page);
       if (box) {
         const a = toContentPoint(box, gesture.origin);
@@ -798,6 +837,8 @@ export class ViewportRenderer {
         ctx.strokeStyle = "rgba(47, 111, 235, 0.9)";
         ctx.fillStyle = "rgba(47, 111, 235, 0.12)";
         ctx.lineWidth = 1;
+        // Taking text rather than objects: dashed, so the two bands differ.
+        if (gesture.kind === "textBand") ctx.setLineDash([4, 3]);
         const x = Math.min(a.x, b.x) - view.x;
         const y = Math.min(a.y, b.y) - view.y;
         const w = Math.abs(a.x - b.x);
@@ -927,6 +968,20 @@ export class ViewportRenderer {
     if (!box) return false;
     const point = toPagePoint(box, content);
     const tool = this.#state.tool;
+
+    // Alt+drag: the text inside a rectangle, whatever else is under it.
+    if (tool === null && event.altKey) {
+      this.#gesture = {
+        kind: "textBand",
+        page: box.page,
+        origin: point,
+        current: point,
+        points: [],
+        handle: null,
+        before: [],
+      };
+      return true;
+    }
 
     if (tool !== null) {
       this.#gesture = {
@@ -1071,6 +1126,17 @@ export class ViewportRenderer {
         });
         break;
       }
+      case "textBand": {
+        const chars = this.#state.texts.get(gesture.page) ?? [];
+        const text = textInRect(chars, {
+          left: gesture.origin.x,
+          bottom: gesture.origin.y,
+          right: point.x,
+          top: point.y,
+        });
+        this.#events.onTextBand?.(text);
+        break;
+      }
       case "band": {
         const band = {
           left: gesture.origin.x,
@@ -1150,6 +1216,21 @@ export class ViewportRenderer {
     return { page: first.page, quads };
   }
 
+  /**
+   * Where an annotation is on screen, in CSS pixels from the viewport's
+   * top-left corner — for something drawn beside it, like a sticky note's
+   * notepad. `null` while its page is not laid out.
+   */
+  screenRectOf(obj: AnnotObject): { left: number; top: number; right: number; bottom: number } | null {
+    const box = this.#boxOfPage(obj.page);
+    if (!box) return null;
+    const a = toContentPoint(box, { x: obj.rect.left, y: obj.rect.top });
+    const b = toContentPoint(box, { x: obj.rect.right, y: obj.rect.bottom });
+    const sx = this.#host.scroller.scrollLeft;
+    const sy = this.#host.scroller.scrollTop;
+    return { left: a.x - sx, top: a.y - sy, right: b.x - sx, bottom: b.y - sy };
+  }
+
   /** Abandons a gesture — the pointer left the window, or Escape was pressed. */
   cancelGesture(): void {
     this.#gesture = null;
@@ -1163,7 +1244,7 @@ export class ViewportRenderer {
 
 /** A gesture in progress. */
 interface Gesture {
-  kind: "move" | "resize" | "rotate" | "band" | "create";
+  kind: "move" | "resize" | "rotate" | "band" | "create" | "textBand";
   page: number;
   origin: PdfPoint;
   current: PdfPoint;
@@ -1171,38 +1252,6 @@ interface Gesture {
   handle: HandleId | null;
   /** Copies taken when the gesture started, for the preview and the undo step. */
   before: AnnotObject[];
-}
-
-/**
- * Moves an object's geometry, payload and all.
- *
- * A mirror of `AnnotObject::translate` in the model, and the duplication is
- * deliberate rather than an oversight: this one only ever touches the *preview*
- * copies during a drag, and the authoritative move is done by the Rust code
- * when the gesture ends. If the two ever disagree, the object snaps into place
- * on release — visible, and far better than the frontend's idea of the
- * geometry ending up in the file.
- */
-function translateObject(obj: AnnotObject, dx: number, dy: number): void {
-  const shiftRect = (r: { left: number; bottom: number; right: number; top: number }): void => {
-    r.left += dx;
-    r.right += dx;
-    r.bottom += dy;
-    r.top += dy;
-  };
-  const shiftPoint = (p: { x: number; y: number }): void => {
-    p.x += dx;
-    p.y += dy;
-  };
-  shiftRect(obj.rect);
-  const payload = obj.payload;
-  if ("Markup" in payload) payload.Markup.quads.forEach(shiftRect);
-  else if ("Ink" in payload) payload.Ink.strokes.forEach((s) => s.forEach(shiftPoint));
-  else if ("Polygon" in payload) payload.Polygon.points.forEach(shiftPoint);
-  else if ("Line" in payload) {
-    shiftPoint(payload.Line.from);
-    shiftPoint(payload.Line.to);
-  }
 }
 
 /** Scales an object about a pivot; the preview half of `AnnotObject::scale_about`. */

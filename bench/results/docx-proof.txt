@@ -1,0 +1,43 @@
+Bukti konversi PDF ke Word (7.1.0) — tools/docx-proof/run.py
+Pembaca: python-docx 1.1.2, LibreOffice 24.2.7.2 420(Build:2), poppler pdftotext
+Ambang kata berurutan: 0.97
+
+LULUS  jurnal    2→3 hlm  31 paragraf  1 gambar  821 kata  9054 B  113 ms
+         ok  python-docx membuka
+         ok  gambar 1/1 terbaca
+         ok  kata di .docx 0.993
+         ok  kata di PDF LibreOffice 0.993
+         ok  judul 17 pt
+         ok  judul tebal
+         ok  judul rata tengah
+         ok  penulis miring
+         ok  baris tabel bertab
+         (teks miring dilewati: 94 huruf — baris tepi 'Diunduh dari contoh.invalid pada 1 Oktober 2026')
+LULUS  surat     1→1 hlm  8 paragraf  0 gambar  208 kata  3280 B  10 ms
+         ok  python-docx membuka
+         ok  gambar 0/0 terbaca
+         ok  kata di .docx 1.000
+         ok  kata di PDF LibreOffice 1.000
+         ok  tanggal rata kanan
+         ok  perihal rata tengah
+         ok  perihal tebal
+         ok  jumlah halaman sama
+LULUS  foto      1→1 hlm  2 paragraf  1 gambar  10 kata  196456 B  247 ms
+         ok  python-docx membuka
+         ok  gambar 1/1 terbaca
+         ok  kata di .docx 1.000
+         ok  kata di PDF LibreOffice 1.000
+         ok  jumlah halaman sama
+LULUS  pindaian  1→1 hlm  0 paragraf  1 gambar  0 kata  196128 B  270 ms
+         ok  python-docx membuka
+         ok  gambar 1/1 terbaca
+         ok  kata di .docx 1.000
+         ok  kata di PDF LibreOffice 1.000
+         ok  jumlah halaman sama
+         (halaman tanpa teks: 1 — masuk sebagai gambar)
+
+Mutasi yang wajib tertangkap:
+  tertangkap  satu dari delapan paragraf dibuang: kata 0.872
+  tertangkap  byte gambar dipotong
+
+HASIL: LULUS

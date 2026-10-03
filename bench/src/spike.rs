@@ -353,6 +353,7 @@ fn main() {
                         draw_annotations: true,
                         quality: Quality::Sharp,
                         limit_image_cache: false,
+                        invert: false,
                     };
                     if req.source.is_valid() {
                         let t = Instant::now();
@@ -426,6 +427,7 @@ fn main() {
                             draw_annotations: true,
                             quality: Quality::Sharp,
                             limit_image_cache: false,
+                            invert: false,
                         };
                         if req.source.is_valid() {
                             let _ = doc.render_tile_into(&req, &mut buf);

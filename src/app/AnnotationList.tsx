@@ -15,6 +15,9 @@ import { useEffect, useState } from "react";
 import { useDocument } from "@/state/documentStore";
 import type { AnnotKind, AnnotObject } from "@/annots/types";
 import { ANNOT_KINDS, cssColor } from "@/annots/types";
+import { invoke } from "@tauri-apps/api/core";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
+import { Icon } from "@/design/Icon";
 import { viewport } from "./viewportHandle";
 import { t } from "@/i18n";
 
@@ -56,6 +59,27 @@ export function AnnotationList(): React.JSX.Element {
   const selection = useDocument((s) => s.selection);
   const pageCount = useDocument((s) => s.pageCount);
   const [filter, setFilter] = useState<AnnotKind | "all">("all");
+  const [exported, setExported] = useState<string | null>(null);
+
+  // Every page's annotations, not only those listed so far: the backend
+  // imports the rest first (src-tauri/src/annotlist.rs).
+  async function exportList(): Promise<void> {
+    const doc = store().doc;
+    if (doc === null) return;
+    const stem = (store().path ?? "dokumen").replace(/\.pdf$/i, "");
+    const path = await saveDialog({
+      defaultPath: `${stem} - anotasi.csv`,
+      filters: [{ name: "CSV", extensions: ["csv"] }],
+    });
+    if (typeof path !== "string") return;
+    const labels = Object.fromEntries(ANNOT_KINDS.map((k) => [k, t(`kind.${k}` as never)]));
+    try {
+      const n = await invoke<number>("annots_export_csv", { doc, path, labels });
+      setExported(t("annot.exported").replace("{n}", String(n)));
+    } catch (e) {
+      setExported(String(e));
+    }
+  }
   const store = useDocument.getState;
 
   // The pages nobody has scrolled to have not been fetched, so the list would
@@ -79,7 +103,7 @@ export function AnnotationList(): React.JSX.Element {
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      <div className="p-2 border-b border-[var(--izul-border)]">
+      <div className="p-2 border-b border-[var(--izul-border)] flex flex-col gap-1.5">
         <select
           aria-label={t("annot.filter")}
           value={filter}
@@ -93,6 +117,19 @@ export function AnnotationList(): React.JSX.Element {
             </option>
           ))}
         </select>
+        <button
+          type="button"
+          onClick={() => void exportList()}
+          className="h-7 px-2 flex items-center justify-center gap-1.5 rounded-[8px] text-[12px] border border-[var(--izul-border)] hover:bg-[var(--izul-surface-raised)]"
+        >
+          <Icon name="exportList" size={16} tone="blue" />
+          {t("annot.export")}
+        </button>
+        {exported && (
+          <p role="status" className="text-[12px] text-[var(--izul-text-dim)]">
+            {exported}
+          </p>
+        )}
       </div>
 
       {total === 0 ? (

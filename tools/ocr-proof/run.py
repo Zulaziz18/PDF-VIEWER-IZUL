@@ -168,7 +168,7 @@ def main():
             failures.append(f"{tool}: CER {cer:.2f} % di atas batas {LIMITS['cer']} %")
 
     lines = [
-        "Fase 7 — bukti OCR: pindaian jadi bisa dicari, kata di tempatnya, tampilan tidak berubah",
+        "Bukti OCR (Fase 7; mesin PP-OCRv6 sejak 7.0.0): pindaian jadi bisa dicari, kata di tempatnya, tampilan tidak berubah",
         "",
         "CER/WER = tingkat kesalahan karakter/kata teks yang dibaca alat itu dari hasil OCR, terhadap teks sebenarnya",
         "Tempat  = dari kata yang terbaca benar, persen yang pusat kotaknya (menurut poppler) ada di dalam kotak kata sebenarnya",

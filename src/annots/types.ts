@@ -181,7 +181,14 @@ export interface ShapeStyle {
 }
 
 export type AnnotPayload =
-  | { Markup: { quads: PdfRect[]; color: Rgba } }
+  | {
+      Markup: {
+        quads: PdfRect[];
+        color: Rgba;
+        /** Share of each line a highlight covers, centred; 1 is the whole line. */
+        thickness: number;
+      };
+    }
   | {
       FreeText: {
         text: string;

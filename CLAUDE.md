@@ -867,6 +867,229 @@ semuanya LULUS dan dijalankan CI ubuntu; probe DirectML dijalankan CI windows.
   scene terlihat di scene berikutnya. `forgetForms()` membuangnya sebelum
   setiap tangkapan.
 
+## Keadaan Fase 8 (Penghalusan & Rilis, 25 September 2026)
+
+Selesai di branch `claude/pdf-studio-izul-v7-fase-8` (PR #7, base fase-7).
+Versi **7.0.0-beta.1** — beta, bukan rilis, karena sebagian hal hanya bisa
+dibuktikan di Windows sungguhan (checklist TESTING.md "Fase 8"). Laporan
+SPEC 18 di badan PR #7. Semua 9 fase (0–8) kini selesai.
+
+**Yang dibangun:** registri perintah tunggal (`src/app/commands.ts`) untuk
+pintasan, palet (Ctrl+Shift+P) dan F1; pintasan bisa diubah (`ui.shortcuts`);
+cetak (`printing.rs`, `izul://print/...`); presentasi F5 / fokus F11; tema +
+invert cerdas di pekerja (`izul-pdf/src/invert.rs`, `invert` masuk TileKey);
+audit aksesibilitas; ikon; About + folder log; installer; dan hasil audit
+SPEC 11 (gaya teks, pangkas, Ctrl+V, ratakan/distribusikan, CSV anotasi,
+bookmark pengguna, lampiran, Alt+drag, jump list). `PROTOCOL_VERSION` = 14
+(15 sejak 7.0.0).
+
+**Pengemasan — yang wajib diingat:**
+
+- `tauri-build` menyalin **setiap** `bundle.resources` ke folder target pada
+  **setiap** `cargo build`, bukan hanya saat mengemas. Karena itu sumber daya
+  installer ada di `src-tauri/tauri.bundle.json` yang dipakai **hanya** lewat
+  `npm run package` (`tauri build --config ...`). Kalau dipindah ke
+  `tauri.conf.json` atau `tauri.windows.conf.json`, build debug gagal mencari
+  pekerja release — atau lebih buruk, menyalin pekerja release usang ke atas
+  pekerja debug (kelas bug #4 Fase 1).
+- Bentuk **daftar** di `resources` mempertahankan path relatif (`../vendor/x`
+  jadi `_up_/vendor/x`); pakai bentuk **peta** supaya berkas jatuh di samping
+  exe. Di Windows, `resource_dir` = folder exe (dibaca dari `tauri-utils`).
+- MSI hanya menerima versi numerik: `wix.version` = `mayor.minor.patch.N`,
+  dengan alpha.N → N, beta.N → 100+N, rc.N → 200+N, rilis → 1000. Job
+  *Version consistency* menjaganya. **Naikkan bersama version.json.**
+- `pdf-studio-izul --self-test [pdf]` memeriksa tata letak terpasang tanpa
+  jendela; job *Package (Windows)* menjalankannya di NSIS terpasang, MSI yang
+  diekstrak, dan ZIP portabel. Portabel = ada `portable.txt` di samping exe.
+- Model OCR **dibundel sejak 7.0.0** (PP-OCRv6, Apache-2.0) — lihat "Keadaan Rilis 7.0.0".
+- **Rilis permanen = GitHub Release.** Push tag `vX.Y.Z` (harus sama dengan
+  `version.json`) → job *Package (Windows)* membangun, menjalankan self-test,
+  lalu `gh release create` melampirkan setup.exe, .msi, dan ZIP portabel.
+  Artifact CI biasa hanya 14 hari.
+
+**Aksesibilitas:** `npm run ui:shots -- --axe=true` (axe-core 4.13.0, WCAG 2.1
+A+AA) dan `--forced=true` (kontras tinggi). axe **tidak** menilai forced-colors:
+tiga cacat terbesar (lapisan teks tergambar dua kali, contoh warna kosong,
+pilihan tak terlihat) hanya ketahuan dari melihat tangkapannya. Aturan CSS-nya
+di akhir `tokens.css`. Tombol tutup tab sengaja `aria-hidden` (target mouse);
+tab ditutup dengan Delete.
+
+**Temuan dan pelajaran fase ini:**
+
+1. **Installer sebelum fase ini tidak akan jalan** — tanpa PDFium, pekerja,
+   dan ONNX Runtime. Komentar di `build.rs` bilang `bundle.resources`
+   menyalinnya; konfigurasinya tidak pernah begitu. **Pelajaran:** jangan
+   percaya komentar yang menjelaskan konfigurasi; baca konfigurasinya. Dan
+   installer tanpa uji pasang bukan installer.
+2. **Bench `viewport` mati sejak Fase 1** (tidak membaca `Hello`) dan tidak ada
+   yang tahu, karena CI hanya *membangun* bench. Kini CI menjalankan ketiganya
+   sebentar (langkah *Benchmarks still run*). **Pelajaran:** kode yang
+   dibangun tapi tidak dijalankan membusuk diam-diam.
+3. **Dua target pencarian SPEC 13 tidak pernah diukur** sampai fase ini
+   (`bench/src/search_bench.rs`). Lulus, tapi pencarian sebelum indeks selesai
+   747 ms. Periksa tabel SPEC 13 baris per baris di akhir fase, jangan hanya
+   yang ada benchmark-nya.
+4. **Rata kanan-kiri digambar rata kiri** sejak Fase 3 — enum-nya ada, cabang
+   `match`-nya menyatukan `Justify` dengan `Left`. Audit fitur yang "sudah ada
+   di model" juga harus melihat apakah ada yang menggambarnya.
+5. `PdfError` punya varian baru (`Attachment`) → `classify()` di
+   `izul-worker/src/session.rs` wajib diperbarui (match exhaustive, bagus).
+6. **Prettier bukan formatter proyek ini.** Menjalankannya memformat ulang
+   seluruh berkas (lebar 80). Formatter frontend = tidak ada; ikuti gaya
+   sekitarnya. Kalau sampai terjalankan: `git checkout` berkasnya lalu ulangi
+   hanya perubahan sendiri.
+
+**Alat ukur baru yang berguna:**
+
+- **Memeriksa kode khusus Windows dari Linux:** salin fungsinya ke crate
+  sementara yang hanya bergantung pada crate `windows` versi terpatok, lalu
+  `cargo +1.94.1 clippy --target x86_64-pc-windows-msvc -- -D warnings`
+  (toolchain terpatok proyek punya std Windows; toolchain bawaan tidak).
+  Seluruh aplikasi tidak bisa dicek begini (dependensi C butuh MSVC), tapi
+  potongan FFI bisa. Selalu sertakan kontrol negatif (tipe salah harus
+  ditolak) — `Finished` 0,06 s bisa berarti cache.
+- Scene harness bisa **membaca papan klip** (`permissions: clipboard-*`):
+  `textbandcopied` membuktikan Alt+drag menyalin persis satu kolom.
+
+**Yang tidak dikerjakan (dilaporkan di PR):** panel Layer (PDFium tidak punya
+API optional content sama sekali — dicek di header), menanam font / CJK / RTL
+(butuh subsetting TrueType), kompresi dengan pratinjau kualitas (PDFium tidak
+mengode ulang gambar). Bookmark pengguna menyimpan nomor halaman; sesudah
+halaman disusun ulang dan disimpan, nomornya tidak ikut bergeser.
+
+## Keadaan Rilis 7.0.0 (3 Oktober 2026)
+
+Di branch `claude/pdf-studio-izul-v7-fase-8` (PR #7). Pengguna memutuskan
+**langsung 7.0.0** tanpa menunggu checklist Windows, dan **membundel model OCR**
+(aplikasi tidak dijual). Versi 7.0.0, `wix.version` 7.0.0.1000, kanal `stable`.
+
+**Mesin OCR diganti `ocrs` → PP-OCRv6 small** setelah diadu
+(`tools/ocr-bakeoff`, `bench/results/ocr-bakeoff.txt`; lima set sintetis
+termasuk foto HP miring 2,5° + perspektif): CER gabungan 11,01 % → 0,05 %
+(dibaca MuPDF), kata utuh 91,3 % → 99,3 %. Model dari wheel PyPI `rapidocr`
+3.9.2 (Apache-2.0; lisensi hanya dicek dari metadata paket — GitHub dan
+HuggingFace diblokir dari kontainer), diambil `vendor/ocr/fetch.sh` terpatok
+SHA-256, dijalankan `ort` yang sama dengan Hapus Latar. Kamus karakter ada di
+metadata model (`character`, 18 708 baris + blank + spasi = 18 710 kelas).
+
+**Yang ditulis sendiri di `crates/izul-ocr/src/paddle.rs`** mengikuti kode
+RapidOCR yang terpasang (bukan ingatan): DB post-process tanpa OpenCV —
+komponen 8-tetangga, hull + rotating calipers untuk `minAreaRect`, unclip
+sebagai pembesaran persegi; potong miring dengan bilinear; CTC; kotak kata dari
+kolom CTC. **Tanpa** model orientasi (halaman sudah dirender tegak). Kotak
+deteksi dibandingkan langsung dengan RapidOCR pada halaman yang sama: berbeda
+≤ 2 px.
+
+**Temuan terukur tentang lapisan teks tak terlihat (jangan ditebak ulang):**
+
+- Ukuran font lapisan diturunkan dari **tinggi kotak**, dan extractor menilai
+  celah antar-kata relatif terhadap ukuran font. Kotak terlalu tinggi = spasi
+  hilang di poppler ("inidisusun"). Dua sebab yang ditemukan: kotak pembatas
+  dari rentang miring (foto HP) dan bantalan deteksi (kotak PP-OCR ≈ 1,55×
+  tinggi huruf). Kini kata setinggi `LETTERS_IN_BOX` (0,65) baris.
+- Kotak dua kata yang **bersentuhan** di kolom spasi juga disambung poppler;
+  kini berhenti `SPACE_KEPT` (¼ huruf) sebelum spasi.
+- Menulis kata **miring mengikuti baris** dicoba dan diukur: MuPDF, pypdf,
+  PDFium sama saja, poppler malah lebih buruk (kata utuh 77 % vs 91 %). Kata
+  ditulis tegak. Di halaman miring poppler mencampur urutan baris (CER 36 %
+  tanpa kehilangan kata); MuPDF/PDFium tidak.
+- Lapisan memakai Helvetica WinAnsi: karakter di luar Latin-1 (+ tanda WinAnsi)
+  dibuang (`writable`), karena akan tertulis sebagai karakter yang salah.
+
+`PROTOCOL_VERSION` 14 → 15 (`WorkOcr.runtime`). Nama berkas model ada di
+`izul-ipc` (`OCR_DETECTION_MODEL`), karena proses UI tidak boleh menaut
+`izul-ocr` (yang menaut PDFium). `--self-test` kini **gagal** tanpa model OCR.
+Profil dev mengoptimalkan `izul-ocr` (loop piksel sendiri), bukan lagi `rten*`.
+
+**Jebakan sesi ini:** jatah disk kontainer habis di tengah `cargo test`
+(gejalanya rustc "failed to parse process output", exit 101 — bukan galat kode).
+`target/debug/deps` berisi binari test lama ~270 MB masing-masing; menghapus
+executable besar di sana membebaskan ~12 GB. Penanda simulasi Windows harus
+`cfg(any(/*SIMWIN*/))` — `//SIMWIN` di dalam `#![cfg(...)]` memakan kurung tutup.
+
+**Masih terbuka:** checklist Windows (TESTING "Fase 8"), DirectML di GPU, dan
+OCR untuk tulisan tangan/aksara non-Latin (model rec PP-OCRv6 mengenal CJK,
+tapi lapisan teks hanya bisa menulis Latin-1 sampai font ditanam).
+
+## Keadaan 7.0.1 (Periksa pembaruan, 3 Oktober 2026)
+
+Pengguna memilih **pembaruan atas permintaan** (pilihan B dari tiga): satu-satunya
+koneksi jaringan aplikasi adalah tombol *Periksa pembaruan* di About. SPEC
+Bagian 2 diberi pengecualian bertanggal. Jangan menambah pemeriksaan otomatis
+tanpa keputusan baru pengguna.
+
+- `src-tauri/src/updates.rs`: `update_check` / `update_install` di atas
+  `tauri-plugin-updater` **=2.10.1** (2.11+ menuntut tauri 2.12 → wry baru di
+  bawah perbaikan bug #2/#8 Fase 1; Cargo.lock dicek: nol crate lama berubah).
+  Salinan portabel tidak pernah diperbarui di tempat (installer NSIS akan
+  memasang salinan kedua) — exe portabel adalah exe yang sama dengan yang
+  di-patch bundle type `nsis`.
+- Endpoint: `releases/latest/download/latest.json`. CI (job Package, saat tag
+  `v*` / Release dipublikasikan) membuat `latest.json` dengan kunci
+  `windows-x86_64-nsis`, `-msi`, dan `windows-x86_64`, dari berkas `.sig` yang
+  dibuat `tauri.updater.json` (`createUpdaterArtifacts`) — hanya kalau secret
+  `TAURI_SIGNING_PRIVATE_KEY` ada (kata sandi kosong). Nama aset memakai titik
+  menggantikan spasi, persis seperti GitHub menamainya.
+- Pasangan kunci dibuktikan cocok dengan `minisign-verify` (pustaka yang sama
+  dengan plugin): tanda tangan asli diterima, berkas yang diubah satu bit
+  ditolak. **Kunci privat tidak ada di repo**; hanya di secret GitHub milik
+  pengguna. Hilang kunci = pengguna lama tidak bisa diperbarui lewat tombol.
+- Pembaruan sungguhan pertama baru bisa diuji pada 7.1.1 (7.0.1 tidak pernah dirilis; 7.0.0 tidak punya
+  tombolnya).
+
+## Keadaan 7.1.0 (Ke Word + perbaikan uji pemakaian, 3 Oktober 2026)
+
+Pengguna menguji 7.0.0 terpasang di Windows dan melaporkan tujuh hal; 7.0.1 belum
+dirilis, jadi semuanya masuk **7.1.0** (fitur baru → minor). `wix.version`
+7.1.0.1000, `PROTOCOL_VERSION` 16.
+
+**Cacat yang hanya ada di build terpasang — pelajaran utamanya:**
+`tauri.conf.json` `csp` `img-src` hanya `izul:`, padahal semua URL kita
+`http://izul.localhost/...` → **gambar sisipan dan halaman cetak kosong**. Dev
+server dan harness tidak menerapkan CSP, jadi tidak ada yang bisa melihatnya
+selain pengguna. Kini dijaga `src/app/__tests__/csp.test.ts` (setiap URL yang
+dibangun frontend harus diizinkan CSP; terbukti gagal pada konfigurasi lama),
+dan dibuktikan di Chromium (`naturalWidth` 0 → 1). **Kalau menambah URL
+`izul.localhost` baru untuk `<img>`/`fetch`/`<iframe>`, tambahkan ke test itu.**
+
+**Diukur dan dipatok (jangan ditebak ulang):**
+
+- WebView2: wry mematikan `IsPinchZoomEnabled` bersama tombol zoom → cubit
+  touchpad tidak pernah sampai ke halaman. `src-tauri/src/pinch.rs` menyalakan
+  pinch saja (webview2-com =0.38.2, windows-core 0.61 — versi yang sudah ditaut
+  wry). Chromium (CDP `synthesizePinchGesture`, sumber touchpad): tiap frame =
+  wheel `ctrlKey`, deltaY kecil, hasil kali `exp(-d/100)` = skala cubit persis;
+  bila dibatalkan, `visualViewport.scale` tetap 1. `main.tsx` membatalkan semua
+  Ctrl+wheel.
+- `FPDFText_GetFontSize` = operan `Tf` saja (`Tf 1` + matriks 12× → 1). Ukuran
+  yang tampil = operan × skala `FPDFText_GetMatrix`.
+- `FPDFText_GetCharAngle` **searah jarum jam** (`0 1 -1 0` → 3π/2); `/Rotate`
+  ditambahkan.
+- `FPDFImageObj_GetImageDataRaw` = stream mentah **sebelum semua filter**:
+  `[/ASCII85Decode /DCTDecode]` (reportlab) memberi teks ASCII85, bukan JPEG.
+  JPEG asli hanya dipakai bila filternya satu-satunya DCT dan byte diawali
+  `FF D8 FF`.
+- Gambar di dalam form XObject: `FPDFPageObj_GetBounds` anaknya di ruang form;
+  kalikan dengan `FPDFPageObj_GetMatrix` form (sudah termasuk `/Matrix`-nya).
+  Di sanalah gambar anotasi yang di-flatten berada.
+
+**Ke Word** (`crates/izul-docx`, `izul-pdf/src/layout.rs`, `saving::export_docx`):
+salinan kerja → flatten (kotak teks & gambar pengguna ikut) → `WorkLayout` per
+halaman (blob postcard) → `izul_docx::analyse` + `build` di proses UI → tulis
+atomik. Urutan teks = urutan PDFium; semua aturan paragraf ada di `layout.rs`
+dan diuji dengan halaman buatan tangan (`layout/tests.rs`). Bukti:
+`tools/docx-proof/run.py` (CI ubuntu; butuh `libreoffice-writer` dan
+`python-docx`). **Jebakan:** LibreOffice yang terpasang di kontainer hanya
+`libreoffice-core` — tanpa Writer ia menolak membuka apa pun ("source file
+could not be loaded"), termasuk berkas .txt. Itu bukan tanda .docx-nya rusak.
+
+**UI:** menu `MenuButton` diportal ke `<body>` (`placeMenu`, teruji); catatan
+tempel = ikon notepad tanpa pegangan + `NotePopup.tsx`; stabilo per baris
+(`src/annots/lines.ts`) + `thickness` di payload `Markup` (serde default 1.0).
+Harness kini meneruskan `annot_replace` ke pembangun display list sungguhan,
+jadi scene bisa mengubah properti. Scene baru: `zoommenu`, `viewmenu`,
+`highlight`, `note`, `word`.
+
 ## Alur kerja proyek ini
 
 - Branch per fase: `claude/pdf-studio-izul-v7-fase-4` (Langkah 0 + Fase 4,
@@ -889,9 +1112,10 @@ semuanya LULUS dan dijalankan CI ubuntu; probe DirectML dijalankan CI windows.
   "Keadaan Fase N" di berkas ini sebelum lanjut.
 - Total 9 fase (0–8). Fase 0 dan 1 selesai dan disetujui pengguna; Fase 2 dan
   Fase 3 selesai (satu branch, PR #2); Langkah 0 dan Fase 4 selesai (PR #3);
-  Fase 5 selesai (PR #4); Fase 6 selesai (PR #5); Fase 7 selesai (PR #6).
-  Fase 8 berikutnya di `claude/pdf-studio-izul-v7-fase-8`, bercabang dari
-  fase-7.
+  Fase 5 selesai (PR #4); Fase 6 selesai (PR #5); Fase 7 selesai (PR #6);
+  Fase 8 selesai (PR #7, 7.0.0-beta.1), lalu **rilis 7.0.0** di PR yang sama
+  dengan mesin OCR baru yang dibundel. **Semua fase selesai.** Sisa: hasil
+  checklist Windows dari pengguna.
   Fase 5–8 dikerjakan berturut-turut tanpa menunggu persetujuan, atas
   keputusan pengguna.
 - Panduan menjalankan & menguji aplikasi di Windows (untuk pemula) ada di

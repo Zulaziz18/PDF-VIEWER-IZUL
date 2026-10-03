@@ -52,6 +52,7 @@ Ditulis eksplisit supaya tidak merembes masuk:
 
 - Thumbnail handler Explorer (butuh shell extension COM terpisah — dibuang).
 - Sinkronisasi cloud, akun, kolaborasi, atau fitur apa pun yang menyentuh jaringan.
+  *(Diubah 3 Oktober 2026, atas keputusan pengguna: satu pengecualian — tombol **Periksa pembaruan** di kotak Tentang menghubungi GitHub Releases, hanya saat ditekan; tidak ada pemeriksaan otomatis, saat mulai, atau di latar. Installer pembaruan wajib bertanda tangan. Lihat `src-tauri/src/updates.rs`.)*
 - Pembuatan tanda tangan digital (verifikasi tanda tangan yang ada: boleh, hanya tampil).
 - Dukungan XFA.
 - Reflow paragraf saat menyunting teks asli dokumen.
@@ -135,7 +136,7 @@ Session, recent files, posisi baca, draf autosave, cache thumbnail, dan indeks p
 | Styling | Tailwind v4 + CSS variables | MIT |
 | Kanvas | Imperatif, di luar React | — |
 | AI | `ort` (ONNX Runtime) + DirectML | MIT |
-| OCR | `ocrs` atau Tesseract via FFI | MIT / Apache-2.0 |
+| OCR | PP-OCRv6 (PaddleOCR) via `ort` — *diubah 3 Oktober 2026 atas keputusan pengguna, dari "`ocrs` atau Tesseract": diukur lebih akurat (`bench/results/ocr-bakeoff.txt`) dan lisensi modelnya jelas* | Apache-2.0 |
 | Font bundel | Inter | SIL OFL |
 | Installer | NSIS + MSI + portable | — |
 
@@ -146,6 +147,7 @@ Session, recent files, posisi baca, draf autosave, cache thumbnail, dan indeks p
 **Larangan keras:**
 
 - Nol koneksi jaringan. Tidak ada telemetri, CDN, font online, atau pengecekan pembaruan. Semua aset dibundel.
+  *(Diubah 3 Oktober 2026, atas keputusan pengguna: satu pengecualian — tombol **Periksa pembaruan** di kotak Tentang menghubungi GitHub Releases, hanya saat ditekan; tidak ada pemeriksaan otomatis, saat mulai, atau di latar. Installer pembaruan wajib bertanda tangan. Lihat `src-tauri/src/updates.rs`.)*
 - Tidak ada ketergantungan Python di mesin pengguna.
 - Jangan render PDF di thread utama. Jangan pernah taruh logika kanvas di dalam komponen React.
 - Jangan salurkan bitmap lewat `invoke` Tauri (data diubah jadi string — anggaran 16 ms langsung habis).
@@ -322,6 +324,7 @@ Semua objek hidup: pilih, geser, ubah ukuran, putar, hapus. Seleksi jamak, ratak
 - Hapus, putar, susun ulang, sisip halaman kosong, ekstrak, duplikat.
 - Gabung dokumen, pecah berdasarkan rentang atau bookmark.
 - Simpan, Simpan Sebagai, Ekspor rata, ekspor rentang, ekspor halaman sebagai PNG/JPG resolusi tinggi.
+- *(Ditambahkan 3 Oktober 2026, 7.1.0, atas permintaan pengguna.)* Ekspor ke Word (`.docx`) dengan teks yang bisa disunting: paragraf, judul, gaya huruf, rata, gambar. Bukan salinan tata letak — tabel menjadi baris bertab, halaman berkolom menjadi satu kolom, grafik vektor tidak ikut — dan hasilnya diperiksa oleh pembaca yang bukan aplikasi ini (python-docx, LibreOffice).
 - Kompresi berkas dengan pratinjau dampak ke kualitas.
 - Riwayat ekspor yang bisa diklik.
 - Recent Files bergambar thumbnail, bisa di-pin, deteksi berkas yang dipindah.

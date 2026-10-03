@@ -73,7 +73,7 @@ export function marksFor(hits: ReadonlyArray<{ page: number; rects: readonly Pdf
         created_at: now,
         modified_at: now,
         author_note: "",
-        payload: { Markup: { quads: [...h.rects], color: REDACT_FILL } },
+        payload: { Markup: { quads: [...h.rects], color: REDACT_FILL, thickness: 1 } },
       } satisfies AnnotObject;
     });
 }

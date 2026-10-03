@@ -10,13 +10,14 @@ members = [
     "crates/izul-write",
     "crates/izul-redact",
     "crates/izul-ocr",
+    "crates/izul-docx",
     "bench",
     "tests-integration",
     "src-tauri",
 ]
 
 [workspace.package]
-version = "7.0.0-alpha.7"
+version = "7.1.0"
 edition = "2021"
 rust-version = "1.94"
 license = "Proprietary"
@@ -31,6 +32,7 @@ izul-store = { path = "crates/izul-store" }
 izul-write = { path = "crates/izul-write" }
 izul-redact = { path = "crates/izul-redact" }
 izul-ocr = { path = "crates/izul-ocr" }
+izul-docx = { path = "crates/izul-docx" }
 
 thiserror = "2"
 serde = { version = "1", features = ["derive"] }
@@ -63,31 +65,12 @@ unimplemented = "deny"
 indexing_slicing = "warn"
 undocumented_unsafe_blocks = "deny"
 
-# The OCR engine is numeric code that runs ~70x slower unoptimised: 55 s for
-# one page in a debug build against 0.75 s in release, far past the 6 s a
-# worker may stay silent before the supervisor takes it for hung. So it is
-# optimised even in `npm run tauri dev`; our own crates stay debuggable.
-[profile.dev.package.ocrs]
-opt-level = 3
-[profile.dev.package.rten]
-opt-level = 3
-[profile.dev.package.rten-tensor]
-opt-level = 3
-[profile.dev.package.rten-imageproc]
-opt-level = 3
-[profile.dev.package.rten-vecmath]
-opt-level = 3
-[profile.dev.package.rten-simd]
-opt-level = 3
-[profile.dev.package.rten-gemm]
-opt-level = 3
-[profile.dev.package.rten-base]
-opt-level = 3
-[profile.dev.package.rten-model-file]
-opt-level = 3
-[profile.dev.package.rten-parallel]
-opt-level = 3
-[profile.dev.package.rten-shape-inference]
+# OCR pre- and post-processing (`izul-ocr`'s pixel loops: resizing, the
+# detection map's connected components, cropping) is our own numeric code and
+# far slower unoptimised; the models themselves run in ONNX Runtime, which is
+# a release build whatever this profile says. Optimised even in
+# `npm run tauri dev`, because a worker silent for 6 s is taken for hung.
+[profile.dev.package.izul-ocr]
 opt-level = 3
 
 [profile.release]

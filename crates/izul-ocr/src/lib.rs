@@ -1,22 +1,25 @@
 //! Local OCR for scanned pages (SPEC 17, Phase 7).
 //!
-//! [`Ocr`] is a thin layer over [`ocrs`]: an image in, lines of words out,
-//! each word with its box in the image's own pixels (origin top-left, y down).
+//! [`Ocr`] is PP-OCR (PaddleOCR) run by ONNX Runtime, see [`paddle`]: an
+//! image in, lines of words out, each word with its box in the image's own
+//! pixels (origin top-left, y down).
 //! [`ocr_page`] is the one routine that reads a PDF page — render, recognise,
 //! lay the words down as invisible text — run by the worker and by the proof
 //! tool alike, so what is measured is what ships.
 //!
-//! `ocrs` recognises the Latin alphabet without accents, which is what printed
-//! Indonesian and English need. It has no dictionary; what it reads is what is
-//! on the page, letter by letter.
+//! Until 7.0.0 the engine was `ocrs`. It was replaced after
+//! `tools/ocr-bakeoff` measured both on the same pages: character error rate
+//! 11.0 % against 1.9 % over five kinds of scan, 42 % against 2 % on phone
+//! photos (`bench/results/ocr-bakeoff.txt`) — and the `ocrs` weights had no
+//! stated licence, while PP-OCR's are Apache-2.0.
 
 pub mod background;
+mod paddle;
 
 use std::path::Path;
 
 use izul_pdf::ocr_layer::OcrWord;
 use izul_pdf::{Document, PdfRectF, Quality};
-use ocrs::{ImageSource, OcrEngine, OcrEngineParams, TextItem};
 
 #[derive(Debug, thiserror::Error)]
 pub enum OcrError {
@@ -31,11 +34,11 @@ pub enum OcrError {
 }
 
 /// Pixels per point the page is rendered at for recognition: 150 dpi.
-/// Measured on `tools/ocr-proof` scans (10–12 pt text): character error rate
-/// 0.67 % at 100 dpi, 0.50 % at 135, 0.88 % at 150, 1.88 % at 200, 2.59 % at
-/// 300 — the models were trained on text about this size, and more pixels
-/// make things worse, not better. 150 keeps small print legible without
-/// giving that away.
+/// Chosen for `ocrs` (character error rate 0.50 % at 135 dpi, 0.88 % at 150,
+/// 2.59 % at 300 on `tools/ocr-proof` scans) and still right for PP-OCRv6:
+/// on `tools/ocr-bakeoff` its error rate is 1.85 % at 150 dpi against 2.95 %
+/// at 300, and 300 is four times slower. The models were trained on text
+/// about this size; more pixels make things worse, not better.
 pub const RENDER_SCALE: f32 = 150.0 / 72.0;
 
 /// A page with at least this many non-blank characters already has text;
@@ -125,73 +128,23 @@ pub struct Line {
     pub words: Vec<Word>,
 }
 
+/// The OCR engine: PP-OCR detection and recognition (see [`paddle`]).
+#[derive(Debug)]
 pub struct Ocr {
-    engine: OcrEngine,
-}
-
-impl std::fmt::Debug for Ocr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str("Ocr")
-    }
-}
-
-fn model(path: &Path) -> Result<rten::Model, OcrError> {
-    rten::Model::load_file(path).map_err(|e| OcrError::Model {
-        path: path.display().to_string(),
-        detail: e.to_string(),
-    })
+    engine: paddle::Paddle,
 }
 
 impl Ocr {
-    /// Loads the detection and recognition models.
-    pub fn load(detection: &Path, recognition: &Path) -> Result<Self, OcrError> {
-        let engine = OcrEngine::new(OcrEngineParams {
-            detection_model: Some(model(detection)?),
-            recognition_model: Some(model(recognition)?),
-            ..OcrEngineParams::default()
+    /// Loads ONNX Runtime from `runtime` and the detection and recognition
+    /// models.
+    pub fn load(runtime: &Path, detection: &Path, recognition: &Path) -> Result<Self, OcrError> {
+        Ok(Ocr {
+            engine: paddle::Paddle::load(runtime, detection, recognition)?,
         })
-        .map_err(|e| OcrError::Engine(e.to_string()))?;
-        Ok(Ocr { engine })
     }
 
     /// Reads a greyscale image (one byte per pixel, rows top to bottom).
     pub fn read_gray(&self, pixels: &[u8], width: u32, height: u32) -> Result<Vec<Line>, OcrError> {
-        let source = ImageSource::from_bytes(pixels, (width, height))
-            .map_err(|e| OcrError::Image(e.to_string()))?;
-        let input = self
-            .engine
-            .prepare_input(source)
-            .map_err(|e| OcrError::Engine(e.to_string()))?;
-        let words = self
-            .engine
-            .detect_words(&input)
-            .map_err(|e| OcrError::Engine(e.to_string()))?;
-        let lines = self.engine.find_text_lines(&input, &words);
-        let read = self
-            .engine
-            .recognize_text(&input, &lines)
-            .map_err(|e| OcrError::Engine(e.to_string()))?;
-        Ok(read
-            .into_iter()
-            .flatten()
-            .map(|line| Line {
-                words: line
-                    .words()
-                    .map(|w| {
-                        let r = w.bounding_rect();
-                        Word {
-                            text: w.to_string(),
-                            rect: [
-                                r.left() as f32,
-                                r.top() as f32,
-                                r.right() as f32,
-                                r.bottom() as f32,
-                            ],
-                        }
-                    })
-                    .collect(),
-            })
-            .filter(|l: &Line| !l.words.is_empty())
-            .collect())
+        self.engine.read_gray(pixels, width, height)
     }
 }

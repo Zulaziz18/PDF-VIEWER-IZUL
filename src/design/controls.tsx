@@ -12,7 +12,8 @@
  * lives in `src/app/actions.ts` or a store — never in the component (SPEC 0).
  */
 
-import { useEffect, useId, useRef, useState, type JSX, type ReactNode } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState, type JSX, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { Icon, type IconName, type Tone } from "./Icon";
 
 const HOVER = "hover:bg-[var(--izul-surface-raised)] active:bg-[var(--izul-chrome-hover)]";
@@ -145,8 +146,8 @@ export interface MenuItem {
   label: string;
   icon?: IconName;
   tone?: Tone;
-  /** Shown right-aligned, e.g. "Ctrl+O". */
-  shortcut?: string;
+  /** Shown right-aligned, e.g. "Ctrl+O"; none when the command has no key. */
+  shortcut?: string | undefined;
   onSelect: () => void;
   checked?: boolean;
   disabled?: boolean;
@@ -154,8 +155,39 @@ export interface MenuItem {
   separator?: boolean;
 }
 
+/** Gap between a menu and its button, and between a menu and the window edge. */
+const MENU_GAP = 4;
+
+/**
+ * Where a menu goes: under its button, or above it when the window has no room
+ * below (the zoom menu lives in the bottom bar), and never past either side.
+ * Pure, so the placement rules are tested without a layout engine.
+ */
+export function placeMenu(
+  anchor: { left: number; right: number; top: number; bottom: number },
+  menu: { width: number; height: number },
+  view: { width: number; height: number },
+  align: "left" | "right",
+): { left: number; top: number; maxHeight: number } {
+  const below = view.height - anchor.bottom - MENU_GAP * 2;
+  const above = anchor.top - MENU_GAP * 2;
+  const up = menu.height > below && above > below;
+  const room = Math.max(0, up ? above : below);
+  const height = Math.min(menu.height, room);
+  const top = up ? anchor.top - MENU_GAP - height : anchor.bottom + MENU_GAP;
+  const wanted = align === "right" ? anchor.right - menu.width : anchor.left;
+  const left = Math.max(MENU_GAP, Math.min(wanted, view.width - menu.width - MENU_GAP));
+  return { left, top, maxHeight: room };
+}
+
 /**
  * A button that opens a menu under itself.
+ *
+ * The menu is portalled to `<body>` and placed with `position: fixed`. It used
+ * to be an absolutely placed child of the button, which put it inside the
+ * ribbon and the bottom bar — both clip their overflow — so it was cut off, and
+ * focusing its first item made the browser scroll those clipped containers to
+ * reveal it, shifting the whole ribbon or window content (reported in 7.0.0).
  *
  * Keyboard: Enter/Space/Down open it and focus the first item, Up/Down move,
  * Enter picks, Escape closes and returns focus to the button — the WAI-ARIA
@@ -171,24 +203,67 @@ export function MenuButton(props: {
   align?: "left" | "right";
 }): JSX.Element {
   const [open, setOpen] = useState(false);
+  const [place, setPlace] = useState<{ left: number; top: number; maxHeight: number } | null>(null);
   const root = useRef<HTMLDivElement>(null);
   const button = useRef<HTMLButtonElement>(null);
+  const menu = useRef<HTMLDivElement>(null);
   const menuId = useId();
+  const align = props.align ?? "left";
+
+  useLayoutEffect(() => {
+    if (!open) {
+      setPlace(null);
+      return;
+    }
+    const anchor = button.current?.getBoundingClientRect();
+    const box = menu.current;
+    if (!anchor || !box) return;
+    setPlace(
+      placeMenu(
+        anchor,
+        { width: box.offsetWidth, height: box.scrollHeight },
+        { width: window.innerWidth, height: window.innerHeight },
+        align,
+      ),
+    );
+  }, [open, align]);
 
   useEffect(() => {
     if (!open) return;
+    const inside = (target: EventTarget | null): boolean =>
+      target instanceof Node &&
+      ((root.current?.contains(target) ?? false) || (menu.current?.contains(target) ?? false));
     const onDown = (e: PointerEvent): void => {
-      if (root.current && !root.current.contains(e.target as Node)) setOpen(false);
+      if (!inside(e.target)) setOpen(false);
     };
+    // A fixed menu does not follow its button, so anything that moves the
+    // button closes it instead of leaving it floating somewhere else.
+    const onScroll = (e: Event): void => {
+      if (!inside(e.target)) setOpen(false);
+    };
+    const onResize = (): void => setOpen(false);
     window.addEventListener("pointerdown", onDown);
-    const first = root.current?.querySelector<HTMLButtonElement>('[role="menuitem"]:not([disabled]), [role="menuitemcheckbox"]:not([disabled])');
-    first?.focus();
-    return () => window.removeEventListener("pointerdown", onDown);
+    window.addEventListener("scroll", onScroll, true);
+    window.addEventListener("resize", onResize);
+    return () => {
+      window.removeEventListener("pointerdown", onDown);
+      window.removeEventListener("scroll", onScroll, true);
+      window.removeEventListener("resize", onResize);
+    };
   }, [open]);
+
+  useEffect(() => {
+    if (!open || place === null) return;
+    const first = menu.current?.querySelector<HTMLButtonElement>(
+      '[role="menuitem"]:not([disabled]), [role="menuitemcheckbox"]:not([disabled])',
+    );
+    // preventScroll: focusing must never scroll a container to show the menu.
+    first?.focus({ preventScroll: true });
+  }, [open, place]);
 
   function move(e: React.KeyboardEvent): void {
     const items = [
-      ...(root.current?.querySelectorAll<HTMLButtonElement>(
+      ...(menu.current?.querySelectorAll<HTMLButtonElement>(
         '[role="menuitem"]:not([disabled]), [role="menuitemcheckbox"]:not([disabled])',
       ) ?? []),
     ];
@@ -196,7 +271,7 @@ export function MenuButton(props: {
     if (e.key === "ArrowDown" || e.key === "ArrowUp") {
       e.preventDefault();
       const step = e.key === "ArrowDown" ? 1 : -1;
-      items[(at + step + items.length) % items.length]?.focus();
+      items[(at + step + items.length) % items.length]?.focus({ preventScroll: true });
     } else if (e.key === "Escape") {
       e.preventDefault();
       e.stopPropagation();
@@ -227,47 +302,54 @@ export function MenuButton(props: {
       >
         {props.children}
       </button>
-      {open && (
-        <div
-          id={menuId}
-          role="menu"
-          aria-label={props.label}
-          className={[
-            "absolute z-50 top-full mt-1 min-w-[200px] py-1 rounded-[8px]",
-            "bg-[var(--izul-surface)] border border-[var(--izul-border)] shadow-[0_6px_20px_rgba(0,0,0,0.14)]",
-            props.align === "right" ? "right-0" : "left-0",
-          ].join(" ")}
-        >
-          {props.items.map((item) => (
-            <div key={item.label}>
-              {item.separator === true && <div className="my-1 h-px bg-[var(--izul-border)]" />}
-              <button
-                type="button"
-                role={item.checked === undefined ? "menuitem" : "menuitemcheckbox"}
-                aria-checked={item.checked}
-                disabled={item.disabled ?? false}
-                onClick={() => {
-                  setOpen(false);
-                  item.onSelect();
-                }}
-                className="w-full h-8 px-3 flex items-center gap-2.5 text-left text-[13px] hover:bg-[var(--izul-surface-raised)] focus:bg-[var(--izul-surface-raised)] focus:outline-none disabled:opacity-40"
-              >
-                <span className="w-5 grid place-items-center">
-                  {item.icon ? (
-                    <Icon name={item.icon} size={20} tone={item.tone ?? "neutral"} />
-                  ) : item.checked === true ? (
-                    "✓"
-                  ) : null}
-                </span>
-                <span className="flex-1">{item.label}</span>
-                {item.shortcut && (
-                  <span className="text-[12px] text-[var(--izul-text-dim)]">{item.shortcut}</span>
-                )}
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div
+            ref={menu}
+            id={menuId}
+            role="menu"
+            aria-label={props.label}
+            style={
+              place
+                ? { left: place.left, top: place.top, maxHeight: place.maxHeight }
+                : { left: 0, top: 0, visibility: "hidden" }
+            }
+            className={[
+              "fixed z-[1000] min-w-[200px] py-1 rounded-[8px] overflow-y-auto",
+              "bg-[var(--izul-surface)] border border-[var(--izul-border)] shadow-[0_6px_20px_rgba(0,0,0,0.14)]",
+            ].join(" ")}
+          >
+            {props.items.map((item) => (
+              <div key={item.label}>
+                {item.separator === true && <div className="my-1 h-px bg-[var(--izul-border)]" />}
+                <button
+                  type="button"
+                  role={item.checked === undefined ? "menuitem" : "menuitemcheckbox"}
+                  aria-checked={item.checked}
+                  disabled={item.disabled ?? false}
+                  onClick={() => {
+                    setOpen(false);
+                    item.onSelect();
+                  }}
+                  className="w-full h-8 px-3 flex items-center gap-2.5 text-left text-[13px] hover:bg-[var(--izul-surface-raised)] focus:bg-[var(--izul-surface-raised)] focus:outline-none disabled:opacity-40"
+                >
+                  <span className="w-5 grid place-items-center">
+                    {item.icon ? (
+                      <Icon name={item.icon} size={20} tone={item.tone ?? "neutral"} />
+                    ) : item.checked === true ? (
+                      "✓"
+                    ) : null}
+                  </span>
+                  <span className="flex-1">{item.label}</span>
+                  {item.shortcut && (
+                    <span className="text-[12px] text-[var(--izul-text-dim)]">{item.shortcut}</span>
+                  )}
+                </button>
+              </div>
+            ))}
+          </div>,
+          document.body,
+        )}
     </div>
   );
 }

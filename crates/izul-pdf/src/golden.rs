@@ -192,6 +192,7 @@ pub(crate) fn sample(kind: AnnotKind) -> AnnotObject {
                     PdfRectF::new(30.0, 40.0, 140.0, 60.0),
                 ],
                 color: Rgba::from_rgb8(255, 210, 0, 0.6),
+                thickness: 1.0,
             }
         }
         AnnotKind::Redact => AnnotPayload::Markup {
@@ -200,6 +201,7 @@ pub(crate) fn sample(kind: AnnotKind) -> AnnotObject {
                 PdfRectF::new(30.0, 40.0, 140.0, 60.0),
             ],
             color: Rgba::BLACK,
+            thickness: 1.0,
         },
         AnnotKind::FreeText => AnnotPayload::FreeText {
             text: "Paritas diuji per jenis anotasi".into(),

@@ -1,0 +1,44 @@
+Adu OCR — mesin aplikasi (izul: PP-OCRv6 lewat ONNX Runtime, pengolahan gambar ditulis di Rust)
+lawan RapidOCR Python dengan model yang sama (rujukan) dan Tesseract
+
+RapidOCR 3.9.2 (PP-OCRv6 small), 1.4.4 (PP-OCRv4); tesseract 5.3.4
+Sebelum 7.0.0 aplikasi memakai ocrs 0.13.1: CER gabungan 11,01 %, foto_hp 42,48 %, kata utuh 91,3 %,
+0,5 dtk/halaman (diukur dengan alat ini pada set yang sama, 2 Oktober 2026).
+Semua halaman buatan (sintetis): 5 set x 4 halaman, teks karangan sendiri. Bukan pindaian nyata.
+Mesin: 4 inti. Angka di belakang nama = dpi render. ms = rata-rata per halaman.
+izul = aplikasi pada 150 dpi (render + baca + tulis lapisan teks), teksnya dibaca kembali dengan poppler / MuPDF;
+lainnya = keluaran mesinnya sendiri, baca saja, tanpa render. Di foto_hp poppler mencampur urutan baris halaman miring:
+CER-nya naik tanpa ada kata yang hilang (lihat 'kata utuh').
+
+CER (%) per set — salah per karakter, makin kecil makin baik:
+           izul/poppler    izul/MuPDF      PPv6 150      PPv6 300      Tess 300
+bersih             0.00          0.00          0.04          1.80          0.08
+foto_hp           36.30          0.04          2.01          1.75         80.95
+pudar              0.42          0.00          2.05          0.04          0.29
+kecil              0.00          0.00          0.00          2.26          0.13
+angka              0.22          0.22          5.31          9.13          0.39
+
+Kata utuh ditemukan (%) per set — makin besar makin baik, tak peduli urutan:
+           izul/poppler    izul/MuPDF      PPv6 150      PPv6 300      Tess 300
+bersih            100.0         100.0          99.4          97.0          99.4
+foto_hp            99.4          99.4          97.2          98.1          16.6
+pudar             100.0         100.0          97.5         100.0          99.4
+kecil             100.0         100.0         100.0          94.5          99.2
+angka              97.0          97.0          86.7          83.1          98.5
+
+Seluruh set digabung:
+           izul/poppler    izul/MuPDF      PPv6 150      PPv6 300      Tess 300
+CER %              7.44          0.05          1.85          2.95         16.50
+CER tanpa spasi          7.72          0.00          1.80          2.99         16.48
+WER %              10.8           0.7           3.7           5.3          18.1
+kata utuh %          99.3          99.3          96.3          94.7          82.4
+hal. terburuk          67.8           0.5          12.4          18.3         100.0
+ms/halaman          1117          1103          1348          5279          1081
+
+Cuplikan halaman 1 set foto_hp (150 karakter pertama):
+  [BENAR] Laporan kegiatan bulanan ini disusun untuk memberikan gambaran tentang pelaksanaan program kerja selama bulan September. Rapat koordinasi diadakan pad
+  [izul/poppler] Laporan kegiatan bulanan ini disusun untuk memberikan tentang pelaksanaan gambaran program kerja selama bulan Rapat koordinasi September. diadakan pad
+  [izul/MuPDF] Laporan kegiatan bulanan ini disusun untuk memberikan gambaran tentang pelaksanaan program kerja selama bulan September. Rapat koordinasi diadakan pad
+  [PPv6 150] Laporan kegiatan bulanan ini disusun untuk memberikan gambaran tentang pelaksanaan program kerja selama bulan September. Rapat koordinasì diadakan pad
+  [PPv6 300] Laporan kegiatan bulanan ini disusun untuk memberikan gambaran tentang pelaksanaan program kerja selama bulan September. Rapat koordinasi diadakan pad
+  [Tess 300] memberikan gambaran bulan September. Pukul 09.30 gi ruang pa kendala yang ditemui antara lain keterlambatan man barang dan perubahan eiié Ne

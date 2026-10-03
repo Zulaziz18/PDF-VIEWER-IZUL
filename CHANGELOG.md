@@ -3,6 +3,176 @@
 Semua perubahan penting per fase. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/);
 versi mengikuti `version.json` sebagai sumber tunggal.
 
+## [7.1.0] — Ke Word, dan perbaikan dari uji pemakaian
+
+Dirilis langsung sesudah 7.0.1 yang belum sempat dirilis, jadi tombol
+*Periksa pembaruan* juga pertama kali hadir di versi ini.
+
+### Ditambahkan
+
+- **Ke Word** di pita Konversi: PDF menjadi `.docx` yang teksnya bisa
+  disunting. Crate baru `izul-docx` menyusun huruf menjadi paragraf dengan
+  judul, ukuran, tebal/miring, warna, rata, inden, spasi, dan tab tabel di
+  posisi kolomnya; gambar ikut, termasuk gambar sisipan pengguna. Diperiksa
+  oleh python-docx dan LibreOffice Writer (`tools/docx-proof`).
+- **Zoom cubit touchpad** di Windows.
+- **Tebal stabilo** (20–100 %) di panel Properti.
+
+### Diperbaiki
+
+- **Gambar sisipan tidak tampil, dan halaman cetak kosong**, di aplikasi
+  terpasang: aturan keamanan (CSP) `img-src` tidak mengizinkan alamat tempat
+  gambar dilayani. Dev server dan harness tidak menerapkan CSP, jadi hanya
+  build terpasang yang kena.
+- **Menu tarik-turun** (zoom, Tampilan, Jendela, Bentuk) terpotong di dalam
+  pita, dan membukanya menggeser seluruh tampilan. Kini melayang di atas
+  halaman dan membuka ke atas bila ruang di bawah tidak cukup.
+- **Stabilo bertumpuk**: satu baris bisa tersusun dari kotak yang dobel dan
+  setinggi baris lapisan teks. Kini satu kotak per baris, tanpa tumpang tindih.
+
+### Diubah
+
+- **Catatan tempel** menjadi ikon kertas notepad kecil berukuran tetap.
+  Isinya ditulis di kertas notepad bergaris yang muncul di sampingnya.
+- `PROTOCOL_VERSION` 15 → 16 (`Request::WorkLayout`).
+
+## [7.0.1] — Periksa pembaruan
+
+### Ditambahkan
+
+- **Periksa pembaruan** di kotak Tentang. Aplikasi menghubungi GitHub Releases
+  **hanya saat tombol itu ditekan**: tidak ada pemeriksaan saat mulai atau di
+  latar. Kalau ada versi baru, tersedia tombol *Unduh dan pasang*: installer
+  diunduh, tanda tangannya diperiksa terhadap kunci publik di aplikasi, lalu
+  dipasang (aplikasi menutup sendiri). Dokumen yang belum disimpan ditanyakan
+  lebih dulu. Salinan portabel diarahkan mengunduh ZIP baru.
+- CI menandatangani installer (secret `TAURI_SIGNING_PRIVATE_KEY`) dan
+  menerbitkan `latest.json` ke Release.
+
+### Diubah
+
+- SPEC Bagian 2 diberi satu pengecualian bertanggal untuk tombol itu, atas
+  keputusan pengguna.
+- `tauri-plugin-updater` dipatok 2.10.1: versi yang lebih baru menuntut Tauri
+  2.12 dan akan mengganti wry di bawah perbaikan protokol Fase 1.
+
+Pengguna 7.0.0 perlu memasang 7.0.1 sekali secara manual; sesudahnya
+pembaruan bisa lewat tombol.
+
+## [7.0.0] — Rilis
+
+Rilis penuh, atas keputusan pengguna (3 Oktober 2026). Checklist Windows di
+TESTING.md "Fase 8" **belum** dijalankan di laptop sungguhan, jadi cacat yang
+hanya muncul di Windows akan diperbaiki di 7.0.x.
+
+### Diubah
+
+- **Mesin OCR diganti: `ocrs` → PP-OCRv6 (PaddleOCR).** Diadu dulu di lima
+  jenis pindaian buatan (`tools/ocr-bakeoff`, `bench/results/ocr-bakeoff.txt`):
+  salah huruf gabungan **11,01 % → 0,05 %** (dibaca MuPDF dari berkas hasil),
+  foto HP miring **42,48 % → 0,04 %**, kata utuh yang bisa dicari
+  **91,3 % → 99,3 %**. Sekitar 1,1 detik per halaman (sebelumnya 0,5).
+  Model dijalankan ONNX Runtime yang sudah dibawa untuk Hapus Latar; pengolahan
+  gambar sebelum dan sesudahnya (deteksi baris, potong, CTC, kotak kata) ditulis
+  ulang di Rust (`crates/izul-ocr/src/paddle.rs`) mengikuti kode RapidOCR 3.9.2.
+  Huruf beraksen kini terbaca.
+- **Model OCR kini ikut terpasang** di installer dan ZIP portabel (`ocr/`):
+  Apache-2.0 (PaddleOCR, versi ONNX dari RapidOCR), atribusi di
+  `licenses/NOTICE.txt`. `--self-test` kini **gagal** bila modelnya tidak ada.
+  `vendor/ocrs/` diganti `vendor/ocr/fetch.sh` (terpatok SHA-256).
+- `PROTOCOL_VERSION` 14 → 15: `Request::WorkOcr` membawa path ONNX Runtime.
+- SPEC tabel teknologi, baris OCR, diperbarui (bertanggal, dengan alasan).
+- Versi 7.0.0, `wix.version` 7.0.0.1000, kanal `stable`.
+
+### Diperbaiki (ditemukan saat mengganti mesin OCR)
+
+- Kotak kata lapisan teks yang **bertemu tepat di spasi** atau **setinggi baris
+  yang sudah diberi bantalan deteksi** membuat poppler menyambung kata
+  ("bulananinidisusun"). Kini kata berhenti ¼ huruf sebelum spasi dan setinggi
+  hurufnya (0,65 dari kotak deteksi). Dua test regresi, keduanya terbukti gagal
+  pada aturan lama.
+
+## [7.0.0-beta.1] — Fase 8: Penghalusan & Rilis
+
+Fase terakhir: yang membuat aplikasi enak dipakai sehari-hari (perintah,
+pintasan, presentasi, tema, cetak), yang membuatnya bisa dipakai semua orang
+(aksesibilitas terukur), yang membuatnya bisa dipasang (installer yang
+memeriksa dirinya sendiri), dan audit SPEC 11 yang menemukan fitur tertulis
+tapi belum ada. Versi **beta**, bukan rilis: sebagian hal hanya bisa dibuktikan
+di Windows sungguhan (daftar di TESTING.md "Hasil Fase 8").
+
+### Ditambahkan
+
+- **Palet perintah** (Ctrl+Shift+P) dan **daftar pintasan** (F1) dari satu
+  registri perintah; **pintasan bisa diubah** (disimpan di SQLite, hanya yang
+  berbeda dari bawaan; tombol yang direbut disebutkan asalnya).
+- **Cetak** (Ctrl+P) — ternyata belum pernah dibuat: rentang, dengan/tanpa
+  anotasi, pas kertas atau ukuran asli, 200/300 dpi, lewat jendela cetak
+  WebView2.
+- **Mode presentasi** (F5, satu halaman di-fit per halaman, tombol clicker)
+  dan **mode fokus** (F11).
+- **Tema** terang/gelap/ikuti Windows, dan **invert halaman cerdas**: teks
+  jadi terang, gambar dan foto tidak ikut terbalik (di pekerja, per piksel).
+- **Aksesibilitas terukur**: audit axe-core di harness (`--axe=true`),
+  39 → 0 pelanggaran di 64 tangkapan; mode kontras tinggi Windows
+  (`--forced=true`) diperiksa dan diperbaiki (lihat Diperbaiki). Tab bisa
+  dipindah dengan panah dan ditutup dengan Delete; lapisan teks per halaman
+  bernama dan berurutan untuk pembaca layar.
+- **Ikon aplikasi** dari tanda yang sama dengan bilah judul (`npm run icons:app`).
+- **About**: tombol "Buka folder log" dan daftar lisensi lengkap.
+- **Installer NSIS, MSI, dan ZIP portabel** dibangun CI (`npm run package`),
+  masing-masing **menguji dirinya sendiri** lewat `pdf-studio-izul --self-test`
+  (kolam pekerja + PDFium + ONNX Runtime + buka PDF) di tata letak yang
+  sungguh terpasang. Salinan portabel dikenali dari `portable.txt` di samping
+  exe dan menyimpan datanya di foldernya sendiri.
+- Dari audit SPEC 11: **gaya teks** (tebal, miring, perataan termasuk rata
+  kanan-kiri, spasi baris), **pangkas gambar**, **tempel gambar/tangkapan
+  layar** (Ctrl+V), **ratakan & distribusikan** seleksi jamak, **ekspor daftar
+  anotasi** (CSV untuk Excel), **bookmark pengguna** (Ctrl+B, tidak ditulis ke
+  PDF), **panel Lampiran** (simpan berkas yang tertanam), **seleksi persegi**
+  (Alt+drag, menyalin satu kolom tabel), dan **jump list taskbar** (berkas
+  terbaru lewat `SHAddToRecentDocs`).
+- `bench/src/search_bench.rs`: dua target pencarian SPEC 13 yang belum pernah
+  diukur. Keduanya lulus (lihat Angka).
+- IPC: `Attachments`, `AttachmentData`, `AttachmentsReady` di ujung enum;
+  `PROTOCOL_VERSION` 13 → 14 (12 → 13 di awal fase untuk invert).
+
+### Diperbaiki
+
+- **Installer yang tidak bisa jalan.** `bundle.resources` tidak pernah memuat
+  pekerja, ONNX Runtime, maupun model; satu-satunya entri (pdfium.dll) berbentuk
+  daftar, yang ditaruh Tauri di `_up_/vendor/...`, bukan di samping exe.
+  Installer yang dibangun sebelum fase ini akan terpasang tanpa PDFium. Kini
+  peta eksplisit di `tauri.bundle.json`, dipakai hanya saat mengemas.
+- **Mode kontras tinggi Windows**: lapisan teks yang transparan jadi terlihat
+  (setiap baris halaman tergambar dua kali), contoh warna jadi kotak kosong,
+  dan tab/alat terpilih tidak bisa dibedakan.
+- **Bench `viewport` mati sejak Fase 1** (tidak membaca salam `Hello`
+  pekerja) tanpa ada yang tahu: CI hanya membangunnya. Kini CI juga
+  menjalankan ketiga bench sebentar.
+- Kontras: aksen terang 3,99 → 5,0:1, merah bahaya di mode gelap 2,99 → 5,8:1.
+- Rata kanan-kiri digambar rata kiri; gambar baru selalu 4:3; tombol Delete di
+  tab ikut menghapus anotasi terpilih.
+
+### Angka (SPEC 13, `bench/results/phase8-linux.txt`)
+
+Halaman pertama PDF 52 MB / 500 hal.: 16 ms (target 400). Zoom tajam p95
+24,6 ms (150). Pencarian dokumen p95 ≤ 65 ms (200), pustaka 20 × 500 hal.
+p95 ≤ 71 ms (100). 10 dokumen 448 MB (1,5 GB). 50 dokumen 139 ms buka+render,
+0,94 MB per dokumen. Cold start jendela, pindah tab, dan "nol frame drop" tidak
+bisa diukur tanpa layar — dicatat sebagai belum terbukti, bukan lulus.
+
+### Sengaja tidak dikerjakan
+
+- **Panel Layer (OCG)**: header PDFium tidak punya satu pun fungsi untuk
+  membaca atau mengubah optional content, jadi tidak bisa dibuat lewat PDFium.
+- **Menanam font** ke PDF (dan teks CJK/RTL): butuh subsetting TrueType — kotak
+  teks tetap memakai font standard-14, dan huruf yang tidak dimiliki fontnya
+  ditolak dengan pesan (bukan kotak kosong).
+- **Kompresi berkas dengan pratinjau kualitas**: PDFium tidak bisa mengode ulang
+  gambar; butuh penyandi JPEG sendiri per objek gambar.
+- Model OCR tetap tidak dibundel (lisensi belum jelas, keputusan pengguna).
+
 ## [7.0.0-alpha.7] — Fase 7: Kecerdasan
 
 Empat kemampuan baru, semuanya berjalan di komputer sendiri tanpa jaringan:

@@ -19,16 +19,26 @@ use crate::saving::{OcrJob, Rewrite, SaveReport};
 
 type CmdResult<T> = Result<T, String>;
 
-/// The folder the models ship in: `ocrs` beside the executable, where
+/// The folder the models ship in (`ocr` beside the executable, where
 /// `src-tauri/build.rs` copies them for a dev build and the installer puts
-/// them for a release.
-pub fn models_dir() -> Option<PathBuf> {
+/// them for a release) and the ONNX Runtime library beside it that runs
+/// them — the same one background removal uses.
+pub fn models_dir() -> Option<(PathBuf, PathBuf)> {
     let exe = std::env::current_exe().ok()?;
-    let dir = exe.parent()?.join("ocrs");
-    let present = ["text-detection.rten", "text-recognition.rten"]
-        .iter()
-        .all(|n| dir.join(n).is_file());
-    present.then_some(dir)
+    let here = exe.parent()?;
+    let dir = here.join("ocr");
+    let runtime = here.join(if cfg!(windows) {
+        "onnxruntime.dll"
+    } else {
+        "libonnxruntime.so"
+    });
+    let present = [
+        izul_ipc::OCR_DETECTION_MODEL,
+        izul_ipc::OCR_RECOGNITION_MODEL,
+    ]
+    .iter()
+    .all(|n| dir.join(n).is_file());
+    (present && runtime.is_file()).then_some((dir, runtime))
 }
 
 /// One run in flight: how far it is, and the flag that stops it.
@@ -69,8 +79,8 @@ pub async fn ocr_apply(
     pages: Option<Vec<u32>>,
     force: bool,
 ) -> CmdResult<SaveReport> {
-    let models = models_dir().ok_or_else(|| {
-        "Model OCR belum terpasang. Jalankan vendor/ocrs/fetch.sh lalu bangun ulang aplikasi."
+    let (models, runtime) = models_dir().ok_or_else(|| {
+        "Model OCR belum terpasang. Jalankan vendor/ocr/fetch.sh dan vendor/onnx/fetch.sh lalu bangun ulang aplikasi."
             .to_string()
     })?;
     let page_count = {
@@ -102,6 +112,7 @@ pub async fn ocr_apply(
         pages,
         force,
         models,
+        runtime,
         progress: Some(Arc::new(move |done, total| {
             seen.done.store(done, Ordering::Relaxed);
             seen.total.store(total, Ordering::Relaxed);
@@ -112,6 +123,7 @@ pub async fn ocr_apply(
         redaction: None,
         ocr: Some(job),
         text: None,
+        bare: false,
     };
     let result = crate::save_commands::save_with(&state, doc, target, Some(&rewrite)).await;
     state.ocr.runs.lock().remove(&doc);

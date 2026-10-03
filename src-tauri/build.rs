@@ -59,16 +59,16 @@ fn copy_vendored_onnx() {
     }
 }
 
-/// Copies the OCR models (`vendor/ocrs/*.rten`, Phase 7) into an `ocrs`
-/// folder next to the binary, for the same reason as PDFium: the application
-/// looks for them beside itself, dev build and installer alike. Missing
-/// models are not a build error — OCR then says it has no models.
+/// Copies the OCR models (`vendor/ocr/*.onnx`, PP-OCRv6 since 7.0.0) into
+/// an `ocr` folder next to the binary, for the same reason as PDFium: the
+/// application looks for them beside itself, dev build and installer alike.
+/// Missing models are not a build error — OCR then says it has no models.
 fn copy_vendored_ocr_models() {
     let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let Some(root) = manifest_dir.parent() else {
         return;
     };
-    let src = root.join("vendor/ocrs");
+    let src = root.join("vendor/ocr");
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap_or_default());
     let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
     let Some(target_dir) = out_dir
@@ -77,13 +77,13 @@ fn copy_vendored_ocr_models() {
     else {
         return;
     };
-    let dest = target_dir.join("ocrs");
-    for name in ["text-detection.rten", "text-recognition.rten"] {
+    let dest = target_dir.join("ocr");
+    for name in ["PP-OCRv6_det_small.onnx", "PP-OCRv6_rec_small.onnx"] {
         let from = src.join(name);
         println!("cargo:rerun-if-changed={}", from.display());
         if !from.exists() {
             println!(
-                "cargo:warning=model OCR {name} belum diambil. Jalankan `vendor/ocrs/fetch.sh` \
+                "cargo:warning=model OCR {name} belum diambil. Jalankan `vendor/ocr/fetch.sh` \
                  supaya fitur Kenali Teks (OCR) bisa dipakai."
             );
             continue;
@@ -101,8 +101,9 @@ fn copy_vendored_ocr_models() {
 /// PDFium relative to the running executable's own directory, on the
 /// assumption that it ships there (SPEC 4: everything bundled, nothing
 /// fetched at run time). That assumption only held for the packaged installer
-/// — `tauri.conf.json`'s `bundle.resources` copies the DLL into the NSIS/MSI
-/// output — but `cargo build`/`cargo run` never went through bundling, so a
+/// — `tauri.bundle.json`'s `bundle.resources` copies the DLL into the NSIS/MSI
+/// output (Phase 8; checked by the packaging job's `--self-test`) — but
+/// `cargo build`/`cargo run` never went through bundling, so a
 /// plain dev build left `target/debug/` without it and the worker failed to
 /// load PDFium at startup. This step closes that gap for every build, dev and
 /// release alike, rather than requiring a manual copy nobody remembers to run.

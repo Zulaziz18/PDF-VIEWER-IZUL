@@ -124,6 +124,23 @@ mod tests {
         assert_eq!(decode(&value).unwrap(), obj);
     }
 
+    /// 7.1.0 added `thickness` to text markup. A file saved by 7.0 has no
+    /// such key and must still open as an editable, full-height highlight.
+    #[test]
+    fn a_highlight_from_before_thickness_reads_as_full() {
+        let mut obj = text("x");
+        obj.kind = AnnotKind::Highlight;
+        obj.payload = AnnotPayload::Markup {
+            quads: vec![PdfRectF::new(10.0, 10.0, 90.0, 22.0)],
+            color: Rgba::BLACK,
+            thickness: 1.0,
+        };
+        let value = encode(&obj);
+        let old = value.replacen(",\"thickness\":1.0", "", 1);
+        assert_ne!(old, value, "kunci thickness memang ada untuk dibuang");
+        assert_eq!(decode(&old).unwrap(), obj);
+    }
+
     #[test]
     fn a_newer_format_is_refused_by_name() {
         let value = encode(&text("x")).replacen("\"izul\":1", "\"izul\":99", 1);

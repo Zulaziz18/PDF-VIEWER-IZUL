@@ -112,6 +112,18 @@ fn migrate(conn: &Connection, which: Which) -> Result<()> {
     Ok(())
 }
 
+/// The file whose presence beside the executable makes a copy portable
+/// (Phase 8): the portable ZIP ships with it, and an environment variable is
+/// not something a user unpacking a ZIP can be asked to set.
+pub const PORTABLE_MARKER: &str = "portable.txt";
+
+/// Whether the copy in `exe_dir` runs portable: the marker is there, or
+/// `IZUL_PORTABLE` is set (for development).
+pub fn is_portable(exe_dir: Option<&Path>) -> bool {
+    std::env::var_os("IZUL_PORTABLE").is_some()
+        || exe_dir.is_some_and(|d| d.join(PORTABLE_MARKER).is_file())
+}
+
 /// Where the databases live.
 ///
 /// A portable build keeps them beside the executable so the whole application
@@ -148,6 +160,18 @@ fn dirs_app_data() -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_marker_beside_the_executable_makes_it_portable() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        // Checked only when the variable is not set by whoever runs the tests.
+        if std::env::var_os("IZUL_PORTABLE").is_none() {
+            assert!(!is_portable(Some(dir.path())), "tanpa penanda: terpasang");
+            assert!(!is_portable(None));
+        }
+        std::fs::write(dir.path().join(PORTABLE_MARKER), "").expect("marker");
+        assert!(is_portable(Some(dir.path())), "dengan penanda: portabel");
+    }
 
     #[test]
     fn app_schema_creates_every_table_the_spec_names() {

@@ -52,11 +52,17 @@ struct Req {
     /// What `formfill` puts into the form.
     #[serde(default)]
     values: Vec<(String, izul_model::FormValue)>,
+    /// `tile`: dark mode's inversion.
+    #[serde(default)]
+    invert: bool,
     /// `textedit`: the area (display space) and what it becomes.
     #[serde(default)]
     rect: Option<PdfRectF>,
     #[serde(default)]
     text: String,
+    /// `replace`: objects edited in the properties panel.
+    #[serde(default)]
+    objects: Vec<AnnotObject>,
 }
 
 /// Phase 6's sample: on "Data Pegawai", the runs of digits and dashes long
@@ -99,6 +105,7 @@ fn redaction_marks(runs: &[PdfRectF], page: u32) -> Vec<AnnotObject> {
                 AnnotPayload::Markup {
                     quads: vec![*r],
                     color: Rgba::BLACK,
+                    thickness: 1.0,
                 },
             );
             obj.z = 900 + i as i32;
@@ -163,6 +170,7 @@ fn sample_annotations(page: u32, height: f32) -> Vec<AnnotObject> {
         AnnotPayload::Markup {
             quads: vec![line(0.0), PdfRectF::new(56.0, top - 19.0, 300.0, top - 4.0)],
             color: rgba(0xffd43b, 1.0),
+            thickness: 1.0,
         },
     );
     push(
@@ -171,6 +179,7 @@ fn sample_annotations(page: u32, height: f32) -> Vec<AnnotObject> {
         AnnotPayload::Markup {
             quads: vec![PdfRectF::new(56.0, top - 49.0, 420.0, top - 34.0)],
             color: rgba(0x1c7ed6, 1.0),
+            thickness: 1.0,
         },
     );
     push(
@@ -266,6 +275,9 @@ fn sample_annotations(page: u32, height: f32) -> Vec<AnnotObject> {
 struct Backend {
     engine: &'static Engine,
     docs: HashMap<String, Document>,
+    /// Sample objects edited in a scene, by path and id; dropped by `forget`
+    /// so one scene's edit never shows up in the next.
+    edited: HashMap<String, HashMap<u64, AnnotObject>>,
     fonts: StandardFonts,
     _fonts_doc: Document,
 }
@@ -339,6 +351,11 @@ impl Backend {
                         .height;
                     sample_annotations(req.page, height)
                 };
+                let edited = self.edited.get(&req.path);
+                let objects: Vec<AnnotObject> = objects
+                    .into_iter()
+                    .map(|o| edited.and_then(|e| e.get(&o.id.0)).cloned().unwrap_or(o))
+                    .collect();
                 let lists: Vec<Value> = objects
                     .iter()
                     .filter_map(|o| {
@@ -368,8 +385,18 @@ impl Backend {
                     Vec::new(),
                 ))
             }
+            "replace" => {
+                let edited = self.edited.entry(req.path.clone()).or_default();
+                for obj in &req.objects {
+                    let mut obj = obj.clone();
+                    obj.recompute_rect();
+                    edited.insert(obj.id.0, obj);
+                }
+                Ok((json!({}), Vec::new()))
+            }
             "forget" => {
                 self.docs.remove(&req.path);
+                self.edited.remove(&req.path);
                 Ok((json!({}), Vec::new()))
             }
             "forms" => {
@@ -431,6 +458,7 @@ impl Backend {
                         draw_annotations: true,
                         quality: Quality::Fast,
                         limit_image_cache: false,
+                        invert: req.invert,
                     }
                 } else {
                     let ppp = req.scale as f32 / 1000.0;
@@ -446,6 +474,7 @@ impl Backend {
                         draw_annotations: true,
                         quality: Quality::Sharp,
                         limit_image_cache: false,
+                        invert: req.invert,
                     }
                 };
                 let mut buf = vec![0u8; (request.dest_w * request.dest_h * 4) as usize];
@@ -492,6 +521,7 @@ fn main() {
     let mut backend = Backend {
         engine,
         docs: HashMap::new(),
+        edited: HashMap::new(),
         fonts,
         _fonts_doc: fonts_doc,
     };

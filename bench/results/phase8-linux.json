@@ -1,0 +1,658 @@
+{
+  "host": {
+    "os": "linux",
+    "arch": "x86_64",
+    "cpu_model": "Intel(R) Xeon(R) Processor @ 2.80GHz",
+    "logical_cores": 4,
+    "total_ram_mb": 16095,
+    "profile": "release"
+  },
+  "results": [
+    {
+      "section": "startup",
+      "fixture": "pekerja",
+      "unit": "ms",
+      "detail": "spawn + kanal + PDFium + ping pertama",
+      "stats": {
+        "n": 5,
+        "min_ms": 2.904008,
+        "p50_ms": 2.981399,
+        "p95_ms": 3.280918,
+        "p99_ms": 3.280918,
+        "max_ms": 3.280918,
+        "mean_ms": 3.0409791999999998
+      },
+      "target_ms": 1000.0,
+      "verdict": "LULUS vs 1000ms"
+    },
+    {
+      "section": "first-page",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/text-500p.pdf",
+      "unit": "ms",
+      "detail": "buka dokumen (termasuk ukuran semua halaman)",
+      "stats": {
+        "n": 5,
+        "min_ms": 4.579459,
+        "p50_ms": 4.722073,
+        "p95_ms": 5.30366,
+        "p99_ms": 5.30366,
+        "max_ms": 5.30366,
+        "mean_ms": 4.8859386
+      },
+      "target_ms": null,
+      "verdict": null
+    },
+    {
+      "section": "first-page",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/text-500p.pdf",
+      "unit": "ms",
+      "detail": "buka -> pratinjau halaman 1",
+      "stats": {
+        "n": 5,
+        "min_ms": 8.644782,
+        "p50_ms": 8.936084999999999,
+        "p95_ms": 10.999863000000001,
+        "p99_ms": 10.999863000000001,
+        "max_ms": 10.999863000000001,
+        "mean_ms": 9.3566264
+      },
+      "target_ms": 400.0,
+      "verdict": "LULUS vs 400ms"
+    },
+    {
+      "section": "first-page",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/text-500p.pdf",
+      "unit": "ms",
+      "detail": "buka -> layar pertama tajam",
+      "stats": {
+        "n": 5,
+        "min_ms": 23.486314999999998,
+        "p50_ms": 24.660375000000002,
+        "p95_ms": 27.272119,
+        "p99_ms": 27.272119,
+        "max_ms": 27.272119,
+        "mean_ms": 25.1220668
+      },
+      "target_ms": 400.0,
+      "verdict": "LULUS vs 400ms"
+    },
+    {
+      "section": "fill",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/text-500p.pdf",
+      "unit": "ms",
+      "detail": "layar penuh, cache dingin",
+      "stats": {
+        "n": 8,
+        "min_ms": 20.275536,
+        "p50_ms": 25.779300000000003,
+        "p95_ms": 31.054075,
+        "p99_ms": 31.054075,
+        "max_ms": 31.054075,
+        "mean_ms": 26.406678125000003
+      },
+      "target_ms": null,
+      "verdict": null
+    },
+    {
+      "section": "fill",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/text-500p.pdf",
+      "unit": "ms",
+      "detail": "layar penuh, cache panas",
+      "stats": {
+        "n": 8,
+        "min_ms": 1.190623,
+        "p50_ms": 1.253452,
+        "p95_ms": 2.276783,
+        "p99_ms": 2.276783,
+        "max_ms": 2.276783,
+        "mean_ms": 1.6267414999999998
+      },
+      "target_ms": 16.0,
+      "verdict": "LULUS vs 16ms"
+    },
+    {
+      "section": "zoom",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/text-500p.pdf",
+      "unit": "ms",
+      "detail": "zoom -> ada yang bisa digambar",
+      "stats": {
+        "n": 8,
+        "min_ms": 0.00017800000000000002,
+        "p50_ms": 0.0005080000000000001,
+        "p95_ms": 0.000745,
+        "p99_ms": 0.000745,
+        "max_ms": 0.000745,
+        "mean_ms": 0.0005015
+      },
+      "target_ms": 16.0,
+      "verdict": "LULUS vs 16ms"
+    },
+    {
+      "section": "zoom",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/text-500p.pdf",
+      "unit": "ms",
+      "detail": "zoom -> versi tajam",
+      "stats": {
+        "n": 8,
+        "min_ms": 0.001397,
+        "p50_ms": 10.25781,
+        "p95_ms": 24.622397,
+        "p99_ms": 24.622397,
+        "max_ms": 24.622397,
+        "mean_ms": 9.868245375
+      },
+      "target_ms": 150.0,
+      "verdict": "LULUS vs 150ms"
+    },
+    {
+      "section": "scroll",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/text-500p.pdf",
+      "unit": "ms",
+      "detail": "keputusan per frame (tanpa menggambar)",
+      "stats": {
+        "n": 240,
+        "min_ms": 0.001962,
+        "p50_ms": 0.009887,
+        "p95_ms": 0.038125,
+        "p99_ms": 0.049065,
+        "max_ms": 0.07257000000000001,
+        "mean_ms": 0.012278500000000005
+      },
+      "target_ms": 16.0,
+      "verdict": "LULUS vs 16ms"
+    },
+    {
+      "section": "scroll",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/text-500p.pdf",
+      "unit": "frame",
+      "detail": "frame dengan halaman putih",
+      "stats": {
+        "n": 1,
+        "min_ms": 1.0,
+        "p50_ms": 1.0,
+        "p95_ms": 1.0,
+        "p99_ms": 1.0,
+        "max_ms": 1.0,
+        "mean_ms": 1.0
+      },
+      "target_ms": null,
+      "verdict": null
+    },
+    {
+      "section": "scroll",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/text-500p.pdf",
+      "unit": "frame",
+      "detail": "frame tanpa ubin tajam",
+      "stats": {
+        "n": 1,
+        "min_ms": 21.0,
+        "p50_ms": 21.0,
+        "p95_ms": 21.0,
+        "p99_ms": 21.0,
+        "max_ms": 21.0,
+        "mean_ms": 21.0
+      },
+      "target_ms": null,
+      "verdict": null
+    },
+    {
+      "section": "scroll",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/text-500p.pdf",
+      "unit": "ubin",
+      "detail": "ubin dirender selama scroll",
+      "stats": {
+        "n": 1,
+        "min_ms": 100.0,
+        "p50_ms": 100.0,
+        "p95_ms": 100.0,
+        "p99_ms": 100.0,
+        "max_ms": 100.0,
+        "mean_ms": 100.0
+      },
+      "target_ms": null,
+      "verdict": null
+    },
+    {
+      "section": "scroll",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/text-500p.pdf",
+      "unit": "MB",
+      "detail": "cache terpakai",
+      "stats": {
+        "n": 1,
+        "min_ms": 67.85333251953125,
+        "p50_ms": 67.85333251953125,
+        "p95_ms": 67.85333251953125,
+        "p99_ms": 67.85333251953125,
+        "max_ms": 67.85333251953125,
+        "mean_ms": 67.85333251953125
+      },
+      "target_ms": null,
+      "verdict": null
+    },
+    {
+      "section": "cancel",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/text-500p.pdf",
+      "unit": "ms",
+      "detail": "delapan langkah zoom -> tajam",
+      "stats": {
+        "n": 1,
+        "min_ms": 71.287052,
+        "p50_ms": 71.287052,
+        "p95_ms": 71.287052,
+        "p99_ms": 71.287052,
+        "max_ms": 71.287052,
+        "mean_ms": 71.287052
+      },
+      "target_ms": null,
+      "verdict": null
+    },
+    {
+      "section": "cancel",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/text-500p.pdf",
+      "unit": "ubin",
+      "detail": "ubin diminta seluruhnya",
+      "stats": {
+        "n": 1,
+        "min_ms": 64.0,
+        "p50_ms": 64.0,
+        "p95_ms": 64.0,
+        "p99_ms": 64.0,
+        "max_ms": 64.0,
+        "mean_ms": 64.0
+      },
+      "target_ms": null,
+      "verdict": null
+    },
+    {
+      "section": "cancel",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/text-500p.pdf",
+      "unit": "ubin",
+      "detail": "ubin dibuang tanpa dirender",
+      "stats": {
+        "n": 1,
+        "min_ms": 11.0,
+        "p50_ms": 11.0,
+        "p95_ms": 11.0,
+        "p99_ms": 11.0,
+        "max_ms": 11.0,
+        "mean_ms": 11.0
+      },
+      "target_ms": null,
+      "verdict": null
+    },
+    {
+      "section": "cancel",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/text-500p.pdf",
+      "unit": "ubin",
+      "detail": "ubin benar-benar dirender",
+      "stats": {
+        "n": 1,
+        "min_ms": 53.0,
+        "p50_ms": 53.0,
+        "p95_ms": 53.0,
+        "p99_ms": 53.0,
+        "max_ms": 53.0,
+        "mean_ms": 53.0
+      },
+      "target_ms": null,
+      "verdict": null
+    },
+    {
+      "section": "first-page",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/mixed-500p.pdf",
+      "unit": "ms",
+      "detail": "buka dokumen (termasuk ukuran semua halaman)",
+      "stats": {
+        "n": 5,
+        "min_ms": 5.805715,
+        "p50_ms": 6.516369999999999,
+        "p95_ms": 7.206142,
+        "p99_ms": 7.206142,
+        "max_ms": 7.206142,
+        "mean_ms": 6.596484799999999
+      },
+      "target_ms": null,
+      "verdict": null
+    },
+    {
+      "section": "first-page",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/mixed-500p.pdf",
+      "unit": "ms",
+      "detail": "buka -> pratinjau halaman 1",
+      "stats": {
+        "n": 5,
+        "min_ms": 15.789723999999998,
+        "p50_ms": 16.088003,
+        "p95_ms": 16.841611999999998,
+        "p99_ms": 16.841611999999998,
+        "max_ms": 16.841611999999998,
+        "mean_ms": 16.2321484
+      },
+      "target_ms": 400.0,
+      "verdict": "LULUS vs 400ms"
+    },
+    {
+      "section": "first-page",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/mixed-500p.pdf",
+      "unit": "ms",
+      "detail": "buka -> layar pertama tajam",
+      "stats": {
+        "n": 5,
+        "min_ms": 40.533387,
+        "p50_ms": 41.364122,
+        "p95_ms": 41.827228999999996,
+        "p99_ms": 41.827228999999996,
+        "max_ms": 41.827228999999996,
+        "mean_ms": 41.2750254
+      },
+      "target_ms": 400.0,
+      "verdict": "LULUS vs 400ms"
+    },
+    {
+      "section": "fill",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/mixed-500p.pdf",
+      "unit": "ms",
+      "detail": "layar penuh, cache dingin",
+      "stats": {
+        "n": 8,
+        "min_ms": 30.52694,
+        "p50_ms": 32.744584,
+        "p95_ms": 52.851713000000004,
+        "p99_ms": 52.851713000000004,
+        "max_ms": 52.851713000000004,
+        "mean_ms": 36.125262500000005
+      },
+      "target_ms": null,
+      "verdict": null
+    },
+    {
+      "section": "fill",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/mixed-500p.pdf",
+      "unit": "ms",
+      "detail": "layar penuh, cache panas",
+      "stats": {
+        "n": 8,
+        "min_ms": 1.198899,
+        "p50_ms": 1.222067,
+        "p95_ms": 2.23547,
+        "p99_ms": 2.23547,
+        "max_ms": 2.23547,
+        "mean_ms": 1.4754373749999998
+      },
+      "target_ms": 16.0,
+      "verdict": "LULUS vs 16ms"
+    },
+    {
+      "section": "zoom",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/mixed-500p.pdf",
+      "unit": "ms",
+      "detail": "zoom -> ada yang bisa digambar",
+      "stats": {
+        "n": 8,
+        "min_ms": 0.00017999999999999998,
+        "p50_ms": 0.000577,
+        "p95_ms": 0.000674,
+        "p99_ms": 0.000674,
+        "max_ms": 0.000674,
+        "mean_ms": 0.0004955
+      },
+      "target_ms": 16.0,
+      "verdict": "LULUS vs 16ms"
+    },
+    {
+      "section": "zoom",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/mixed-500p.pdf",
+      "unit": "ms",
+      "detail": "zoom -> versi tajam",
+      "stats": {
+        "n": 8,
+        "min_ms": 0.001197,
+        "p50_ms": 14.053122,
+        "p95_ms": 24.219175999999997,
+        "p99_ms": 24.219175999999997,
+        "max_ms": 24.219175999999997,
+        "mean_ms": 12.351803375
+      },
+      "target_ms": 150.0,
+      "verdict": "LULUS vs 150ms"
+    },
+    {
+      "section": "scroll",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/mixed-500p.pdf",
+      "unit": "ms",
+      "detail": "keputusan per frame (tanpa menggambar)",
+      "stats": {
+        "n": 240,
+        "min_ms": 0.002556,
+        "p50_ms": 0.007705,
+        "p95_ms": 0.036465,
+        "p99_ms": 0.044013000000000004,
+        "max_ms": 0.057521,
+        "mean_ms": 0.010317858333333334
+      },
+      "target_ms": 16.0,
+      "verdict": "LULUS vs 16ms"
+    },
+    {
+      "section": "scroll",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/mixed-500p.pdf",
+      "unit": "frame",
+      "detail": "frame dengan halaman putih",
+      "stats": {
+        "n": 1,
+        "min_ms": 1.0,
+        "p50_ms": 1.0,
+        "p95_ms": 1.0,
+        "p99_ms": 1.0,
+        "max_ms": 1.0,
+        "mean_ms": 1.0
+      },
+      "target_ms": null,
+      "verdict": null
+    },
+    {
+      "section": "scroll",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/mixed-500p.pdf",
+      "unit": "frame",
+      "detail": "frame tanpa ubin tajam",
+      "stats": {
+        "n": 1,
+        "min_ms": 24.0,
+        "p50_ms": 24.0,
+        "p95_ms": 24.0,
+        "p99_ms": 24.0,
+        "max_ms": 24.0,
+        "mean_ms": 24.0
+      },
+      "target_ms": null,
+      "verdict": null
+    },
+    {
+      "section": "scroll",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/mixed-500p.pdf",
+      "unit": "ubin",
+      "detail": "ubin dirender selama scroll",
+      "stats": {
+        "n": 1,
+        "min_ms": 100.0,
+        "p50_ms": 100.0,
+        "p95_ms": 100.0,
+        "p99_ms": 100.0,
+        "max_ms": 100.0,
+        "mean_ms": 100.0
+      },
+      "target_ms": null,
+      "verdict": null
+    },
+    {
+      "section": "scroll",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/mixed-500p.pdf",
+      "unit": "MB",
+      "detail": "cache terpakai",
+      "stats": {
+        "n": 1,
+        "min_ms": 67.85333251953125,
+        "p50_ms": 67.85333251953125,
+        "p95_ms": 67.85333251953125,
+        "p99_ms": 67.85333251953125,
+        "max_ms": 67.85333251953125,
+        "mean_ms": 67.85333251953125
+      },
+      "target_ms": null,
+      "verdict": null
+    },
+    {
+      "section": "cancel",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/mixed-500p.pdf",
+      "unit": "ms",
+      "detail": "delapan langkah zoom -> tajam",
+      "stats": {
+        "n": 1,
+        "min_ms": 81.927323,
+        "p50_ms": 81.927323,
+        "p95_ms": 81.927323,
+        "p99_ms": 81.927323,
+        "max_ms": 81.927323,
+        "mean_ms": 81.927323
+      },
+      "target_ms": null,
+      "verdict": null
+    },
+    {
+      "section": "cancel",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/mixed-500p.pdf",
+      "unit": "ubin",
+      "detail": "ubin diminta seluruhnya",
+      "stats": {
+        "n": 1,
+        "min_ms": 64.0,
+        "p50_ms": 64.0,
+        "p95_ms": 64.0,
+        "p99_ms": 64.0,
+        "max_ms": 64.0,
+        "mean_ms": 64.0
+      },
+      "target_ms": null,
+      "verdict": null
+    },
+    {
+      "section": "cancel",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/mixed-500p.pdf",
+      "unit": "ubin",
+      "detail": "ubin dibuang tanpa dirender",
+      "stats": {
+        "n": 1,
+        "min_ms": 11.0,
+        "p50_ms": 11.0,
+        "p95_ms": 11.0,
+        "p99_ms": 11.0,
+        "max_ms": 11.0,
+        "mean_ms": 11.0
+      },
+      "target_ms": null,
+      "verdict": null
+    },
+    {
+      "section": "cancel",
+      "fixture": "/home/user/PDF-VIEWER-IZUL/test-fixtures/mixed-500p.pdf",
+      "unit": "ubin",
+      "detail": "ubin benar-benar dirender",
+      "stats": {
+        "n": 1,
+        "min_ms": 53.0,
+        "p50_ms": 53.0,
+        "p95_ms": 53.0,
+        "p99_ms": 53.0,
+        "max_ms": 53.0,
+        "mean_ms": 53.0
+      },
+      "target_ms": null,
+      "verdict": null
+    },
+    {
+      "section": "memory",
+      "fixture": "10 dokumen",
+      "unit": "MB",
+      "detail": "proses UI (termasuk cache ubin)",
+      "stats": {
+        "n": 1,
+        "min_ms": 346.0,
+        "p50_ms": 346.0,
+        "p95_ms": 346.0,
+        "p99_ms": 346.0,
+        "max_ms": 346.0,
+        "mean_ms": 346.0
+      },
+      "target_ms": null,
+      "verdict": null
+    },
+    {
+      "section": "memory",
+      "fixture": "10 dokumen",
+      "unit": "MB",
+      "detail": "proses pekerja",
+      "stats": {
+        "n": 1,
+        "min_ms": 102.0,
+        "p50_ms": 102.0,
+        "p95_ms": 102.0,
+        "p99_ms": 102.0,
+        "max_ms": 102.0,
+        "mean_ms": 102.0
+      },
+      "target_ms": null,
+      "verdict": null
+    },
+    {
+      "section": "memory",
+      "fixture": "10 dokumen",
+      "unit": "MB",
+      "detail": "total",
+      "stats": {
+        "n": 1,
+        "min_ms": 448.0,
+        "p50_ms": 448.0,
+        "p95_ms": 448.0,
+        "p99_ms": 448.0,
+        "max_ms": 448.0,
+        "mean_ms": 448.0
+      },
+      "target_ms": null,
+      "verdict": null
+    },
+    {
+      "section": "memory",
+      "fixture": "10 dokumen",
+      "unit": "MB",
+      "detail": "cache ubin di dalamnya",
+      "stats": {
+        "n": 1,
+        "min_ms": 62.55859375,
+        "p50_ms": 62.55859375,
+        "p95_ms": 62.55859375,
+        "p99_ms": 62.55859375,
+        "max_ms": 62.55859375,
+        "mean_ms": 62.55859375
+      },
+      "target_ms": null,
+      "verdict": null
+    },
+    {
+      "section": "memory",
+      "fixture": "10 dokumen",
+      "unit": "MB",
+      "detail": "kenaikan sejak kosong",
+      "stats": {
+        "n": 1,
+        "min_ms": 204.0,
+        "p50_ms": 204.0,
+        "p95_ms": 204.0,
+        "p99_ms": 204.0,
+        "max_ms": 204.0,
+        "mean_ms": 204.0
+      },
+      "target_ms": null,
+      "verdict": null
+    }
+  ]
+}
