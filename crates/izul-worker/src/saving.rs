@@ -89,12 +89,13 @@ impl Workbench {
     }
 
     /// Loads the OCR engine from `models` unless it is loaded from there.
-    fn ocr(&mut self, models: &str) -> Result<(), Failure> {
+    fn ocr(&mut self, runtime: &str, models: &str) -> Result<(), Failure> {
         if self.ocr.as_ref().is_none_or(|(dir, _)| dir != models) {
             let dir = std::path::Path::new(models);
             let engine = izul_ocr::Ocr::load(
-                &dir.join("text-detection.rten"),
-                &dir.join("text-recognition.rten"),
+                std::path::Path::new(runtime),
+                &dir.join(izul_ipc::OCR_DETECTION_MODEL),
+                &dir.join(izul_ipc::OCR_RECOGNITION_MODEL),
             )
             .map_err(|e| Failure::Ocr(None, e.to_string()))?;
             self.ocr = Some((models.to_string(), engine));
@@ -424,11 +425,12 @@ impl Workbench {
                 page,
                 models,
                 force,
+                runtime,
             } => {
                 if !self.work.contains_key(&doc) {
                     return Err(Failure::NoWorkingCopy(doc));
                 }
-                self.ocr(&models)?;
+                self.ocr(&runtime, &models)?;
                 let (Some(work), Some((_, ocr))) = (self.work.get(&doc), self.ocr.as_ref()) else {
                     return Err(Failure::NoWorkingCopy(doc));
                 };

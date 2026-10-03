@@ -3,6 +3,39 @@
 Semua perubahan penting per fase. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/);
 versi mengikuti `version.json` sebagai sumber tunggal.
 
+## [7.0.0] — Rilis
+
+Rilis penuh, atas keputusan pengguna (3 Oktober 2026). Checklist Windows di
+TESTING.md "Fase 8" **belum** dijalankan di laptop sungguhan, jadi cacat yang
+hanya muncul di Windows akan diperbaiki di 7.0.x.
+
+### Diubah
+
+- **Mesin OCR diganti: `ocrs` → PP-OCRv6 (PaddleOCR).** Diadu dulu di lima
+  jenis pindaian buatan (`tools/ocr-bakeoff`, `bench/results/ocr-bakeoff.txt`):
+  salah huruf gabungan **11,01 % → 0,05 %** (dibaca MuPDF dari berkas hasil),
+  foto HP miring **42,48 % → 0,04 %**, kata utuh yang bisa dicari
+  **91,3 % → 99,3 %**. Sekitar 1,1 detik per halaman (sebelumnya 0,5).
+  Model dijalankan ONNX Runtime yang sudah dibawa untuk Hapus Latar; pengolahan
+  gambar sebelum dan sesudahnya (deteksi baris, potong, CTC, kotak kata) ditulis
+  ulang di Rust (`crates/izul-ocr/src/paddle.rs`) mengikuti kode RapidOCR 3.9.2.
+  Huruf beraksen kini terbaca.
+- **Model OCR kini ikut terpasang** di installer dan ZIP portabel (`ocr/`):
+  Apache-2.0 (PaddleOCR, versi ONNX dari RapidOCR), atribusi di
+  `licenses/NOTICE.txt`. `--self-test` kini **gagal** bila modelnya tidak ada.
+  `vendor/ocrs/` diganti `vendor/ocr/fetch.sh` (terpatok SHA-256).
+- `PROTOCOL_VERSION` 14 → 15: `Request::WorkOcr` membawa path ONNX Runtime.
+- SPEC tabel teknologi, baris OCR, diperbarui (bertanggal, dengan alasan).
+- Versi 7.0.0, `wix.version` 7.0.0.1000, kanal `stable`.
+
+### Diperbaiki (ditemukan saat mengganti mesin OCR)
+
+- Kotak kata lapisan teks yang **bertemu tepat di spasi** atau **setinggi baris
+  yang sudah diberi bantalan deteksi** membuat poppler menyambung kata
+  ("bulananinidisusun"). Kini kata berhenti ¼ huruf sebelum spasi dan setinggi
+  hurufnya (0,65 dari kotak deteksi). Dua test regresi, keduanya terbukti gagal
+  pada aturan lama.
+
 ## [7.0.0-beta.1] — Fase 8: Penghalusan & Rilis
 
 Fase terakhir: yang membuat aplikasi enak dipakai sehari-hari (perintah,

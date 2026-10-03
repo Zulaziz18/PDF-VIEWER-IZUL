@@ -346,10 +346,12 @@ sekarang menemukan katanya.
 4. Tunggu bilah kemajuannya — sekitar satu detik per halaman. **Hentikan**
    membatalkan tanpa mengubah berkas apa pun.
 
-Pengenalannya berjalan di komputer ini, tanpa internet. Bahasa: huruf Latin
-(Indonesia, Inggris). Ketepatannya sekitar 99 dari 100 huruf pada pindaian
-yang jelas; pindaian buram, miring jauh, atau tulisan tangan hasilnya lebih
-buruk.
+Pengenalannya berjalan di komputer ini, tanpa internet, dengan model
+PaddleOCR. Bahasa: huruf Latin, termasuk huruf beraksen (Indonesia, Inggris,
+dan bahasa Eropa lain). Pada pindaian yang jelas hampir semua huruf terbaca
+benar; foto dari HP yang agak miring juga terbaca baik (sekitar 98 dari 100
+huruf pada contoh uji kami). Tulisan tangan, tabel rumit, dan aksara non-Latin
+(Arab, Mandarin) belum didukung.
 
 ### Menghapus latar gambar
 

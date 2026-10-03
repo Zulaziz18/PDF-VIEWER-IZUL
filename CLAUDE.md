@@ -880,7 +880,8 @@ cetak (`printing.rs`, `izul://print/...`); presentasi F5 / fokus F11; tema +
 invert cerdas di pekerja (`izul-pdf/src/invert.rs`, `invert` masuk TileKey);
 audit aksesibilitas; ikon; About + folder log; installer; dan hasil audit
 SPEC 11 (gaya teks, pangkas, Ctrl+V, ratakan/distribusikan, CSV anotasi,
-bookmark pengguna, lampiran, Alt+drag, jump list). `PROTOCOL_VERSION` = 14.
+bookmark pengguna, lampiran, Alt+drag, jump list). `PROTOCOL_VERSION` = 14
+(15 sejak 7.0.0).
 
 **Pengemasan — yang wajib diingat:**
 
@@ -900,7 +901,7 @@ bookmark pengguna, lampiran, Alt+drag, jump list). `PROTOCOL_VERSION` = 14.
 - `pdf-studio-izul --self-test [pdf]` memeriksa tata letak terpasang tanpa
   jendela; job *Package (Windows)* menjalankannya di NSIS terpasang, MSI yang
   diekstrak, dan ZIP portabel. Portabel = ada `portable.txt` di samping exe.
-- Model OCR **tidak** dibundel (keputusan lisensi masih di pengguna).
+- Model OCR **dibundel sejak 7.0.0** (PP-OCRv6, Apache-2.0) — lihat "Keadaan Rilis 7.0.0".
 
 **Aksesibilitas:** `npm run ui:shots -- --axe=true` (axe-core 4.13.0, WCAG 2.1
 A+AA) dan `--forced=true` (kontras tinggi). axe **tidak** menilai forced-colors:
@@ -952,6 +953,60 @@ API optional content sama sekali — dicek di header), menanam font / CJK / RTL
 mengode ulang gambar). Bookmark pengguna menyimpan nomor halaman; sesudah
 halaman disusun ulang dan disimpan, nomornya tidak ikut bergeser.
 
+## Keadaan Rilis 7.0.0 (3 Oktober 2026)
+
+Di branch `claude/pdf-studio-izul-v7-fase-8` (PR #7). Pengguna memutuskan
+**langsung 7.0.0** tanpa menunggu checklist Windows, dan **membundel model OCR**
+(aplikasi tidak dijual). Versi 7.0.0, `wix.version` 7.0.0.1000, kanal `stable`.
+
+**Mesin OCR diganti `ocrs` → PP-OCRv6 small** setelah diadu
+(`tools/ocr-bakeoff`, `bench/results/ocr-bakeoff.txt`; lima set sintetis
+termasuk foto HP miring 2,5° + perspektif): CER gabungan 11,01 % → 0,05 %
+(dibaca MuPDF), kata utuh 91,3 % → 99,3 %. Model dari wheel PyPI `rapidocr`
+3.9.2 (Apache-2.0; lisensi hanya dicek dari metadata paket — GitHub dan
+HuggingFace diblokir dari kontainer), diambil `vendor/ocr/fetch.sh` terpatok
+SHA-256, dijalankan `ort` yang sama dengan Hapus Latar. Kamus karakter ada di
+metadata model (`character`, 18 708 baris + blank + spasi = 18 710 kelas).
+
+**Yang ditulis sendiri di `crates/izul-ocr/src/paddle.rs`** mengikuti kode
+RapidOCR yang terpasang (bukan ingatan): DB post-process tanpa OpenCV —
+komponen 8-tetangga, hull + rotating calipers untuk `minAreaRect`, unclip
+sebagai pembesaran persegi; potong miring dengan bilinear; CTC; kotak kata dari
+kolom CTC. **Tanpa** model orientasi (halaman sudah dirender tegak). Kotak
+deteksi dibandingkan langsung dengan RapidOCR pada halaman yang sama: berbeda
+≤ 2 px.
+
+**Temuan terukur tentang lapisan teks tak terlihat (jangan ditebak ulang):**
+
+- Ukuran font lapisan diturunkan dari **tinggi kotak**, dan extractor menilai
+  celah antar-kata relatif terhadap ukuran font. Kotak terlalu tinggi = spasi
+  hilang di poppler ("inidisusun"). Dua sebab yang ditemukan: kotak pembatas
+  dari rentang miring (foto HP) dan bantalan deteksi (kotak PP-OCR ≈ 1,55×
+  tinggi huruf). Kini kata setinggi `LETTERS_IN_BOX` (0,65) baris.
+- Kotak dua kata yang **bersentuhan** di kolom spasi juga disambung poppler;
+  kini berhenti `SPACE_KEPT` (¼ huruf) sebelum spasi.
+- Menulis kata **miring mengikuti baris** dicoba dan diukur: MuPDF, pypdf,
+  PDFium sama saja, poppler malah lebih buruk (kata utuh 77 % vs 91 %). Kata
+  ditulis tegak. Di halaman miring poppler mencampur urutan baris (CER 36 %
+  tanpa kehilangan kata); MuPDF/PDFium tidak.
+- Lapisan memakai Helvetica WinAnsi: karakter di luar Latin-1 (+ tanda WinAnsi)
+  dibuang (`writable`), karena akan tertulis sebagai karakter yang salah.
+
+`PROTOCOL_VERSION` 14 → 15 (`WorkOcr.runtime`). Nama berkas model ada di
+`izul-ipc` (`OCR_DETECTION_MODEL`), karena proses UI tidak boleh menaut
+`izul-ocr` (yang menaut PDFium). `--self-test` kini **gagal** tanpa model OCR.
+Profil dev mengoptimalkan `izul-ocr` (loop piksel sendiri), bukan lagi `rten*`.
+
+**Jebakan sesi ini:** jatah disk kontainer habis di tengah `cargo test`
+(gejalanya rustc "failed to parse process output", exit 101 — bukan galat kode).
+`target/debug/deps` berisi binari test lama ~270 MB masing-masing; menghapus
+executable besar di sana membebaskan ~12 GB. Penanda simulasi Windows harus
+`cfg(any(/*SIMWIN*/))` — `//SIMWIN` di dalam `#![cfg(...)]` memakan kurung tutup.
+
+**Masih terbuka:** checklist Windows (TESTING "Fase 8"), DirectML di GPU, dan
+OCR untuk tulisan tangan/aksara non-Latin (model rec PP-OCRv6 mengenal CJK,
+tapi lapisan teks hanya bisa menulis Latin-1 sampai font ditanam).
+
 ## Alur kerja proyek ini
 
 - Branch per fase: `claude/pdf-studio-izul-v7-fase-4` (Langkah 0 + Fase 4,
@@ -975,9 +1030,9 @@ halaman disusun ulang dan disimpan, nomornya tidak ikut bergeser.
 - Total 9 fase (0–8). Fase 0 dan 1 selesai dan disetujui pengguna; Fase 2 dan
   Fase 3 selesai (satu branch, PR #2); Langkah 0 dan Fase 4 selesai (PR #3);
   Fase 5 selesai (PR #4); Fase 6 selesai (PR #5); Fase 7 selesai (PR #6);
-  Fase 8 selesai (PR #7, 7.0.0-beta.1). **Semua fase selesai.** Pekerjaan
-  sesudahnya: hasil checklist Windows dari pengguna, keputusan model OCR,
-  lalu rilis 7.0.0 (wix.version 7.0.0.1000).
+  Fase 8 selesai (PR #7, 7.0.0-beta.1), lalu **rilis 7.0.0** di PR yang sama
+  dengan mesin OCR baru yang dibundel. **Semua fase selesai.** Sisa: hasil
+  checklist Windows dari pengguna.
   Fase 5–8 dikerjakan berturut-turut tanpa menunggu persetujuan, atas
   keputusan pengguna.
 - Panduan menjalankan & menguji aplikasi di Windows (untuk pemula) ada di

@@ -78,13 +78,11 @@ pub fn run(pdf: Option<&Path>) -> i32 {
             .map(|(runtime, model)| format!("{} + {}", runtime.display(), model.display()))
             .ok_or_else(|| "onnxruntime atau onnx/u2netp.onnx tidak ada".to_string()),
     );
-    // Not bundled until the licence of the models is settled: reported, not
-    // failed.
-    println!(
-        "info   model OCR: {}",
+    check(
+        "model OCR",
         crate::ocr::models_dir()
-            .map(|d| d.display().to_string())
-            .unwrap_or_else(|| "tidak ikut terpasang".into())
+            .map(|(dir, runtime)| format!("{} + {}", runtime.display(), dir.display()))
+            .ok_or_else(|| "ocr/*.onnx atau onnxruntime tidak ada".to_string()),
     );
 
     if let (Some(pdf), Some(pool)) = (pdf, pool.as_mut()) {

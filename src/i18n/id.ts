@@ -149,7 +149,7 @@ export const id = {
   "ocr.hint": "Ubah halaman hasil pindaian jadi teks yang bisa dicari dan disalin",
   "ocr.title": "Kenali teks (OCR)",
   "ocr.explain": "Huruf pada halaman hasil pindaian dibaca di komputer ini, lalu ditanam sebagai teks tak terlihat di atasnya: halaman bisa dicari dan disalin, tampilannya tidak berubah. Dikenali: huruf Latin cetak (bahasa Indonesia dan Inggris).",
-  "ocr.noModels": "Model OCR belum terpasang. Jalankan vendor/ocrs/fetch.sh lalu bangun ulang aplikasi (lihat TESTING.md).",
+  "ocr.noModels": "Model OCR belum terpasang. Jalankan vendor/ocr/fetch.sh dan vendor/onnx/fetch.sh lalu bangun ulang aplikasi (lihat TESTING.md).",
   "ocr.which": "Halaman",
   "ocr.current": "Halaman ini ({page})",
   "ocr.force": "Kenali juga halaman yang sudah punya teks",
@@ -539,7 +539,7 @@ export const id = {
   "about.sandboxReal": "Pekerja berjalan dalam Job Object Windows",
   "about.sandboxDev": "Pengurungan pengembangan (bukan batas keamanan)",
   "about.logs": "Folder log",
-  "about.licenses": "Ikon: Fluent UI System Icons (MIT, Microsoft). Mesin PDF: PDFium (BSD-3). Hapus latar: ONNX Runtime (MIT, Microsoft), DirectML (Microsoft), model U²-Net kecil (Apache-2.0, Xuebin Qin dkk.). OCR: ocrs dan rten (MIT/Apache-2.0). Perangkat lunak ini sebagian didasarkan pada karya Independent JPEG Group.",
+  "about.licenses": "Ikon: Fluent UI System Icons (MIT, Microsoft). Mesin PDF: PDFium (BSD-3). Hapus latar: ONNX Runtime (MIT, Microsoft), DirectML (Microsoft), model U²-Net kecil (Apache-2.0, Xuebin Qin dkk.). OCR: model PP-OCRv6 dari PaddleOCR (Apache-2.0, PaddlePaddle Authors), versi ONNX dari RapidOCR (Apache-2.0). Perangkat lunak ini sebagian didasarkan pada karya Independent JPEG Group.",
   "about.close": "Tutup",
 
   "err.open": "Dokumen tidak dapat dibuka",

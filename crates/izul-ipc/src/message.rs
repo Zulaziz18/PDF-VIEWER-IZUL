@@ -21,7 +21,15 @@ use izul_model::geom::{PageFrame, PdfRectF, RotationQuarter};
 /// So the worker announces this number the moment it connects, and the
 /// supervisor refuses a worker that does not match. Bump it whenever anything
 /// in [`Request`] or [`Response`] changes shape.
-pub const PROTOCOL_VERSION: u32 = 14;
+pub const PROTOCOL_VERSION: u32 = 15;
+
+/// The OCR models' file names inside the folder `Request::WorkOcr` names:
+/// PP-OCRv6 small (7.0.0), fetched by `vendor/ocr/fetch.sh`. Here, where both
+/// the application (which finds the folder) and the worker (which loads the
+/// files) can see them — the application must not link the OCR crate, which
+/// links PDFium.
+pub const OCR_DETECTION_MODEL: &str = "PP-OCRv6_det_small.onnx";
+pub const OCR_RECOGNITION_MODEL: &str = "PP-OCRv6_rec_small.onnx";
 
 /// Identifies one open document within a worker.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
@@ -283,14 +291,16 @@ pub enum Request {
     /// read onto the page as invisible text (`izul_ocr::ocr_page`). One page
     /// per request, so a worker is never silent long enough for the heartbeat
     /// to take it for hung, and the UI can report progress and stop between
-    /// pages. `models` is the folder holding the two `.rten` files. A page
-    /// that already has text is left alone unless `force`. Answered with
+    /// pages. `models` is the folder holding the two PP-OCR `.onnx` files,
+    /// `runtime` the ONNX Runtime library (7.0.0; protocol 15). A page that
+    /// already has text is left alone unless `force`. Answered with
     /// `WorkOcrDone`.
     WorkOcr {
         doc: DocId,
         page: u32,
         models: String,
         force: bool,
+        runtime: String,
     },
     /// Adds bytes to a blob in the worker, for input too large for one frame
     /// (a picture). `blob` 0 starts a new one. Answered with `BlobAppended`.
@@ -784,7 +794,8 @@ mod tests {
                     doc: DocId(1),
                     page: 0,
                     models: String::new(),
-                    force: false
+                    force: false,
+                    runtime: String::new(),
                 })
                 .unwrap()
             ),

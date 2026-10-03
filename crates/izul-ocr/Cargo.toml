@@ -5,15 +5,13 @@ edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
-# Local OCR (SPEC 17, Phase 7): `ocrs`, pure Rust — nothing to build in C++ on
-# the user's machine. The models are not in the repository; see
-# vendor/ocrs/fetch.sh and the licence note in CLAUDE.md before shipping them.
+# Local OCR (SPEC 17): PP-OCR models (Apache-2.0) run by ONNX Runtime, the
+# same runtime as background removal. The models are not in the repository;
+# vendor/ocr/fetch.sh fetches them, pinned, and the installer bundles them.
 [dependencies]
 izul-pdf.workspace = true
 thiserror.workspace = true
 serde.workspace = true
-ocrs = { version = "=0.13.1", default-features = false, features = ["rten"] }
-rten = { version = "0.26", default-features = false, features = ["rten_format"] }
 # Background removal (Phase 7): ONNX Runtime, loaded at run time from the
 # library shipped beside the application (`load-dynamic`) — never downloaded
 # by the build — with DirectML on Windows. See vendor/onnx/fetch.sh.

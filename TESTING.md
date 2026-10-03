@@ -38,6 +38,32 @@ Test integrasi (`crash_isolation`) membaca PDFium langsung dari
 aplikasi secara otomatis pada setiap `cargo build`. Tidak ada langkah salin
 manual yang diperlukan di kedua kasus — cukup `vendor/pdfium/fetch.sh` di atas.
 
+## Rilis 7.0.0 — mesin OCR baru
+
+Total `IZUL_REQUIRE_FIXTURES=1 cargo test --workspace --no-fail-fast`:
+**532 lulus, 0 gagal**; `npm test` 240 lulus. Bukti OCR resmi
+(`tools/ocr-proof/run.py`) LULUS dengan PP-OCRv6: CER 0,00 % di poppler, MuPDF,
+pdfminer, pypdf; 100 % kata di tempatnya; 0 piksel berubah
+(`bench/results/phase8-ocr.txt`).
+
+Adu mesin di lima jenis pindaian (`python3 tools/ocr-bakeoff/run.py`, butuh
+`pip install rapidocr rapidocr-onnxruntime` dan `tesseract-ocr`; hasil di
+`bench/results/ocr-bakeoff.txt`):
+
+| Set | `ocrs` (lama) | Aplikasi 7.0.0, dibaca MuPDF | RapidOCR Python, model sama | Tesseract 300 dpi |
+|---|---|---|---|---|
+| Bersih | 2,51 % | 0,00 % | 0,04 % | 0,08 % |
+| Foto HP | 42,48 % | 0,04 % | 2,01 % | 80,95 % |
+| Pudar | 3,22 % | 0,00 % | 2,05 % | 0,29 % |
+| Huruf kecil | 1,38 % | 0,00 % | 0,00 % | 0,13 % |
+| Angka | 5,26 % | 0,22 % | 5,31 % | 0,39 % |
+| **Kata utuh ditemukan** | 91,3 % | **99,3 %** | 96,3 % | 82,4 % |
+
+Halamannya sintetis, bukan pindaian nyata. Aplikasi lebih baik dari RapidOCR
+dengan model yang sama; sebabnya tidak diselidiki (beda yang diketahui: render
+PDFium vs pdftoppm, tanpa model orientasi). Di foto HP poppler membaca kata yang
+sama tetapi mencampur urutan baris halaman miring (CER 36 %, kata utuh 99,4 %).
+
 ## Hasil Fase 8
 
 Dihitung dari keluaran `IZUL_REQUIRE_FIXTURES=1 cargo test --workspace
@@ -49,7 +75,7 @@ Dihitung dari keluaran `IZUL_REQUIRE_FIXTURES=1 cargo test --workspace
 | `izul-ipc` (… + indeks `Attachments`/`AttachmentData`/`AttachmentsReady` terpatok) | 24 | lulus |
 | `izul-store` (… + **bookmark pengguna**, penanda portabel) | 52 | lulus |
 | `izul-redact` | 65 | lulus |
-| `izul-ocr` | 2 | lulus |
+| `izul-ocr` (… + **PP-OCR**: persegi minimum, urutan sudut, CTC, karakter yang bisa ditulis, celah di spasi, tinggi huruf — 7.0.0) | 8 | lulus |
 | `izul-pdf` (… + **invert cerdas**, **lampiran**) | 80 | lulus |
 | `izul-render` | 30 | lulus |
 | `izul-write` | 32 | lulus |
@@ -105,7 +131,7 @@ proof*); hasilnya di `bench/results/phase7-*.txt`:
 ```bash
 sudo apt-get install -y poppler-utils mupdf-tools fonts-dejavu-core fonts-liberation
 python3 -m pip install reportlab pikepdf pypdf pillow pdfminer.six
-./vendor/ocrs/fetch.sh && ./vendor/onnx/fetch.sh
+./vendor/ocr/fetch.sh && ./vendor/onnx/fetch.sh
 python3 tools/ocr-proof/run.py
 python3 tools/background-proof/run.py
 python3 tools/form-proof/run.py
@@ -114,7 +140,7 @@ python3 tools/textedit-proof/run.py
 
 | Kemampuan | Angka | Batas |
 |---|---|---|
-| OCR (5 halaman pindaian, 1 miring) | CER 0,87 %, WER 4,2 % di poppler/MuPDF/pdfminer/pypdf; 98,7–100 % kata di tempatnya; 0 piksel berubah; 750–942 ms/halaman (release) | CER ≤ 2 %, tempat ≥ 95 %, piksel = 0 |
+| OCR (5 halaman pindaian, 1 miring) | `ocrs` (Fase 7): CER 0,87 %, WER 4,2 % di poppler/MuPDF/pdfminer/pypdf; 98,7–100 % kata di tempatnya; 0 piksel berubah; 750–942 ms/halaman. **PP-OCRv6 (7.0.0, `bench/results/phase8-ocr.txt`): CER 0,00 %, WER 0,0 % di keempat alat; 100 % di tempatnya; 0 piksel; 1,0–1,4 dtk/halaman** | CER ≤ 2 %, tempat ≥ 95 %, piksel = 0 |
 | Hapus latar (5 gambar) | IoU 0,99 / 0,99 (foto), 1,00 / 1,00 (TTD, stempel di mode kertas), 0,90 (benda putih, mode foto); 154–240 ms (CPU) | mode yang tepat ≥ 0,85 |
 | Formulir (6 jenis isian) | nilai + tampilan terbaca di pypdf, poppler, MuPDF; pembanding naif gagal di 9 sel | semua "ya" |
 | Edit teks (2 kasus + 3 penolakan) | 0 piksel berubah di luar bagian yang diganti (poppler, MuPDF); teks baru terbaca di 3 pengekstrak | 0 piksel |
@@ -776,7 +802,7 @@ Seperti Fase 4: **pakai salinan**, karena menyimpan menimpa berkas.
 Siapkan dulu (sekali saja), di PowerShell biasa, di folder proyek:
 
 ```powershell
-bash vendor/ocrs/fetch.sh
+bash vendor/ocr/fetch.sh
 bash vendor/onnx/fetch.sh win-x64
 ```
 

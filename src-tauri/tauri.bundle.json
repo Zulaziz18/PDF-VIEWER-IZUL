@@ -7,6 +7,8 @@
       "../vendor/onnx/win-x64/onnxruntime.dll": "onnxruntime.dll",
       "../vendor/onnx/win-x64/DirectML.dll": "DirectML.dll",
       "../vendor/onnx/u2netp.onnx": "onnx/u2netp.onnx",
+      "../vendor/ocr/PP-OCRv6_det_small.onnx": "ocr/PP-OCRv6_det_small.onnx",
+      "../vendor/ocr/PP-OCRv6_rec_small.onnx": "ocr/PP-OCRv6_rec_small.onnx",
       "licenses/NOTICE.txt": "licenses/NOTICE.txt",
       "../vendor/pdfium/win-x64/licenses": "licenses/pdfium",
       "../vendor/onnx/win-x64/LICENSE": "licenses/onnxruntime/LICENSE.txt",
@@ -14,7 +16,7 @@
     },
     "windows": {
       "wix": {
-        "version": "7.0.0.101"
+        "version": "7.0.0.1000"
       }
     }
   }

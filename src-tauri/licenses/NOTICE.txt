@@ -27,9 +27,13 @@ Model u2netp (U²-Net kecil, hapus latar)  Apache-2.0
 Fluent UI System Icons                  MIT (Microsoft)
     Path ikon disalin ke dalam kode antarmuka.
 
-ocrs dan rten (mesin OCR)               MIT / Apache-2.0
-    Kodenya ditautkan ke pekerja. Model OCR-nya TIDAK ikut terpasang:
-    lisensinya belum jelas (lihat README, "Lisensi pihak ketiga").
+Model OCR PP-OCRv6 small (deteksi + pengenalan)   Apache-2.0
+    PaddleOCR, (c) PaddlePaddle Authors. Dalam format ONNX sebagaimana
+    dirilis proyek RapidOCR (Apache-2.0), paket rapidocr 3.9.2.
+    Berkas: ocr/PP-OCRv6_det_small.onnx, ocr/PP-OCRv6_rec_small.onnx.
+    Dijalankan dengan ONNX Runtime di atas; pengolahan gambar sebelum dan
+    sesudahnya ditulis ulang di aplikasi ini mengikuti kode RapidOCR.
+    https://www.apache.org/licenses/LICENSE-2.0
 
 Tauri, React, dan pustaka Rust/JavaScript lainnya berlisensi MIT dan/atau
 Apache-2.0.

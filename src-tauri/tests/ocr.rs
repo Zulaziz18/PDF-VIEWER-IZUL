@@ -50,9 +50,12 @@ fn worker_paths() -> Option<WorkerPaths> {
     })
 }
 
-fn models() -> Option<PathBuf> {
-    let dir = repo_root().join("vendor/ocrs");
-    dir.join("text-recognition.rten").exists().then_some(dir)
+/// The models folder and the ONNX Runtime library that runs them.
+fn models() -> Option<(PathBuf, PathBuf)> {
+    let dir = repo_root().join("vendor/ocr");
+    let runtime = repo_root().join("vendor/onnx/linux-x64/libonnxruntime.so");
+    (dir.join(izul_ipc::OCR_RECOGNITION_MODEL).exists() && runtime.exists())
+        .then_some((dir, runtime))
 }
 
 fn skip(reason: &str) {
@@ -173,13 +176,19 @@ fn runs_of(chars: &[izul_ipc::message::CharBoxWire], needle: &str) -> Vec<PdfRec
     out
 }
 
-fn job(pages: Vec<u32>, force: bool, models: PathBuf, cancel: bool) -> Rewrite {
+fn job(
+    pages: Vec<u32>,
+    force: bool,
+    (models, runtime): (PathBuf, PathBuf),
+    cancel: bool,
+) -> Rewrite {
     Rewrite {
         redaction: None,
         ocr: Some(OcrJob {
             pages,
             force,
             models,
+            runtime,
             progress: None,
             cancel: Arc::new(AtomicBool::new(cancel)),
         }),
@@ -194,7 +203,7 @@ async fn the_invisible_layer_lies_over_the_words_it_read() {
         return skip("izul-worker atau PDFium belum dibangun");
     };
     let Some(models) = models() else {
-        return skip("model OCR belum diambil (vendor/ocrs/fetch.sh)");
+        return skip("model OCR belum diambil (vendor/ocr/fetch.sh, vendor/onnx/fetch.sh)");
     };
     let path = live.dir.join("laporan.pdf");
     std::fs::write(&path, document()).unwrap();
@@ -250,7 +259,7 @@ async fn pages_with_text_are_left_alone_and_a_cancelled_run_writes_nothing() {
         return skip("izul-worker atau PDFium belum dibangun");
     };
     let Some(models) = models() else {
-        return skip("model OCR belum diambil (vendor/ocrs/fetch.sh)");
+        return skip("model OCR belum diambil (vendor/ocr/fetch.sh, vendor/onnx/fetch.sh)");
     };
     let path = live.dir.join("laporan.pdf");
     std::fs::write(&path, document()).unwrap();

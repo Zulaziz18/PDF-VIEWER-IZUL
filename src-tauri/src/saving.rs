@@ -110,8 +110,11 @@ pub struct OcrJob {
     pub pages: Vec<u32>,
     /// Read pages that already have text as well.
     pub force: bool,
-    /// Folder holding `text-detection.rten` and `text-recognition.rten`.
+    /// Folder holding the two PP-OCR models (`izul_ocr::DETECTION_MODEL`,
+    /// `RECOGNITION_MODEL`).
     pub models: PathBuf,
+    /// The ONNX Runtime library the worker runs them with.
+    pub runtime: PathBuf,
     pub progress: Option<Arc<dyn Fn(u32, u32) + Send + Sync>>,
     pub cancel: Arc<std::sync::atomic::AtomicBool>,
 }
@@ -122,6 +125,7 @@ impl std::fmt::Debug for OcrJob {
             .field("pages", &self.pages.len())
             .field("force", &self.force)
             .field("models", &self.models)
+            .field("runtime", &self.runtime)
             .finish()
     }
 }
@@ -421,6 +425,7 @@ async fn run_ocr(worker: &Worker, doc: u64, job: &OcrJob) -> Out<OcrSummary> {
                 page,
                 models: job.models.to_string_lossy().to_string(),
                 force: job.force,
+                runtime: job.runtime.to_string_lossy().to_string(),
             },
         )
         .await?;

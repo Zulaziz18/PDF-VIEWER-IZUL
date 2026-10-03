@@ -46,10 +46,11 @@ jobs:
         shell: bash
         run: ./vendor/pdfium/fetch.sh
 
-      # The OCR models (Phase 7), pinned by SHA-256 like PDFium is by tag.
+      # The OCR models (PP-OCRv6 since 7.0.0), pinned by SHA-256 like PDFium
+      # is by tag.
       - name: Fetch the pinned OCR models
         shell: bash
-        run: ./vendor/ocrs/fetch.sh
+        run: ./vendor/ocr/fetch.sh
 
       # ONNX Runtime (DirectML build on Windows) and the background model,
       # pinned by SHA-256 (Phase 7).
@@ -201,14 +202,14 @@ jobs:
           cache: npm
       - run: npm ci
 
-      - name: Vendor PDFium and ONNX Runtime
+      # The OCR models ship since 7.0.0 (PP-OCR, Apache-2.0); the self-test
+      # below fails an install without them.
+      - name: Vendor PDFium, ONNX Runtime and the OCR models
         shell: bash
         run: |
           ./vendor/pdfium/fetch.sh
           ./vendor/onnx/fetch.sh
-      # The OCR models are deliberately not fetched: their licence is not
-      # settled, so they are not part of what ships (README, "Lisensi pihak
-      # ketiga").
+          ./vendor/ocr/fetch.sh
 
       # `beforeBuildCommand` is `npm run build`, which builds the worker in
       # release first — the bundle's resources name target/release/izul-worker.exe.
@@ -229,12 +230,13 @@ jobs:
           $ErrorActionPreference = "Stop"
           $v = (Get-Content version.json | ConvertFrom-Json).version
           $dir = "portable/PDF Studio Izul"
-          New-Item -ItemType Directory -Force "$dir/onnx", "$dir/licenses" | Out-Null
+          New-Item -ItemType Directory -Force "$dir/onnx", "$dir/ocr", "$dir/licenses" | Out-Null
           $rel = "target/release"
           foreach ($f in "pdf-studio-izul.exe", "izul-worker.exe", "pdfium.dll", "onnxruntime.dll", "DirectML.dll") {
             Copy-Item "$rel/$f" $dir
           }
           Copy-Item "$rel/onnx/u2netp.onnx" "$dir/onnx/"
+          Copy-Item "$rel/ocr/PP-OCRv6_det_small.onnx", "$rel/ocr/PP-OCRv6_rec_small.onnx" "$dir/ocr/"
           Copy-Item src-tauri/licenses/NOTICE.txt "$dir/licenses/"
           Copy-Item -Recurse vendor/pdfium/win-x64/licenses "$dir/licenses/pdfium"
           New-Item -ItemType Directory -Force "$dir/licenses/onnxruntime" | Out-Null

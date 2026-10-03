@@ -1,0 +1,18 @@
+Bukti OCR (Fase 7; mesin PP-OCRv6 sejak 7.0.0): pindaian jadi bisa dicari, kata di tempatnya, tampilan tidak berubah
+
+CER/WER = tingkat kesalahan karakter/kata teks yang dibaca alat itu dari hasil OCR, terhadap teks sebenarnya
+Tempat  = dari kata yang terbaca benar, persen yang pusat kotaknya (menurut poppler) ada di dalam kotak kata sebenarnya
+Piksel  = selisih terbesar render MuPDF sebelum/sesudah (harus 0: lapisannya tak terlihat)
+Halaman 5 disimpan miring (gambar tidur, /Rotate 90).
+
+halaman    kata      ms     poppler CER     MuPDF CER  pdfminer CER     pypdf CER   tempat  piksel
+1            81    1226           0.00%         0.00%         0.00%         0.00%   100.0%       0
+2           100    1144           0.00%         0.00%         0.00%         0.00%   100.0%       0
+3            81    1100           0.00%         0.00%         0.00%         0.00%   100.0%       0
+4           100    1019           0.00%         0.00%         0.00%         0.00%   100.0%       0
+5            89    1079           0.00%         0.00%         0.00%         0.00%   100.0%       0
+
+Seluruh halaman: poppler CER 0.00 %, WER 0.0 %; MuPDF CER 0.00 %, WER 0.0 %; pdfminer CER 0.00 %, WER 0.0 %; pypdf CER 0.00 %, WER 0.0 %
+Batas: CER <= 2.0 % tiap alat, tempat >= 95.0 %, piksel = 0.
+
+HASIL: LULUS

@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
-"""Which OCR engine reads better: `ocrs` (what the application ships) or the
-alternatives — PaddleOCR (PP-OCR models, through RapidOCR + ONNX Runtime) and
-Tesseract as a long-standing reference.
+"""Which OCR engine reads better. Written to choose between `ocrs` (what the
+application shipped until 7.0.0) and PaddleOCR; since 7.0.0 the application's
+own engine *is* PP-OCRv6, and this checks that its Rust port reads as well as
+RapidOCR's Python with the same models, next to Tesseract as a long-standing
+reference.
 
 All of them read the same five sets of scanned-looking pages (`make_sets.py`)
 and are scored against the true text.
 
-- ocrs runs through the application's own routine (`ocr-probe`, which runs
+- The application's engine runs through its own routine (`ocr-probe`, which runs
   `izul_ocr::ocr_page` as the worker does), and its text is read back from the
   PDF it writes with poppler. That is what a user would get.
 - PaddleOCR and Tesseract read PNGs rendered by poppler. RapidOCR is used with
@@ -129,15 +131,28 @@ def blank(work):
     return str(p)
 
 
-def ocrs_engine(probe):
+def app_engine(probe, reader):
+    """The application's OCR, read back from the PDF it writes by `reader`
+    ("poppler" or "MuPDF"). Run once per set; the second reader reuses it.
+
+    Unlike the other columns this is what an extractor makes of the text
+    layer, not the engine's own output: on a tilted page (foto_hp) poppler
+    orders the words of neighbouring lines by height and interleaves them,
+    which costs CER without losing a word; MuPDF keeps lines together."""
+    runs = {}
+
     def go(pdf, n, work):
         out = work / f"{pdf.stem}.ocr.pdf"
-        r = run([str(probe), str(pdf), str(out)], cwd=ROOT)
-        if r.returncode != 0:
-            sys.exit(f"ocr-probe gagal: {r.stderr[-400:]}")
-        times = [json.loads(l)["ms"] for l in r.stdout.splitlines() if l.startswith("{")]
-        texts = [run(["pdftotext", "-q", "-f", str(i + 1), "-l", str(i + 1), str(out), "-"]).stdout for i in range(n)]
-        return list(zip(texts, times))
+        if pdf not in runs:
+            r = run([str(probe), str(pdf), str(out)], cwd=ROOT)
+            if r.returncode != 0:
+                sys.exit(f"ocr-probe gagal: {r.stderr[-400:]}")
+            runs[pdf] = [json.loads(l)["ms"] for l in r.stdout.splitlines() if l.startswith("{")]
+        if reader == "poppler":
+            texts = [run(["pdftotext", "-q", "-f", str(i + 1), "-l", str(i + 1), str(out), "-"]).stdout for i in range(n)]
+        else:
+            texts = [run(["mutool", "draw", "-q", "-F", "txt", "-o", "-", str(out), str(i + 1)]).stdout for i in range(n)]
+        return list(zip(texts, runs[pdf]))
 
     return go
 
@@ -193,17 +208,18 @@ def tesseract(dpi):
 
 def versions():
     import importlib.metadata as md
+    import importlib.util
 
-    m = re.search(r'name = "ocrs"\nversion = "([^"]+)"', (ROOT / "Cargo.lock").read_text())
-    ocrs = m.group(1) if m else "?"
     tess = run(["tesseract", "--version"]).stdout.splitlines()[0]
-    return f"ocrs {ocrs}; RapidOCR {md.version('rapidocr')} (PP-OCRv6 small) dan {md.version('rapidocr-onnxruntime')} (PP-OCRv4); {tess}"
+    v4 = md.version("rapidocr-onnxruntime") if importlib.util.find_spec("rapidocr_onnxruntime") else "-"
+    return f"RapidOCR {md.version('rapidocr')} (PP-OCRv6 small), {v4} (PP-OCRv4); {tess}"
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--out", default=None)
     ap.add_argument("--sets", default=None, help="folder from make_sets.py (made if absent)")
+    ap.add_argument("--all", action="store_true", help="also PP-OCRv4 (RapidOCR 1.4.4)")
     a = ap.parse_args()
 
     work = Path(tempfile.mkdtemp(prefix="ocr-bakeoff-"))
@@ -216,13 +232,15 @@ def main():
     probe = ROOT / "target/release" / ("ocr-probe.exe" if sys.platform == "win32" else "ocr-probe")
 
     engines = {
-        "ocrs 150": ocrs_engine(probe),
-        "PPv4 150": paddle_v4(150, 2000),
-        "PPv4 300": paddle_v4(300, 4000),
+        "izul/poppler": app_engine(probe, "poppler"),
+        "izul/MuPDF": app_engine(probe, "MuPDF"),
         "PPv6 150": paddle_v6(150, 2000),
         "PPv6 300": paddle_v6(300, 4000),
         "Tess 300": tesseract(300),
     }
+    if a.all:
+        engines["PPv4 150"] = paddle_v4(150, 2000)
+        engines["PPv4 300"] = paddle_v4(300, 4000)
     names = list(engines)
     scores = {e: {s: Score() for s in SETS} for e in names}
     sample = {}
@@ -244,14 +262,19 @@ def main():
 
     L = []
     w = L.append
-    w("Adu OCR — ocrs (yang dikirim aplikasi) lawan PaddleOCR (v4 dan v6) dan Tesseract")
+    w("Adu OCR — mesin aplikasi (izul: PP-OCRv6 lewat ONNX Runtime, pengolahan gambar ditulis di Rust)")
+    w("lawan RapidOCR Python dengan model yang sama (rujukan) dan Tesseract")
     w("")
     w(versions())
+    w("Sebelum 7.0.0 aplikasi memakai ocrs 0.13.1: CER gabungan 11,01 %, foto_hp 42,48 %, kata utuh 91,3 %,")
+    w("0,5 dtk/halaman (diukur dengan alat ini pada set yang sama, 2 Oktober 2026).")
     w("Semua halaman buatan (sintetis): 5 set x 4 halaman, teks karangan sendiri. Bukan pindaian nyata.")
     w(f"Mesin: {os.cpu_count()} inti. Angka di belakang nama = dpi render. ms = rata-rata per halaman.")
-    w("(ocrs: render + baca + tulis lapisan teks; lainnya: baca saja, tanpa render.)")
+    w("izul = aplikasi pada 150 dpi (render + baca + tulis lapisan teks), teksnya dibaca kembali dengan poppler / MuPDF;")
+    w("lainnya = keluaran mesinnya sendiri, baca saja, tanpa render. Di foto_hp poppler mencampur urutan baris halaman miring:")
+    w("CER-nya naik tanpa ada kata yang hilang (lihat 'kata utuh').")
     w("")
-    col = 13
+    col = 14
     head = f"{'':<9}" + "".join(f"{e:>{col}}" for e in names)
     w("CER (%) per set — salah per karakter, makin kecil makin baik:")
     w(head)

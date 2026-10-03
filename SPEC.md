@@ -135,7 +135,7 @@ Session, recent files, posisi baca, draf autosave, cache thumbnail, dan indeks p
 | Styling | Tailwind v4 + CSS variables | MIT |
 | Kanvas | Imperatif, di luar React | — |
 | AI | `ort` (ONNX Runtime) + DirectML | MIT |
-| OCR | `ocrs` atau Tesseract via FFI | MIT / Apache-2.0 |
+| OCR | PP-OCRv6 (PaddleOCR) via `ort` — *diubah 3 Oktober 2026 atas keputusan pengguna, dari "`ocrs` atau Tesseract": diukur lebih akurat (`bench/results/ocr-bakeoff.txt`) dan lisensi modelnya jelas* | Apache-2.0 |
 | Font bundel | Inter | SIL OFL |
 | Installer | NSIS + MSI + portable | — |
 
