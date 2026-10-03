@@ -615,6 +615,26 @@ const SCENES = {
       await settle(page, 800);
     },
   },
+  // 7.1.0: a sticky note is a notepad badge, and its text is written on a
+  // notepad beside it.
+  note: {
+    session: OPEN_ALL,
+    async steps(page) {
+      await page.getByRole("tab", { name: "Komentar", exact: true }).click();
+      await izul(page, (z) => z.goToPage(2));
+      await settle(page);
+      await izul(page, (z) => z.select([207]));
+      // The badge sits at the page's right margin, beyond the viewport once
+      // the properties panel opens: scroll it into view, as a user would.
+      await page.evaluate(() => {
+        for (const el of document.querySelectorAll('[role="region"]')) {
+          if (el.scrollWidth > el.clientWidth) el.scrollLeft = el.scrollWidth;
+        }
+      });
+      await page.getByRole("region", { name: "Catatan" }).waitFor();
+      await settle(page, 600);
+    },
+  },
   // 7.1.0: menus float over the page. In 7.0.0 the bottom bar's zoom menu
   // opened below the window and dragged the layout up, and the ribbon's menus
   // were clipped inside the ribbon.

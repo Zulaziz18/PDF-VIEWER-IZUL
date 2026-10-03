@@ -255,6 +255,34 @@ body {
   }
 }
 
+/* A sticky note's notepad (NotePopup.tsx): ruled yellow paper in both themes,
+   because it is paper — the same yellow as the badge on the page. The rules
+   sit on the text's 22 px line grid. */
+.izul-notepad {
+  background: #fff3a8;
+  color: #3b3300;
+  border: 1px solid #d9b92a;
+}
+.izul-notepad-head {
+  background: #ffd43b;
+  border-bottom: 1px solid #d9b92a;
+}
+.izul-notepad-paper {
+  background-color: transparent;
+  color: inherit;
+  background-image: repeating-linear-gradient(
+    to bottom,
+    transparent 0,
+    transparent 21px,
+    #e6cf6b 21px,
+    #e6cf6b 22px
+  );
+  background-attachment: local;
+}
+.izul-notepad-paper::placeholder {
+  color: #7a6a1f;
+}
+
 /*
  * Windows high-contrast themes (SPEC 14), which reach the webview as
  * `forced-colors: active` and repaint every colour with the theme's few.
@@ -300,5 +328,17 @@ body {
   [role="separator"]:hover,
   [role="separator"]:focus-visible {
     background: Highlight;
+  }
+}
+
+@media (forced-colors: active) {
+  .izul-notepad,
+  .izul-notepad-head {
+    background: Canvas;
+    color: CanvasText;
+    border-color: CanvasText;
+  }
+  .izul-notepad-paper {
+    background-image: none;
   }
 }

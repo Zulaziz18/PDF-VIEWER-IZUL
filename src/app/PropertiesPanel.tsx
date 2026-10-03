@@ -116,7 +116,8 @@ function textOf(obj: AnnotObject): string | null {
   const p = obj.payload;
   if ("FreeText" in p) return p.FreeText.text;
   if ("Stamp" in p) return p.Stamp.label;
-  if ("Note" in p) return p.Note.text;
+  // A note's text is written on its notepad (NotePopup.tsx); a second box
+  // here would show a stale copy of what is being typed there.
   return null;
 }
 
@@ -125,7 +126,6 @@ function withText(obj: AnnotObject, text: string): AnnotObject {
   const p = next.payload;
   if ("FreeText" in p) p.FreeText.text = text;
   else if ("Stamp" in p) p.Stamp.label = text;
-  else if ("Note" in p) p.Note.text = text;
   return next;
 }
 

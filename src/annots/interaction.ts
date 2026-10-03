@@ -71,8 +71,11 @@ export function handlePoint(rect: PdfRect, handle: HandleId): PdfPoint {
 
 /** The handles an object offers. A redaction mark has no rotate handle: what
  * is applied is its upright quads, and a mark turned on screen would cover
- * something other than what goes. */
+ * something other than what goes. A sticky note has none at all: it is a
+ * badge of one size that is only moved — stretched, it covered the text it
+ * was a note about (reported on 7.0.0). */
 export function handlesFor(kind: AnnotObject["kind"]): HandleId[] {
+  if (kind === "Note") return [];
   return kind === "Redact" ? [...RESIZE_HANDLES] : [...RESIZE_HANDLES, "rotate"];
 }
 

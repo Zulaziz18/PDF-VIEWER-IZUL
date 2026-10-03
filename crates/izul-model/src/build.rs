@@ -510,72 +510,85 @@ fn rounded_rect(r: PdfRectF, radius: f32) -> Path {
         .close()
 }
 
-/// The sticky-note badge: a rounded speech bubble with a tail, plus a mark that
-/// says which icon it is.
+/// The sticky-note badge: a sheet of notepad paper with its top-right corner
+/// folded down, ruled lines (or a question mark for `Help`) in a darker shade
+/// of the paper, and a thin outline in the same shade so a pale paper still
+/// shows on a white page. It replaced a solid speech bubble in 7.1.0, which a
+/// user read as a sign stuck over the text rather than a note.
 fn note_icon(dl: &mut DisplayList, rect: PdfRectF, icon: NoteIcon, color: Rgba) {
-    let body = PdfRectF::new(
-        rect.left,
-        rect.bottom + rect.height() * 0.22,
-        rect.right,
-        rect.top,
-    );
+    let ink = Rgba::new(color.r * 0.55, color.g * 0.55, color.b * 0.55, color.a);
+    let fold = rect.width().min(rect.height()) * 0.3;
+    let thin = (rect.width().min(rect.height()) * 0.05).max(0.4);
+    let stroke = |width: f32| StrokeStyle {
+        width,
+        miter_limit: 10.0,
+        ..Default::default()
+    };
+
+    let sheet = Path::new()
+        .move_to(PdfPointF::new(rect.left, rect.bottom))
+        .line_to(PdfPointF::new(rect.right, rect.bottom))
+        .line_to(PdfPointF::new(rect.right, rect.top - fold))
+        .line_to(PdfPointF::new(rect.right - fold, rect.top))
+        .line_to(PdfPointF::new(rect.left, rect.top))
+        .close();
     dl.push(DisplayOp::FillPath {
-        path: rounded_rect(body, body.height() * 0.25),
+        path: sheet.clone(),
         color,
         rule: FillRule::NonZero,
         blend: BlendMode::Normal,
     });
-    let tail = Path::new()
-        .move_to(PdfPointF::new(rect.left + rect.width() * 0.25, body.bottom))
-        .line_to(PdfPointF::new(rect.left + rect.width() * 0.25, rect.bottom))
-        .line_to(PdfPointF::new(rect.left + rect.width() * 0.5, body.bottom))
-        .close();
+    dl.push(DisplayOp::StrokePath {
+        path: sheet,
+        color: ink,
+        style: stroke(thin),
+        blend: BlendMode::Normal,
+    });
+    // The folded corner: the back of the paper, in the darker shade.
     dl.push(DisplayOp::FillPath {
-        path: tail,
-        color,
+        path: Path::new()
+            .move_to(PdfPointF::new(rect.right - fold, rect.top))
+            .line_to(PdfPointF::new(rect.right - fold, rect.top - fold))
+            .line_to(PdfPointF::new(rect.right, rect.top - fold))
+            .close(),
+        color: ink,
         rule: FillRule::NonZero,
         blend: BlendMode::Normal,
     });
 
-    // The mark inside, drawn in the page's background colour by knocking it out
-    // with even-odd is not possible in one path here, so it is stroked in white:
-    // the icons have to be distinguishable at 16 points, which is the size they
-    // are actually drawn at.
-    let ink = Rgba::new(1.0, 1.0, 1.0, color.a);
-    let width = (body.height() * 0.12).max(0.4);
-    let line = |dl: &mut DisplayList, fy: f32| {
-        let y = body.bottom + body.height() * fy;
+    let width = (rect.height() * 0.06).max(0.4);
+    let rule = |dl: &mut DisplayList, fy: f32, right_inset: f32| {
+        let y = rect.bottom + rect.height() * fy;
         dl.push(DisplayOp::StrokePath {
             path: Path::new()
-                .move_to(PdfPointF::new(body.left + body.width() * 0.2, y))
-                .line_to(PdfPointF::new(body.right - body.width() * 0.2, y)),
+                .move_to(PdfPointF::new(rect.left + rect.width() * 0.2, y))
+                .line_to(PdfPointF::new(rect.right - rect.width() * right_inset, y)),
             color: ink,
-            style: StrokeStyle {
-                width,
-                miter_limit: 10.0,
-                ..Default::default()
-            },
+            style: stroke(width),
             blend: BlendMode::Normal,
         });
     };
     match icon {
         NoteIcon::Comment => {
-            line(dl, 0.62);
-            line(dl, 0.38);
+            // The top line stops short of the fold.
+            rule(dl, 0.62, 0.38);
+            rule(dl, 0.42, 0.2);
+            rule(dl, 0.22, 0.2);
         }
         NoteIcon::Note => {
-            line(dl, 0.72);
-            line(dl, 0.5);
-            line(dl, 0.28);
+            rule(dl, 0.66, 0.38);
+            rule(dl, 0.5, 0.2);
+            rule(dl, 0.34, 0.2);
+            rule(dl, 0.18, 0.2);
         }
         NoteIcon::Help => {
             // A question mark drawn as an arc plus a dot, which reads at small
             // sizes where a glyph would need a font we might not have.
             let (cx, cy) = (
-                (body.left + body.right) / 2.0,
-                body.bottom + body.height() * 0.62,
+                (rect.left + rect.right) / 2.0,
+                rect.bottom + rect.height() * 0.5,
             );
-            let r = body.height() * 0.2;
+            let r = rect.width().min(rect.height()) * 0.18;
             dl.push(DisplayOp::StrokePath {
                 path: Path::new()
                     .move_to(PdfPointF::new(cx - r, cy + r * 0.3))
@@ -590,11 +603,7 @@ fn note_icon(dl: &mut DisplayList, rect: PdfRectF, icon: NoteIcon, color: Rgba) 
                         PdfPointF::new(cx, cy - r * 0.7),
                     ),
                 color: ink,
-                style: StrokeStyle {
-                    width,
-                    miter_limit: 10.0,
-                    ..Default::default()
-                },
+                style: stroke(width),
                 blend: BlendMode::Normal,
             });
             dl.push(DisplayOp::FillPath {

@@ -19,6 +19,7 @@ import type { DocumentState, DocumentStore } from "@/state/documentSession";
 import { registerViewport } from "./viewportHandle";
 import { t } from "@/i18n";
 import { useUi } from "@/state/uiStore";
+import { NotePopup } from "./NotePopup";
 
 /** How long the scroll must be still before the reading position is stored. */
 const SAVE_IDLE_MS = 1200;
@@ -248,6 +249,11 @@ export function Viewport(props: {
           />
         </div>
       </div>
+      <NotePopup
+        store={session}
+        renderer={() => rendererRef.current}
+        scroller={() => scrollerRef.current}
+      />
     </div>
   );
 }

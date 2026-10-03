@@ -1216,6 +1216,21 @@ export class ViewportRenderer {
     return { page: first.page, quads };
   }
 
+  /**
+   * Where an annotation is on screen, in CSS pixels from the viewport's
+   * top-left corner — for something drawn beside it, like a sticky note's
+   * notepad. `null` while its page is not laid out.
+   */
+  screenRectOf(obj: AnnotObject): { left: number; top: number; right: number; bottom: number } | null {
+    const box = this.#boxOfPage(obj.page);
+    if (!box) return null;
+    const a = toContentPoint(box, { x: obj.rect.left, y: obj.rect.top });
+    const b = toContentPoint(box, { x: obj.rect.right, y: obj.rect.bottom });
+    const sx = this.#host.scroller.scrollLeft;
+    const sy = this.#host.scroller.scrollTop;
+    return { left: a.x - sx, top: a.y - sy, right: b.x - sx, bottom: b.y - sy };
+  }
+
   /** Abandons a gesture — the pointer left the window, or Escape was pressed. */
   cancelGesture(): void {
     this.#gesture = null;

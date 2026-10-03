@@ -21,6 +21,9 @@ import type {
 import { lineQuads } from "./lines";
 import { rgba, NEW_OBJECT_ID, REDACT_FILL } from "./types";
 
+/** The colour a new sticky note's paper starts as. */
+export const NOTE_PAPER = rgba(255, 212, 59, 1);
+
 /** The thinnest a highlight may be; the model clamps to the same value. */
 export const MIN_HIGHLIGHT_THICKNESS = 0.2;
 
@@ -168,7 +171,9 @@ export function objectFromDrawn(
       rect = atLeast(drawn.rect, style.font.size * 6);
       break;
     case "Note":
-      payload = { Note: { icon: "Comment", color: style.color, text: "" } };
+      // Notepad yellow whatever the current ink: the badge is paper, and a
+      // red or black sheet reads as a warning sign, not a note.
+      payload = { Note: { icon: "Comment", color: NOTE_PAPER, text: "" } };
       // Sticky notes are a fixed badge, not a shape you size: every reader
       // draws them at one size and a stretched one looks like a bug.
       rect = {
