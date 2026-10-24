@@ -39,6 +39,7 @@ import {
 import type { Layout, ViewMode, ViewRect } from "./layout";
 import { boxOf, dominantPage, layoutDocument, scrollToPage, visiblePages } from "./layout";
 import { prefetchPages, ScrollTracker } from "./prediction";
+import { nextToSend, type Want } from "./requestQueue";
 import { buildHighlightLayer, rectsSignature } from "./highlights";
 import type { PageBox } from "./annotLayer";
 import { pageAt, pageBox, toContentPoint, toPagePoint } from "./annotLayer";
@@ -235,6 +236,12 @@ export class ViewportRenderer {
   #frame = 0;
   #abort = new AbortController();
   #pending = new Set<string>();
+  /** What the last frame wanted and has not got; sent a few at a time. */
+  #wanted: Want<{ ref: TileRef; priority: Priority }>[] = [];
+  /** Wakes the view once a fling has stopped, to ask for the sharp tiles. */
+  #settleTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Tiles refused a moment ago, by when they may be asked for again. */
+  #refused = new Map<string, number>();
   #textSignatures = new Map<number, string>();
   #highlightSignatures = new Map<number, string>();
   #markSignatures = new Map<number, string>();
@@ -433,6 +440,7 @@ export class ViewportRenderer {
     this.#host.scroller.removeEventListener("scroll", this.#onScroll);
     this.#host.scroller.removeEventListener("wheel", this.#onWheel);
     if (this.#frame) cancelAnimationFrame(this.#frame);
+    if (this.#settleTimer !== null) clearTimeout(this.#settleTimer);
     this.#bitmaps.clear();
   }
 
@@ -543,6 +551,10 @@ export class ViewportRenderer {
       return;
     }
 
+    this.#wanted = [];
+    // While flinging, a page is on screen too briefly for a sharp render to
+    // be worth its place in the queue: previews only, sharp once it settles.
+    const flinging = this.#tracker.isFlinging(performance.now());
     const nearby = visiblePages(this.#layout, view, VISIBLE_MARGIN);
     // Presenting: the one page, its neighbours not drawn at all (Phase 8).
     const pages = this.#solo === null ? nearby : nearby.filter((p) => p === this.#solo);
@@ -574,7 +586,7 @@ export class ViewportRenderer {
       if (preview) {
         this.#surface.drawTile(preview, { x: originX, y: originY, w: pw, h: ph });
       } else if (previewRef) {
-        this.#request(previewRef, PRIORITY.preview);
+        this.#want(previewRef, PRIORITY.preview);
       }
 
       // 3. Sharp tiles over the top, for the part of the page on screen.
@@ -598,7 +610,7 @@ export class ViewportRenderer {
           drawn++;
         } else {
           missing++;
-          this.#request(ref, PRIORITY.visible);
+          if (!flinging) this.#want(ref, PRIORITY.visible);
         }
       }
 
@@ -619,7 +631,9 @@ export class ViewportRenderer {
       }
       if (!state.annots.has(page)) wantAnnots.push(page);
 
-      if (!state.texts.has(page)) wantText.push(page);
+      // The text layer is for selecting and finding, which nobody does
+      // mid-fling; its request travels the same narrow path as the tiles.
+      if (!flinging && !state.texts.has(page)) wantText.push(page);
     }
     this.#drawSelection(view, dpr);
     this.#surface.present();
@@ -627,8 +641,10 @@ export class ViewportRenderer {
     // 4. Prefetch: previews for where the scroll is going.
     for (const page of prefetchPages(pages, this.#tracker.velocity, state.pageSizes.length)) {
       const ref = this.#previewRef(page);
-      if (ref && !this.#bitmaps.has(tileKey(ref))) this.#request(ref, PRIORITY.prefetch);
+      if (ref) this.#want(ref, PRIORITY.prefetch);
     }
+    this.#pump();
+    if (flinging && missing > 0) this.#wakeWhenSettled();
 
     this.#syncTextLayer(pages);
     this.#syncBoxLayer(pages, this.#state.highlights, this.#highlightSignatures, "hl", "izul-highlight");
@@ -689,7 +705,34 @@ export class ViewportRenderer {
     };
   }
 
-  #request(ref: TileRef, priority: Priority): void {
+  #want(ref: TileRef, priority: Priority): void {
+    const key = tileKey(ref);
+    if (this.#bitmaps.has(key)) return;
+    const until = this.#refused.get(key);
+    if (until !== undefined) {
+      if (performance.now() < until) return;
+      this.#refused.delete(key);
+    }
+    this.#wanted.push({ key, priority, item: { ref, priority } });
+  }
+
+  /** Sends the most urgent wants while there are free slots. */
+  #pump(): void {
+    for (const want of nextToSend(this.#wanted, this.#pending)) {
+      this.#send(want.item.ref, want.item.priority);
+    }
+  }
+
+  #wakeWhenSettled(): void {
+    if (this.#settleTimer !== null) clearTimeout(this.#settleTimer);
+    const wait = Math.max(0, this.#tracker.settlesAt() - performance.now()) + 5;
+    this.#settleTimer = setTimeout(() => {
+      this.#settleTimer = null;
+      this.requestFrame();
+    }, wait);
+  }
+
+  #send(ref: TileRef, priority: Priority): void {
     const key = tileKey(ref);
     if (this.#pending.has(key) || this.#bitmaps.has(key)) return;
     this.#pending.add(key);
@@ -709,14 +752,15 @@ export class ViewportRenderer {
         this.#pending.delete(key);
         if (signal.aborted || e instanceof DOMException) return;
         // A superseded or recycled tile is the pipeline working as designed,
-        // not something to report: the next frame asks again.
-        if (
-          e instanceof SupersededTileError ||
-          e instanceof StaleTileError ||
-          e instanceof MissingTileError
-        ) {
-          return;
-        }
+        // not something to report: it is asked for again shortly. Not at once,
+        // and not before the rest of the queue has had the freed slot: a tile
+        // the backend keeps refusing must not hold the line.
+        const transient = e instanceof SupersededTileError || e instanceof StaleTileError;
+        const wait = transient ? 100 : 2000;
+        this.#refused.set(key, performance.now() + wait);
+        setTimeout(() => this.requestFrame(), wait + 5);
+        this.requestFrame();
+        if (transient || e instanceof MissingTileError) return;
         console.warn("ubin gagal", e);
       });
   }

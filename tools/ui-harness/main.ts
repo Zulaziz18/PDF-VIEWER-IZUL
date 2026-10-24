@@ -21,6 +21,10 @@ declare global {
       pages(selection: number[]): void;
       /** Selects the first `needle` in the text layer, as a drag would. */
       selectText(needle: string): boolean;
+      /** View mode and zoom, as the status bar sets them. */
+      view(mode: "single" | "dual" | "dual_cover" | "horizontal", zoom: number): void;
+      /** The focused viewport's frame statistics. */
+      stats(): unknown;
     };
   }
 }
@@ -54,6 +58,13 @@ window.__izul = {
   },
   pages(selection) {
     useDocument.getState().setPageSelection(selection);
+  },
+  view(mode, zoom) {
+    useDocument.getState().setViewMode(mode);
+    useDocument.getState().setZoom(zoom, "custom");
+  },
+  stats() {
+    return viewport()?.stats() ?? null;
   },
   selectText(needle) {
     const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT);

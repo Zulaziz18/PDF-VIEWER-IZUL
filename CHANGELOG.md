@@ -3,6 +3,34 @@
 Semua perubahan penting per fase. Format mengikuti [Keep a Changelog](https://keepachangelog.com/id/1.1.0/);
 versi mengikuti `version.json` sebagai sumber tunggal.
 
+## [7.1.1] — Scroll cepat tidak lagi tertahan
+
+### Diperbaiki
+
+- **Scroll cepat terasa lambat dan halaman lama tajam**, terutama di tampilan
+  dua halaman dengan zoom kecil. Tiap frame dulu meminta *semua* ubin yang
+  belum ada, sekaligus. Satu sapuan touchpad melewati puluhan halaman, dan
+  semuanya masuk antrean pekerja dokumen itu (satu dokumen = satu pekerja),
+  sedangkan halaman yang tampil saat scroll berhenti menunggu di belakangnya.
+  Sekarang:
+  - paling banyak 4 permintaan ubin berjalan per tampilan; sisanya dipilih
+    ulang tiap frame dari yang sedang tampil, jadi halaman yang sudah lewat
+    tidak pernah diminta (`src/viewport/requestQueue.ts`);
+  - selama scroll cepat (di atas 1200 px/detik) hanya pratinjau yang diminta,
+    versi tajam menyusul 120 ms setelah scroll berhenti;
+  - thumbnail di panel Halaman baru meminta gambarnya setelah 150 ms di
+    layar, bukan setiap thumbnail yang tersapu lewat;
+  - teks halaman (untuk seleksi dan pencarian) tidak diminta selama scroll
+    cepat.
+
+  Diukur di harness (`npm run ui:shots -- --scene=scrollperf`, 130 halaman,
+  dua halaman, zoom 30 %, 40 halaman dalam 2,5 detik, model jalur sempit
+  30 MB/s), waktu sampai layar tajam setelah scroll berhenti:
+  halaman berat (40 ms/ubin) 2,4 s → 0,6 s; sedang (20 ms) 0,9 s → 0,4 s;
+  data yang dikirim 34 MB → 19 MB. Halaman sangat ringan kini 0,3 s, bukan
+  0,03 s — harga menunda versi tajam sampai scroll berhenti. Angka ini dari
+  model, bukan WebView2 sungguhan; pengujian di Windows ada di TESTING.md.
+
 ## [7.1.0] — Ke Word, dan perbaikan dari uji pemakaian
 
 Dirilis langsung sesudah 7.0.1 yang belum sempat dirilis, jadi tombol
