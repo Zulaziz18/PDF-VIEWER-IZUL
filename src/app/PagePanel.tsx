@@ -29,6 +29,9 @@ import {
 import { paintThumbnail } from "@/viewport/thumbnails";
 import { viewport } from "./viewportHandle";
 
+/** How long a thumbnail slot must stay on screen before it asks for its picture. */
+const THUMB_SETTLE_MS = 150;
+
 /** Height of one slot in CSS pixels; fixed, which is what allows windowing. */
 const THUMB_SLOT = 200;
 
@@ -63,14 +66,24 @@ function Thumbnail(props: {
       return;
     }
     const abort = new AbortController();
-    void paintThumbnail(
-      canvas,
-      { doc, page, rotation: props.rotation, generation: props.generation },
-      abort.signal,
-    ).then((ok) => {
-      if (!abort.signal.aborted) setDrawn(ok);
-    });
-    return () => abort.abort();
+    // Asked for only once the slot has stayed on screen a moment. The panel
+    // follows the page the viewport shows, so a fling through the document
+    // slides hundreds of slots past; each one asking at once filled the
+    // document's one worker with thumbnails nobody saw, ahead of the pages
+    // on screen (7.1.1). An aborted fetch does not stop the render.
+    const timer = setTimeout(() => {
+      void paintThumbnail(
+        canvas,
+        { doc, page, rotation: props.rotation, generation: props.generation },
+        abort.signal,
+      ).then((ok) => {
+        if (!abort.signal.aborted) setDrawn(ok);
+      });
+    }, THUMB_SETTLE_MS);
+    return () => {
+      clearTimeout(timer);
+      abort.abort();
+    };
   }, [doc, page, props.rotation, props.generation, props.blankAspect, inverted]);
 
   return (

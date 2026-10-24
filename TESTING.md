@@ -894,6 +894,19 @@ Lalu periksa:
       `pdf-studio-izul.exe` dari sana: folder `data` muncul di samping exe, dan
       berkas yang dibuka tidak masuk jump list Windows.
 
+### 7.1.1 — Scroll cepat
+
+- [ ] Buka PDF ±130 halaman, pilih tampilan **dua halaman**, perkecil zoom
+      ke 30–50 %. Sapu touchpad cepat ke bawah lalu berhenti: halaman yang
+      tampil jadi tajam dalam kurang dari sekitar satu detik, bukan beberapa
+      detik.
+- [ ] Selama sapuan, halaman boleh tampak agak buram (pratinjau), tapi tidak
+      putih kosong.
+- [ ] Scroll pelan sambil membaca: teks tetap tajam, tidak berkedip buram.
+- [ ] Setelah berhenti, teks bisa diseleksi seperti biasa.
+- [ ] Bandingkan dengan Edge pada berkas yang sama dan catat mana yang masih
+      terasa lebih lambat.
+
 ### 7.1.0 — Periksa pembaruan, Ke Word, dan perbaikan uji pemakaian
 
 7.0.1 tidak pernah dirilis; tombol pembaruan pertama kali hadir di 7.1.0.

@@ -1,0 +1,14 @@
+Scroll cepat 7.1.1 — npm run ui:shots -- --scene=scrollperf --size=1366x768 --scale=1.25 --transport-mbps=30 --render-ms=N
+Dokumen 130 halaman (make_samples.py), tampilan dua halaman, zoom 30 %, 40 halaman disapu dalam 2,5 s.
+Chromium headless, linux, 24 Oktober 2026. Biaya ubin dimodelkan serial (satu pekerja + jalur WebView2
+30 MB/s, 2 ms per balasan); cache ubin backend ditiru. Model, bukan WebView2 sungguhan.
+
+                      sebelum (7.1.0)                 sesudah (7.1.1)
+render-ms   tajam setelah berhenti  ubin  MB    tajam setelah berhenti  ubin  MB
+0                 25 ms             163  34.1        278 ms             96  18.8
+20               927 ms             160  33.5        427 ms             96  18.8
+40              2375 ms             155  32.6        577 ms             96  18.8
+
+Frame selama sapuan: p95 16–19 ms, nol frame > 50 ms, di kedua versi (Chromium di sini tidak lag
+tanpa model biaya; JavaScript bukan sumber masalahnya).
+Halaman ringan kini 0,28 s, bukan 0,03 s: versi tajam sengaja ditunda sampai scroll berhenti (120 ms).

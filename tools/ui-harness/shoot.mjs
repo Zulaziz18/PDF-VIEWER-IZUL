@@ -77,6 +77,8 @@ helper.stdout.on("data", (chunk) => {
   }
 });
 let chain = Promise.resolve();
+let transport = Promise.resolve();
+const tileMemo = new Map();
 function ask(req) {
   const p = chain.then(
     () =>
@@ -110,6 +112,11 @@ const SAMPLE_FILES = [
   { name: "Data Pegawai (diredaksi).pdf", folder: docsFolder, opened: NOW - 81 * DAY, modified: NOW - 81 * DAY },
   // Phase 7: a form to fill.
   { name: "Formulir Pendaftaran.pdf", folder: `${USER}\\Downloads`, opened: NOW - 90 * DAY, modified: NOW - 90 * DAY },
+  // 7.1.1: the scroll benchmark's long document. Only loaded for that scene,
+  // so the home screen's lists in every other screenshot stay as they were.
+  ...((args.scene ?? "").includes("scrollperf")
+    ? [{ name: "Modul Lengkap 130 Halaman.pdf", folder: docsFolder, opened: NOW - 100 * DAY, modified: NOW - 100 * DAY }]
+    : []),
 ];
 
 const realPath = new Map();
@@ -284,7 +291,81 @@ async function izul(page, fn, arg) {
   );
 }
 
+/**
+ * The user's report (7.1.1): two pages side by side, zoomed out, scrolling a
+ * 130-page document lags. Scrolls 40 pages in 2.5 s, as a touchpad flick
+ * does, and measures what the user feels: frame gaps while scrolling, main-
+ * thread long tasks, tiles asked for, and how long until the screen is sharp
+ * once the scroll stops. Written to `--perf-out` (default: stdout only).
+ */
+async function scrollPerf(page) {
+  await izul(page, (z, zoom) => z.view("dual", zoom), Number(args.zoom ?? 0.3));
+  await settle(page);
+  page.__tileCount = 0;
+  page.__tileBytes = 0;
+  const measured = await page.evaluate(async () => {
+    const scroller = document.querySelector('[role="region"].overflow-auto');
+    const long = [];
+    const obs = new PerformanceObserver((l) => long.push(...l.getEntries().map((e) => e.duration)));
+    obs.observe({ type: "longtask", buffered: false });
+    const gaps = [];
+    const distance = scroller.scrollHeight * (40 / 130);
+    const duration = 2500;
+    const from = scroller.scrollTop;
+    await new Promise((done) => {
+      let start = 0;
+      let last = 0;
+      // performance.now(), not the rAF timestamp: headless Chromium hands rAF
+      // a steady 16 ms clock however long the main thread was busy.
+      const step = () => {
+        const t = performance.now();
+        if (!start) start = last = t;
+        gaps.push(t - last);
+        last = t;
+        const f = Math.min(1, (t - start) / duration);
+        scroller.scrollTop = from + distance * f;
+        if (f < 1) requestAnimationFrame(step);
+        else done();
+      };
+      requestAnimationFrame(step);
+    });
+    const stopped = performance.now();
+    let sharp = null;
+    for (let i = 0; i < 600; i++) {
+      await new Promise((r) => setTimeout(r, 25));
+      const s = window.__izul.stats();
+      if (s && s.tilesMissing === 0 && s.pending === 0) {
+        sharp = performance.now() - stopped;
+        break;
+      }
+    }
+    obs.disconnect();
+    gaps.sort((a, b) => a - b);
+    const q = (p) => gaps[Math.min(gaps.length - 1, Math.floor(p * gaps.length))] ?? 0;
+    return {
+      frames: gaps.length,
+      frameP50: q(0.5),
+      frameP95: q(0.95),
+      frameMax: gaps[gaps.length - 1] ?? 0,
+      framesOver50ms: gaps.filter((g) => g > 50).length,
+      longTasks: long.length,
+      longTaskMs: long.reduce((a, b) => a + b, 0),
+      sharpAfterStopMs: sharp,
+    };
+  });
+  const result = { ...measured, tilesRequested: page.__tileCount, megabytes: Math.round((page.__tileBytes ?? 0) / 1e5) / 10 };
+  const line = JSON.stringify(result);
+  console.log(`  scrollperf ${line}`);
+  if (args["perf-out"]) writeFileSync(args["perf-out"], line + "\n", { flag: "a" });
+}
+
 const SCENES = {
+  scrollperf: {
+    session: [`${docsFolder}\\Modul Lengkap 130 Halaman.pdf`],
+    async steps(page) {
+      await scrollPerf(page);
+    },
+  },
   home: {
     session: [],
     async steps(page) {
@@ -856,6 +937,7 @@ async function newPage({ width, height, theme, scale, scene }) {
   });
   await page.route("http://izul.localhost/**", async (route) => {
     page.__lastTile = Date.now();
+    page.__tileCount = (page.__tileCount ?? 0) + 1;
     const url = new URL(route.request().url());
     const cors = {
       "Access-Control-Allow-Origin": "*",
@@ -870,7 +952,12 @@ async function newPage({ width, height, theme, scale, scene }) {
       return route.fulfill({ status: 200, headers: { ...cors, "Content-Type": "image/png" }, body });
     }
     if (kind !== "tile") return route.fulfill({ status: 404, headers: cors });
-    const { header, body } = await ask({
+    // Like the backend's tile cache and in-flight coalescing: the same tile
+    // asked twice is rendered once.
+    const cacheKey = `${url.pathname}?inv=${url.searchParams.get("inv") ?? ""}`;
+    const cached = tileMemo.get(cacheKey);
+    const rendered = cached === undefined;
+    const { header, body } = cached ?? (await ask({
       op: "tile",
       path: docById.get(Number(doc)),
       page: Number(pg),
@@ -880,7 +967,23 @@ async function newPage({ width, height, theme, scale, scene }) {
       row: Number(row),
       tier,
       invert: url.searchParams.get("inv") === "1",
-    });
+    }));
+    // Only when modelling costs: a whole screenshot run would hold every tile.
+    if (rendered && (args["render-ms"] || args["transport-mbps"])) tileMemo.set(cacheKey, { header, body });
+    // `--transport-mbps=N`: a model of WebView2's custom-protocol path on
+    // Windows, where every response is handed over on the window's main thread
+    // (wry posts it there) and copied through a COM stream into another
+    // process — one at a time, at a bounded rate. Not WebView2 itself; enough
+    // to show what a backlog of tiles costs when the pipe is narrow.
+    // `--render-ms=N` adds a fixed cost per tile on the same serial line: a
+    // heavy page (a scan, a detailed map) on the one worker a document has.
+    if (args["transport-mbps"] || args["render-ms"]) {
+      const mbps = Number(args["transport-mbps"] ?? 0);
+      const ms = (rendered ? Number(args["render-ms"] ?? 0) : 0) + (mbps > 0 ? 2 + body.length / (mbps * 1000) : 0);
+      page.__tileBytes = (page.__tileBytes ?? 0) + body.length;
+      transport = transport.then(() => new Promise((r) => setTimeout(r, ms)));
+      await transport;
+    }
     page.__lastTile = Date.now();
     if (!header.ok) return route.fulfill({ status: 404, headers: cors });
     return route.fulfill({

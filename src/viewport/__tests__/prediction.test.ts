@@ -4,7 +4,14 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { IDLE_SPEED, MAX_PREFETCH_PAGES, ScrollTracker, prefetchPages } from "../prediction";
+import {
+  FLING_SPEED,
+  IDLE_SPEED,
+  MAX_PREFETCH_PAGES,
+  SETTLE_MS,
+  ScrollTracker,
+  prefetchPages,
+} from "../prediction";
 
 describe("ScrollTracker", () => {
   it("reports no direction from a single sample", () => {
@@ -79,5 +86,37 @@ describe("prefetchPages", () => {
 
   it("has nothing to do without a document", () => {
     expect(prefetchPages([], 1000, 0)).toEqual([]);
+  });
+});
+
+describe("ScrollTracker.isFlinging (7.1.1)", () => {
+  /** A touchpad flick: 100 px a frame, about 6000 px/s. */
+  function flung(): ScrollTracker {
+    const t = new ScrollTracker();
+    for (let i = 0; i <= 10; i++) t.sample(i * 100, i * 16);
+    return t;
+  }
+
+  it("is flinging while a fast scroll is still moving", () => {
+    expect(flung().isFlinging(160 + 10)).toBe(true);
+  });
+
+  it("stops flinging once no scroll event has come for a while", () => {
+    // The velocity never decays without events: only the clock can say the
+    // fling stopped dead. Without this the view would stay blurry for good.
+    const t = flung();
+    expect(t.velocity).toBeGreaterThan(FLING_SPEED);
+    expect(t.isFlinging(160 + SETTLE_MS + 1)).toBe(false);
+    expect(t.settlesAt()).toBe(160 + SETTLE_MS);
+  });
+
+  it("does not count reading speed as a fling", () => {
+    const t = new ScrollTracker();
+    for (let i = 0; i <= 10; i++) t.sample(i * 5, i * 16); // ~300 px/s
+    expect(t.isFlinging(160)).toBe(false);
+  });
+
+  it("is not flinging before any scroll", () => {
+    expect(new ScrollTracker().isFlinging(0)).toBe(false);
   });
 });

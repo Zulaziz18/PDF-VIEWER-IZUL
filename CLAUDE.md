@@ -1090,6 +1090,37 @@ Harness kini meneruskan `annot_replace` ke pembangun display list sungguhan,
 jadi scene bisa mengubah properti. Scene baru: `zoommenu`, `viewmenu`,
 `highlight`, `note`, `word`.
 
+## Keadaan 7.1.1 (scroll cepat, 24 Oktober 2026)
+
+Pengguna: scroll di PDF 130 halaman, tampilan dua halaman, zoom kecil, terasa
+lag dibanding Edge. **Penyebab utama: antrean, bukan kecepatan render.** Tiap
+frame dulu meminta semua ubin yang belum ada; satu sapuan menumpuk puluhan
+halaman di antrean pekerja (satu dokumen = satu pekerja, FIFO per prioritas),
+dan halaman yang tampil saat berhenti menunggu di belakangnya. Di Windows tiap
+balasan juga lewat thread utama jendela (wry 0.55.1 `PostMessageW`, lalu
+`SHCreateMemStream`), satu per satu — dicek di kode sumber wry.
+
+- `src/viewport/requestQueue.ts`: maks 4 permintaan per tampilan, dipilih ulang
+  tiap frame. Fetch yang sudah terkirim **tidak** di-abort — abort tidak
+  menghentikan pekerja, hanya membuka slot untuk kerja lain di belakangnya.
+- `ScrollTracker.isFlinging(now)`: > 1200 px/s dan event terakhir < 120 ms.
+  Waktu wajib ikut: kecepatan hanya diperbarui oleh event scroll, jadi tanpa
+  jam, sapuan yang berhenti mendadak membuat tampilan buram selamanya.
+- Thumbnail panel Halaman menunggu 150 ms sebelum meminta; teks halaman tidak
+  diminta selama sapuan.
+- Penolakan 409/410/404 diberi jeda (100 ms / 2 s) sebelum diminta ulang,
+  supaya satu ubin yang terus ditolak tidak memutar antrean tiap frame.
+
+**Alat ukur:** scene `scrollperf` di harness (`--zoom`, `--transport-mbps`,
+`--render-ms`; harness kini meniru cache ubin backend saat model dipakai).
+Tanpa model biaya, Chromium di sini tidak menunjukkan lag sama sekali (tajam
+25 ms setelah berhenti, nol long task) — artinya masalahnya **bukan** di
+JavaScript, dan angka 7.1.1 berasal dari model jalur sempit, bukan WebView2.
+Belum diukur: biaya jalur protokol kustom WebView2 yang sebenarnya. Kalau
+pengguna masih merasa lambat, langkah berikutnya adalah shared buffer WebView2
+(`ICoreWebView2_17::PostSharedBufferToScript`) atau dokumen aktif di dua pekerja.
+Hasil di `bench/results/scroll-7.1.1.txt`.
+
 ## Alur kerja proyek ini
 
 - Branch per fase: `claude/pdf-studio-izul-v7-fase-4` (Langkah 0 + Fase 4,

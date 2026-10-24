@@ -52,6 +52,28 @@ export class ScrollTracker {
     return 0;
   }
 
+  /**
+   * Whether the user is flinging through the document at `nowMs`: fast, and
+   * still moving. A page on screen for a fraction of a second is not worth a
+   * sharp render; its preview is enough until the scroll slows (7.1.1).
+   *
+   * The time matters because the velocity only updates on scroll events: when
+   * a fling stops dead, no event says so, and the last fast sample would
+   * otherwise keep the view blurry forever.
+   */
+  isFlinging(nowMs: number): boolean {
+    return (
+      this.#lastOffset !== null &&
+      nowMs - this.#lastTime < SETTLE_MS &&
+      Math.abs(this.#velocity) > FLING_SPEED
+    );
+  }
+
+  /** When the current fling will count as stopped, if no scroll comes. */
+  settlesAt(): number {
+    return this.#lastTime + SETTLE_MS;
+  }
+
   /** Forgets the history, e.g. after a jump to a bookmark. */
   reset(): void {
     this.#lastOffset = null;
@@ -61,6 +83,16 @@ export class ScrollTracker {
 
 /** Below this speed, in CSS px/s, the user counts as stationary. */
 export const IDLE_SPEED = 40;
+
+/**
+ * Faster than this, in CSS pixels per second, sharp tiles wait. A reader
+ * scrolling through text moves a few hundred; a touchpad flick through a
+ * zoomed-out document moves thousands.
+ */
+export const FLING_SPEED = 1200;
+
+/** A scroll with no event for this long has stopped, in milliseconds. */
+export const SETTLE_MS = 120;
 
 /** Most pages we will ever render ahead of the viewport. */
 export const MAX_PREFETCH_PAGES = 8;

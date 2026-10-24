@@ -271,6 +271,8 @@ agreement(OUT / "Draf Perjanjian v2.pdf", "v2")
 report(OUT / "Laporan Kegiatan Semester.pdf", "Laporan Kegiatan", 9)
 report(OUT / "Catatan Rapat Organisasi.pdf", "Catatan Rapat", 5)
 report(OUT / "Proposal Penelitian.pdf", "Proposal Penelitian", 14)
+# The scroll benchmark (scene "scrollperf"): a long document, as the user reported.
+report(OUT / "Modul Lengkap 130 Halaman.pdf", "Modul Lengkap", 130)
 
 
 def stamp_photo(path):
